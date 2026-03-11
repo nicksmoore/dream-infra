@@ -960,6 +960,93 @@ function extractEc2Error(xml: string): string | null {
   return xml.match(/<Message>(.*?)<\/Message>/)?.[1] || null;
 }
 
+async function describeExistingNetworkStack(
+  region: string,
+  name: string,
+  environment: string,
+  accessKey: string,
+  secretKey: string,
+): Promise<{
+  vpc_id: string;
+  security_group_id: string | null;
+  subnets: { id: string; type: string; az: string; cidr: string }[];
+  region: string;
+  vpc_cidr?: string;
+  reused: true;
+} | null> {
+  const vpcParams = new URLSearchParams({
+    Action: "DescribeVpcs",
+    Version: "2016-11-15",
+    "Filter.1.Name": "tag:ManagedBy",
+    "Filter.1.Value.1": "UIDI",
+    "Filter.2.Name": "tag:Name",
+    "Filter.2.Value.1": name,
+    "Filter.3.Name": "tag:Environment",
+    "Filter.3.Value.1": environment,
+  });
+
+  const vpcRes = await ec2Request("POST", region, vpcParams.toString(), accessKey, secretKey);
+  const vpcBody = await vpcRes.text();
+  if (!vpcRes.ok) throw new Error(extractEc2Error(vpcBody) || "DescribeVpcs failed");
+
+  const vpcId = vpcBody.match(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/)?.[1];
+  if (!vpcId) return null;
+
+  const vpcCidr = vpcBody.match(/<cidrBlock>([^<]+)<\/cidrBlock>/)?.[1];
+
+  const subnetRes = await ec2Request(
+    "POST",
+    region,
+    new URLSearchParams({
+      Action: "DescribeSubnets",
+      Version: "2016-11-15",
+      "Filter.1.Name": "vpc-id",
+      "Filter.1.Value.1": vpcId,
+    }).toString(),
+    accessKey,
+    secretKey,
+  );
+  const subnetBody = await subnetRes.text();
+  if (!subnetRes.ok) throw new Error(extractEc2Error(subnetBody) || "DescribeSubnets failed");
+
+  const subnetChunks = subnetBody.match(/<item>[\s\S]*?<subnetId>subnet-[a-f0-9]+<\/subnetId>[\s\S]*?<\/item>/g) || [];
+  const subnets = subnetChunks.map((chunk) => {
+    const id = chunk.match(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/)?.[1] || "";
+    const az = chunk.match(/<availabilityZone>([^<]+)<\/availabilityZone>/)?.[1] || "";
+    const cidr = chunk.match(/<cidrBlock>([^<]+)<\/cidrBlock>/)?.[1] || "";
+    const subnetType = chunk.match(/<key>SubnetType<\/key>[\s\S]*?<value>([^<]+)<\/value>/)?.[1] || "private";
+    return { id, az, cidr, type: subnetType };
+  }).filter((subnet) => subnet.id);
+
+  const sgRes = await ec2Request(
+    "POST",
+    region,
+    new URLSearchParams({
+      Action: "DescribeSecurityGroups",
+      Version: "2016-11-15",
+      "Filter.1.Name": "vpc-id",
+      "Filter.1.Value.1": vpcId,
+      "Filter.2.Name": "tag:ManagedBy",
+      "Filter.2.Value.1": "UIDI",
+    }).toString(),
+    accessKey,
+    secretKey,
+  );
+  const sgBody = await sgRes.text();
+  if (!sgRes.ok) throw new Error(extractEc2Error(sgBody) || "DescribeSecurityGroups failed");
+
+  const securityGroupId = sgBody.match(/<groupId>(sg-[a-f0-9]+)<\/groupId>/)?.[1] || null;
+
+  return {
+    vpc_id: vpcId,
+    security_group_id: securityGroupId,
+    subnets,
+    region,
+    vpc_cidr: vpcCidr,
+    reused: true,
+  };
+}
+
 async function handleNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
