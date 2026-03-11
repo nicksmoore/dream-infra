@@ -20,7 +20,7 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [planOutput, setPlanOutput] = useState<string | null>(stack.planOutput ?? null);
 
-  const runAction = async (action: "plan" | "apply" | "destroy") => {
+  const runAction = async (action: "dry_run" | "apply" | "destroy") => {
     if (!hasCredentials) {
       onRequestCredentials();
       return;
@@ -37,18 +37,19 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
     try {
       const hcl = generateStackHcl(stack);
 
-      if (action === "plan") onStatusChange("planning");
+      if (action === "dry_run") onStatusChange("planning");
       else onStatusChange("applying");
 
       const result: EngineResponse = await executeIntent({
-        intent: "terraform",
+        intent: "compute",
         action,
         spec: {
-          workspace_id: workspaceId || stack.workspaceId || stack.name,
-          organization: stack.organization,
-          hcl,
+          instance_type: stack.resources[0]?.config?.instanceType || "t3.micro",
+          os: stack.resources[0]?.config?.os || "amazon-linux-2023",
           region: stack.region,
           environment: stack.environment,
+          name: stack.name,
+          count: stack.resources[0]?.config?.instanceCount || 1,
         },
         metadata: { project: stack.name },
       });
@@ -61,16 +62,16 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
         throw new Error(result.error ?? result.message ?? "Engine returned an error");
       }
 
-      if (action === "plan") {
+      if (action === "dry_run") {
         setPlanOutput(output);
         onStatusChange("planned", output);
-        toast({ title: "Plan complete", description: "Review the plan output below." });
+        toast({ title: "Dry run passed", description: "Validation successful — ready to deploy." });
       } else if (action === "apply") {
         onStatusChange("applied", output);
-        toast({ title: "Applied!", description: "Infrastructure deployed via UIDI Core Engine." });
+        toast({ title: "Deployed!", description: "Infrastructure launched via UIDI SDK Engine." });
       } else {
         onStatusChange("destroyed", output);
-        toast({ title: "Destroyed", description: "Infrastructure torn down via UIDI Core Engine." });
+        toast({ title: "Destroyed", description: "Infrastructure terminated via UIDI SDK Engine." });
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Unknown error";
