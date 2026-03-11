@@ -21,7 +21,8 @@ import {
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
-import { TerraformStack } from "@/lib/terraform-mcp";
+import { TerraformStack, N8N_WORKFLOW_ID } from "@/lib/terraform-mcp";
+import { supabase as _sb } from "@/integrations/supabase/client";
 import { Rocket, KeyRound, Trash2, Zap, Layers, Server } from "lucide-react";
 
 const DEFAULT_INTENT: ParsedIntent = {
@@ -52,6 +53,15 @@ export default function Index() {
   const [isParsing, setIsParsing] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [stack, setStack] = useState<TerraformStack>(DEFAULT_STACK);
+  const [n8nConnected] = useState(true); // n8n orchestrator is connected
+
+  const executeN8nWorkflow = useCallback(async (workflowId: string, inputs: unknown): Promise<unknown> => {
+    const { data, error } = await supabase.functions.invoke("n8n-orchestrator", {
+      body: { workflowId, inputs },
+    });
+    if (error) throw new Error(`n8n execution failed: ${error.message}`);
+    return data;
+  }, []);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
@@ -182,6 +192,7 @@ export default function Index() {
               onStatusChange={handleStackStatusChange}
               hasCredentials={!!credentials}
               onRequestCredentials={() => setCredModalOpen(true)}
+              executeWorkflow={n8nConnected ? executeN8nWorkflow : undefined}
             />
           </TabsContent>
 

@@ -2,18 +2,25 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TerraformStack, mcpCallTool, generateStackHcl } from "@/lib/terraform-mcp";
+import {
+  TerraformStack,
+  generateStackHcl,
+  N8N_WORKFLOW_ID,
+  buildOrchestratorMessage,
+  UidiOrchestratorResponse,
+} from "@/lib/terraform-mcp";
 import { toast } from "@/hooks/use-toast";
-import { Rocket, FileSearch, Trash2, Loader2, CheckCircle2, XCircle, Eye } from "lucide-react";
+import { Rocket, FileSearch, Trash2, Loader2, CheckCircle2, XCircle, Eye, Zap } from "lucide-react";
 
 interface TerraformActionsProps {
   stack: TerraformStack;
   onStatusChange: (status: TerraformStack["status"], output?: string, error?: string) => void;
   hasCredentials: boolean;
   onRequestCredentials: () => void;
+  executeWorkflow?: (workflowId: string, inputs: unknown) => Promise<unknown>;
 }
 
-export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequestCredentials }: TerraformActionsProps) {
+export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequestCredentials, executeWorkflow }: TerraformActionsProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [planOutput, setPlanOutput] = useState<string | null>(stack.planOutput ?? null);
@@ -35,40 +42,79 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
     try {
       const hcl = generateStackHcl(stack);
 
-      if (action === "plan") {
-        onStatusChange("planning");
-        const result = await mcpCallTool("terraform_plan", {
+      const message = buildOrchestratorMessage({
+        intent: "terraform",
+        action,
+        spec: {
           hcl,
           workspace: stack.name,
           region: stack.region,
           environment: stack.environment,
+          auto_approve: action !== "plan",
+        },
+      });
+
+      if (executeWorkflow) {
+        // Route through n8n orchestrator
+        if (action === "plan") onStatusChange("planning");
+        else if (action === "apply") onStatusChange("applying");
+        else onStatusChange("applying");
+
+        const result = await executeWorkflow(N8N_WORKFLOW_ID, {
+          type: "chat",
+          chatInput: message,
         });
-        const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-        setPlanOutput(output);
-        onStatusChange("planned", output);
-        toast({ title: "Plan complete", description: "Review the plan output below." });
-      } else if (action === "apply") {
-        onStatusChange("applying");
-        const result = await mcpCallTool("terraform_apply", {
-          hcl,
-          workspace: stack.name,
-          region: stack.region,
-          environment: stack.environment,
-          auto_approve: true,
-        });
-        const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-        onStatusChange("applied", output);
-        toast({ title: "Applied!", description: "Infrastructure deployed successfully." });
-      } else if (action === "destroy") {
-        onStatusChange("applying");
-        const result = await mcpCallTool("terraform_destroy", {
-          workspace: stack.name,
-          region: stack.region,
-          auto_approve: true,
-        });
-        const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-        onStatusChange("destroyed", output);
-        toast({ title: "Destroyed", description: "Infrastructure has been torn down." });
+
+        const response = parseOrchestratorResponse(result);
+        const output = response.details
+          ? JSON.stringify(response.details, null, 2)
+          : response.message ?? "Operation completed";
+
+        if (response.status === "error") {
+          throw new Error(response.error ?? response.message ?? "Orchestrator returned an error");
+        }
+
+        if (action === "plan") {
+          setPlanOutput(output);
+          onStatusChange("planned", output);
+          toast({ title: "Plan complete", description: "Review the plan output below." });
+        } else if (action === "apply") {
+          onStatusChange("applied", output);
+          toast({ title: "Applied!", description: "Infrastructure deployed via n8n orchestrator." });
+        } else {
+          onStatusChange("destroyed", output);
+          toast({ title: "Destroyed", description: "Infrastructure torn down via n8n orchestrator." });
+        }
+      } else {
+        // Fallback: direct MCP proxy (legacy)
+        const { mcpCallTool } = await import("@/lib/terraform-mcp");
+
+        if (action === "plan") {
+          onStatusChange("planning");
+          const result = await mcpCallTool("terraform_plan", {
+            hcl, workspace: stack.name, region: stack.region, environment: stack.environment,
+          });
+          const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          setPlanOutput(output);
+          onStatusChange("planned", output);
+          toast({ title: "Plan complete", description: "Review the plan output below." });
+        } else if (action === "apply") {
+          onStatusChange("applying");
+          const result = await mcpCallTool("terraform_apply", {
+            hcl, workspace: stack.name, region: stack.region, environment: stack.environment, auto_approve: true,
+          });
+          const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          onStatusChange("applied", output);
+          toast({ title: "Applied!", description: "Infrastructure deployed successfully." });
+        } else {
+          onStatusChange("applying");
+          const result = await mcpCallTool("terraform_destroy", {
+            workspace: stack.name, region: stack.region, auto_approve: true,
+          });
+          const output = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          onStatusChange("destroyed", output);
+          toast({ title: "Destroyed", description: "Infrastructure has been torn down." });
+        }
       }
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Unknown error";
@@ -118,6 +164,14 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
         </Button>
       </div>
 
+      {executeWorkflow && (
+        <div className="flex justify-center">
+          <Badge variant="outline" className="gap-1 text-xs">
+            <Zap className="h-3 w-3" /> Routed via n8n Orchestrator
+          </Badge>
+        </div>
+      )}
+
       {(planOutput || stack.error) && (
         <Card className="bg-muted/30">
           <CardContent className="py-3 px-4 space-y-2">
@@ -143,4 +197,19 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
       )}
     </div>
   );
+}
+
+function parseOrchestratorResponse(result: unknown): UidiOrchestratorResponse {
+  if (typeof result === "object" && result !== null) {
+    const r = result as Record<string, unknown>;
+    return {
+      status: (r.status as "success" | "error") ?? "success",
+      platform: r.platform as string | undefined,
+      message: r.message as string | undefined,
+      error: r.error as string | undefined,
+      details: r.details,
+      timestamp: r.timestamp as string | undefined,
+    };
+  }
+  return { status: "success", message: String(result) };
 }

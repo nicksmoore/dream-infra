@@ -144,7 +144,7 @@ export const RESOURCE_CATEGORIES = [
   { key: "Storage", label: "Storage & DB", types: ["s3_bucket", "rds_instance", "ebs_volume"] as TerraformResourceType[] },
 ];
 
-// ===== MCP Client =====
+// ===== MCP Client (legacy, kept for direct MCP fallback) =====
 export async function callMcp(method: string, params: Record<string, unknown> = {}): Promise<McpResponse> {
   const { data, error } = await supabase.functions.invoke("terraform-mcp-proxy", {
     body: { method, params, id: crypto.randomUUID() },
@@ -168,6 +168,32 @@ export async function mcpCallTool(toolName: string, args: Record<string, unknown
   const res = await callMcp("tools/call", { name: toolName, arguments: args });
   if (res.error) throw new Error(res.error.message);
   return res.result;
+}
+
+// ===== n8n Orchestrator =====
+export const N8N_WORKFLOW_ID = "2On52H83RF3fqNPT";
+
+export interface UidiOrchestratorRequest {
+  intent: "terraform" | "kubernetes" | "ansible";
+  action: string;
+  spec: Record<string, unknown>;
+}
+
+export interface UidiOrchestratorResponse {
+  status: "success" | "error";
+  platform?: string;
+  message?: string;
+  error?: string;
+  details?: unknown;
+  timestamp?: string;
+}
+
+export function buildOrchestratorMessage(request: UidiOrchestratorRequest): string {
+  return JSON.stringify({
+    intent: request.intent,
+    action: request.action,
+    spec: request.spec,
+  });
 }
 
 // ===== Stack Builder Helpers =====
