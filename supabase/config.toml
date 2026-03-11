@@ -1,0 +1,7 @@
+project_id = "dsndddrsbzoudppmlsjg"
+
+[functions.parse-intent]
+verify_jwt = false
+
+[functions.provision-ec2]
+verify_jwt = false
