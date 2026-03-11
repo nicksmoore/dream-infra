@@ -759,6 +759,50 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
   const region = spec.region as string || "us-east-1";
 
   switch (action) {
+    case "dry_run":
+    case "plan": {
+      // DryRun validates permissions, quotas, AMI, instance type — without launching
+      const instanceType = spec.instance_type as string || "t3.micro";
+      const os = spec.os as string || "amazon-linux-2023";
+      const count = spec.count as number || 1;
+
+      const ami = AMI_MAP[region]?.[os];
+      if (!ami) return err("compute", action, `No AMI for ${os} in ${region}. Try us-east-1.`);
+
+      const params = new URLSearchParams({
+        Action: "RunInstances",
+        Version: "2016-11-15",
+        DryRun: "true",
+        ImageId: ami,
+        InstanceType: instanceType,
+        MinCount: String(count),
+        MaxCount: String(count),
+      });
+
+      if (spec.subnet_id) params.set("SubnetId", spec.subnet_id as string);
+      if (spec.key_name) params.set("KeyName", spec.key_name as string);
+      const sgIds = spec.security_group_ids as string[] | undefined;
+      if (sgIds?.length) sgIds.forEach((sg, i) => params.set(`SecurityGroupId.${i + 1}`, sg));
+
+      const res = await ec2Request("POST", region, params.toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
+      const body = await res.text();
+
+      // DryRun returns 412 with "DryRunOperation" on success, or a real error
+      if (body.includes("DryRunOperation")) {
+        return ok("compute", action, `Dry run passed: ${instanceType} x${count} in ${region} is valid`, {
+          instance_type: instanceType,
+          ami,
+          region,
+          count,
+          validation: "passed",
+          dry_run: true,
+        });
+      }
+
+      const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
+      return err("compute", action, `Dry run failed: ${errorMatch?.[1] || "Validation error"}`);
+    }
+
     case "deploy":
     case "apply": {
       const instanceType = spec.instance_type as string || "t3.micro";

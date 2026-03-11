@@ -123,7 +123,7 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
 
       <div className="flex justify-center">
         <Badge variant="outline" className="gap-1 text-xs">
-          <Cpu className="h-3 w-3" /> UIDI Core Engine → HCP Terraform API
+          <Cpu className="h-3 w-3" /> UIDI SDK Engine → AWS EC2 API
         </Badge>
       </div>
 
