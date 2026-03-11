@@ -21,7 +21,8 @@ import {
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
-import { TerraformStack } from "@/lib/terraform-mcp";
+import { TerraformStack, N8N_WORKFLOW_ID } from "@/lib/terraform-mcp";
+import { supabase as _sb } from "@/integrations/supabase/client";
 import { Rocket, KeyRound, Trash2, Zap, Layers, Server } from "lucide-react";
 
 const DEFAULT_INTENT: ParsedIntent = {
