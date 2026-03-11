@@ -16,6 +16,8 @@ export interface TerraformStack {
   name: string;
   environment: string;
   region: string;
+  organization?: string;
+  workspaceId?: string;
   resources: TerraformResource[];
   status: "draft" | "planning" | "planned" | "applying" | "applied" | "failed" | "destroyed";
   planOutput?: string;
