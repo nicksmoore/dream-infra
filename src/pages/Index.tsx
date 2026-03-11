@@ -11,6 +11,7 @@ import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { StackBuilder } from "@/components/StackBuilder";
 import { TerraformActions } from "@/components/TerraformActions";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
+import { EngineResponse } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
