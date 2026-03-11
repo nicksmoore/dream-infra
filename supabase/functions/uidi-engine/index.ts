@@ -89,6 +89,7 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
       const ws = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
       if (ws.error) return err("terraform", action, ws.error);
       const workspaceId = ws.id;
+      console.log("Resolved workspace ID:", workspaceId);
 
       // Create a run (plan-only for "plan", auto-apply for "apply"/"deploy")
       const isAutoApply = action !== "plan";
