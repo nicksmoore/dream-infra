@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.terraform-mcp-proxy]
 verify_jwt = false
+
+[functions.n8n-orchestrator]
+verify_jwt = false
