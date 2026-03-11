@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface EngineRequest {
   intent: "terraform" | "kubernetes" | "ansible" | "compute";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
