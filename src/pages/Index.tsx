@@ -8,6 +8,7 @@ import { ConfigPreview } from "@/components/ConfigPreview";
 import { CredentialsModal } from "@/components/CredentialsModal";
 import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { ComputeActions } from "@/components/ComputeActions";
+import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +21,7 @@ import {
   parseIntentRuleBased,
 } from "@/lib/intent-types";
 import { Zap, KeyRound, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
@@ -36,6 +38,7 @@ export default function Index() {
   const [credModalOpen, setCredModalOpen] = useState(false);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
+  const [detectedResources, setDetectedResources] = useState<string[]>([]);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
@@ -52,17 +55,22 @@ export default function Index() {
       if (data?.intent) {
         const merged = { ...DEFAULT_INTENT, ...data.intent };
         updateIntent(merged);
+        setDetectedResources(data.intent.resources || ["ec2"]);
         toast({ title: "Intent parsed", description: "Configuration updated from your description." });
       }
     } catch {
       const parsed = parseIntentRuleBased(input);
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
+      setDetectedResources(parsed.resources || ["ec2"]);
       toast({ title: "Used rule-based parsing", description: "AI parsing unavailable, fell back to keyword matching." });
     } finally {
       setIsParsing(false);
     }
   }, [updateIntent]);
+
+  const isMultiResource = detectedResources.length > 1 ||
+    detectedResources.some(r => ["vpc", "eks", "subnets", "nacls"].includes(r));
 
   return (
     <div className="min-h-screen bg-background">
@@ -99,25 +107,49 @@ export default function Index() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
-          <CardContent className="pt-6">
-            <IntentForm intent={intent} onChange={updateIntent} />
-          </CardContent>
-        </Card>
+        {/* Show detected resources */}
+        {detectedResources.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Detected Resources:</span>
+            {detectedResources.map(r => (
+              <Badge key={r} variant="secondary" className="text-xs uppercase">{r}</Badge>
+            ))}
+          </div>
+        )}
 
-        <Card className="bg-card">
-          <CardContent className="pt-6">
-            <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
-          </CardContent>
-        </Card>
+        {isMultiResource ? (
+          /* Multi-resource orchestration mode */
+          <OrchestrationPanel
+            resources={detectedResources}
+            region={intent.region}
+            environment={intent.environment}
+            instanceType={config.instanceType}
+            os={config.os}
+          />
+        ) : (
+          /* Single resource (EC2) mode */
+          <>
+            <Card className="bg-card">
+              <CardContent className="pt-6">
+                <IntentForm intent={intent} onChange={updateIntent} />
+              </CardContent>
+            </Card>
 
-        <ConfigPreview config={config} />
+            <Card className="bg-card">
+              <CardContent className="pt-6">
+                <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
+              </CardContent>
+            </Card>
 
-        <ComputeActions
-          config={config}
-          hasCredentials={!!credentials}
-          onRequestCredentials={() => setCredModalOpen(true)}
-        />
+            <ConfigPreview config={config} />
+
+            <ComputeActions
+              config={config}
+              hasCredentials={!!credentials}
+              onRequestCredentials={() => setCredModalOpen(true)}
+            />
+          </>
+        )}
 
         <DeploymentHistory deployments={deployments} />
       </main>

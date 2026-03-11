@@ -3,8 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ───── Types ─────
 
 export interface EngineRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
@@ -33,7 +33,112 @@ export async function executeIntent(request: EngineRequest): Promise<EngineRespo
   return data as EngineResponse;
 }
 
-// ───── Convenience helpers ─────
+// ───── Compute helpers ─────
+
+export async function computeDeploy(spec: {
+  instance_type?: string;
+  os?: string;
+  region?: string;
+  count?: number;
+  name?: string;
+  environment?: string;
+  client_token?: string;
+  subnet_id?: string;
+  key_name?: string;
+  security_group_ids?: string[];
+  user_data?: string;
+  iam_instance_profile?: string;
+  root_volume_size?: number;
+  root_volume_type?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "deploy", spec });
+}
+
+export async function computeDiscover(spec: {
+  region?: string;
+  name?: string;
+  environment?: string;
+  client_token?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "discover", spec });
+}
+
+export async function computeDestroy(spec: {
+  instance_ids?: string[];
+  instance_id?: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "destroy", spec });
+}
+
+// ───── Network helpers ─────
+
+export async function networkDeploy(spec: {
+  region?: string;
+  environment?: string;
+  name?: string;
+  vpc_cidr?: string;
+  az_count?: number;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "network", action: "deploy", spec });
+}
+
+export async function networkDiscover(spec: {
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "network", action: "discover", spec });
+}
+
+export async function networkDestroy(spec: {
+  vpc_id: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "network", action: "destroy", spec });
+}
+
+// ───── EKS helpers ─────
+
+export async function eksDeploy(spec: {
+  cluster_name?: string;
+  role_arn: string;
+  subnet_ids: string[];
+  security_group_ids?: string[];
+  kubernetes_version?: string;
+  region?: string;
+  environment?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "eks", action: "deploy", spec });
+}
+
+export async function eksDiscover(spec: {
+  cluster_name?: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "eks", action: "discover", spec });
+}
+
+export async function eksAddNodegroup(spec: {
+  cluster_name: string;
+  node_role_arn: string;
+  subnet_ids: string[];
+  instance_types?: string[];
+  desired_size?: number;
+  min_size?: number;
+  max_size?: number;
+  nodegroup_name?: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "eks", action: "add_nodegroup", spec });
+}
+
+export async function eksDestroy(spec: {
+  cluster_name: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "eks", action: "destroy", spec });
+}
+
+// ───── Legacy Terraform helpers (kept for compatibility) ─────
 
 export async function terraformPlan(spec: {
   workspace_id: string;
@@ -86,42 +191,4 @@ export async function ansibleRun(spec: {
   region?: string;
 }): Promise<EngineResponse> {
   return executeIntent({ intent: "ansible", action: "deploy", spec });
-}
-
-// ───── Compute (SDK-first) ─────
-
-export async function computeDeploy(spec: {
-  instance_type?: string;
-  os?: string;
-  region?: string;
-  count?: number;
-  name?: string;
-  environment?: string;
-  client_token?: string;
-  subnet_id?: string;
-  key_name?: string;
-  security_group_ids?: string[];
-  user_data?: string;
-  iam_instance_profile?: string;
-  root_volume_size?: number;
-  root_volume_type?: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "compute", action: "deploy", spec });
-}
-
-export async function computeDiscover(spec: {
-  region?: string;
-  name?: string;
-  environment?: string;
-  client_token?: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "compute", action: "discover", spec });
-}
-
-export async function computeDestroy(spec: {
-  instance_ids?: string[];
-  instance_id?: string;
-  region?: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "compute", action: "destroy", spec });
 }
