@@ -23,7 +23,7 @@ import {
   parseIntentRuleBased,
 } from "@/lib/intent-types";
 import { TerraformStack } from "@/lib/terraform-mcp";
-import { Rocket, KeyRound, Trash2, Zap, Layers, Server } from "lucide-react";
+import { Rocket, KeyRound, Trash2, Zap, Layers, Server, Cpu } from "lucide-react";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
