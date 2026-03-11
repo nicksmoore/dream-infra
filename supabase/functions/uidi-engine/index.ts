@@ -114,7 +114,9 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
       // If HCL provided, we need to create a configuration version first
       if (hcl) {
         // Step 1: Create config version
-        const cvRes = await fetch(`${TFE_BASE}/api/v2/workspaces/${workspaceId}/configuration-versions`, {
+        const cvUrl = `${TFE_BASE}/api/v2/workspaces/${workspaceId}/configuration-versions`;
+        console.log("Creating config version at:", cvUrl, "workspaceId:", workspaceId);
+        const cvRes = await fetch(cvUrl, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -127,7 +129,8 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
 
         if (!cvRes.ok) {
           const cvErr = await cvRes.text();
-          return err("terraform", action, `Failed to create config version: ${cvErr}`);
+          console.error("Config version error:", cvRes.status, cvErr);
+          return err("terraform", action, `Failed to create config version (workspace: ${workspaceId}): ${cvErr}`);
         }
 
         const cvData = await cvRes.json();
