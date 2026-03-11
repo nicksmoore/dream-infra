@@ -89,7 +89,25 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
       const ws = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
       if (ws.error) return err("terraform", action, ws.error);
       const workspaceId = ws.id;
-      console.log("Resolved workspace ID:", workspaceId);
+
+      // Ensure workspace is in remote execution mode
+      const patchRes = await fetch(`${TFE_BASE}/api/v2/workspaces/${workspaceId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          data: {
+            type: "workspaces",
+            id: workspaceId,
+            attributes: { "execution-mode": "remote" },
+          },
+        }),
+      });
+      console.log("PATCH execution-mode response:", patchRes.status, await patchRes.clone().text().then(t => t.slice(0, 300)));
+
+      // Verify workspace is accessible
+      const verifyRes = await fetch(`${TFE_BASE}/api/v2/workspaces/${workspaceId}`, { headers });
+      const verifyData = await verifyRes.json();
+      console.log("Workspace verify:", verifyRes.status, "execution-mode:", verifyData.data?.attributes?.["execution-mode"], "permissions:", JSON.stringify(verifyData.data?.attributes?.permissions || {}).slice(0, 200));
 
       // Create a run (plan-only for "plan", auto-apply for "apply"/"deploy")
       const isAutoApply = action !== "plan";
