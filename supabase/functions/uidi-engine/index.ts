@@ -954,6 +954,199 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
   }
 }
 
+// ───── Network (VPC / Subnets / IGW / Routes / NACLs) ─────
+
+function extractEc2Error(xml: string): string | null {
+  return xml.match(/<Message>(.*?)<\/Message>/)?.[1] || null;
+}
+
+async function handleNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("network", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+
+  switch (action) {
+    case "deploy": {
+      const vpcCidr = spec.vpc_cidr as string || "10.0.0.0/16";
+      const name = spec.name as string || "uidi-vpc";
+      const environment = spec.environment as string || "dev";
+      const azCount = Math.min(spec.az_count as number || 2, 3);
+
+      let res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateVpc", Version: "2016-11-15", CidrBlock: vpcCidr, "TagSpecification.1.ResourceType": "vpc", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": name, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI", "TagSpecification.1.Tag.3.Key": "Environment", "TagSpecification.1.Tag.3.Value": environment }).toString(), AWS_KEY, AWS_SECRET);
+      let body = await res.text();
+      if (!res.ok) return err("network", action, extractEc2Error(body) || "CreateVpc failed");
+      const vpcId = body.match(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/)?.[1];
+      if (!vpcId) return err("network", action, "Failed to extract VPC ID");
+      console.log(`Created VPC: ${vpcId}`);
+
+      await ec2Request("POST", region, new URLSearchParams({ Action: "ModifyVpcAttribute", Version: "2016-11-15", VpcId: vpcId, "EnableDnsHostnames.Value": "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateInternetGateway", Version: "2016-11-15", "TagSpecification.1.ResourceType": "internet-gateway", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-igw`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI" }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      if (!res.ok) return err("network", action, extractEc2Error(body) || "CreateInternetGateway failed");
+      const igwId = body.match(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/)?.[1];
+      if (!igwId) return err("network", action, "Failed to extract IGW ID");
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "AttachInternetGateway", Version: "2016-11-15", InternetGatewayId: igwId, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      if (!res.ok) return err("network", action, extractEc2Error(body) || "AttachInternetGateway failed");
+      console.log(`Created & attached IGW: ${igwId}`);
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeAvailabilityZones", Version: "2016-11-15", "Filter.1.Name": "state", "Filter.1.Value.1": "available" }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      const azs = [...body.matchAll(/<zoneName>([^<]+)<\/zoneName>/g)].map(m => m[1]).slice(0, azCount);
+      if (!azs.length) return err("network", action, "No availability zones found");
+
+      const subnets: { id: string; type: string; az: string; cidr: string }[] = [];
+      const cidrBase = vpcCidr.split(".").slice(0, 2);
+      for (let i = 0; i < azs.length; i++) {
+        const pubCidr = `${cidrBase[0]}.${cidrBase[1]}.${i * 2}.0/24`;
+        res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateSubnet", Version: "2016-11-15", VpcId: vpcId, CidrBlock: pubCidr, AvailabilityZone: azs[i], "TagSpecification.1.ResourceType": "subnet", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-public-${azs[i]}`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI", "TagSpecification.1.Tag.3.Key": "SubnetType", "TagSpecification.1.Tag.3.Value": "public" }).toString(), AWS_KEY, AWS_SECRET);
+        body = await res.text();
+        if (!res.ok) return err("network", action, extractEc2Error(body) || `CreateSubnet failed`);
+        const pubId = body.match(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/)?.[1];
+        if (pubId) {
+          subnets.push({ id: pubId, type: "public", az: azs[i], cidr: pubCidr });
+          await ec2Request("POST", region, new URLSearchParams({ Action: "ModifySubnetAttribute", Version: "2016-11-15", SubnetId: pubId, "MapPublicIpOnLaunch.Value": "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        }
+        const privCidr = `${cidrBase[0]}.${cidrBase[1]}.${i * 2 + 1}.0/24`;
+        res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateSubnet", Version: "2016-11-15", VpcId: vpcId, CidrBlock: privCidr, AvailabilityZone: azs[i], "TagSpecification.1.ResourceType": "subnet", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-private-${azs[i]}`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI", "TagSpecification.1.Tag.3.Key": "SubnetType", "TagSpecification.1.Tag.3.Value": "private" }).toString(), AWS_KEY, AWS_SECRET);
+        body = await res.text();
+        if (!res.ok) return err("network", action, extractEc2Error(body) || `CreateSubnet failed`);
+        const privId = body.match(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/)?.[1];
+        if (privId) subnets.push({ id: privId, type: "private", az: azs[i], cidr: privCidr });
+      }
+      console.log(`Created ${subnets.length} subnets`);
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateRouteTable", Version: "2016-11-15", VpcId: vpcId, "TagSpecification.1.ResourceType": "route-table", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-public-rt`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI" }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      const rtbId = body.match(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/)?.[1];
+      if (rtbId) {
+        await ec2Request("POST", region, new URLSearchParams({ Action: "CreateRoute", Version: "2016-11-15", RouteTableId: rtbId, DestinationCidrBlock: "0.0.0.0/0", GatewayId: igwId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        for (const sub of subnets.filter(s => s.type === "public")) {
+          await ec2Request("POST", region, new URLSearchParams({ Action: "AssociateRouteTable", Version: "2016-11-15", RouteTableId: rtbId, SubnetId: sub.id }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        }
+      }
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateNetworkAcl", Version: "2016-11-15", VpcId: vpcId, "TagSpecification.1.ResourceType": "network-acl", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-nacl`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI" }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      const naclId = body.match(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/)?.[1];
+      if (naclId) {
+        await ec2Request("POST", region, new URLSearchParams({ Action: "CreateNetworkAclEntry", Version: "2016-11-15", NetworkAclId: naclId, RuleNumber: "100", Protocol: "-1", RuleAction: "allow", CidrBlock: "0.0.0.0/0", Egress: "false" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        await ec2Request("POST", region, new URLSearchParams({ Action: "CreateNetworkAclEntry", Version: "2016-11-15", NetworkAclId: naclId, RuleNumber: "100", Protocol: "-1", RuleAction: "allow", CidrBlock: "0.0.0.0/0", Egress: "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+      }
+
+      res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateSecurityGroup", Version: "2016-11-15", GroupName: `${name}-sg`, Description: `UIDI managed SG for ${name}`, VpcId: vpcId, "TagSpecification.1.ResourceType": "security-group", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": `${name}-sg`, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI" }).toString(), AWS_KEY, AWS_SECRET);
+      body = await res.text();
+      const sgId = body.match(/<groupId>(sg-[a-f0-9]+)<\/groupId>/)?.[1];
+      if (sgId) {
+        await ec2Request("POST", region, new URLSearchParams({ Action: "AuthorizeSecurityGroupIngress", Version: "2016-11-15", GroupId: sgId, "IpPermissions.1.IpProtocol": "tcp", "IpPermissions.1.FromPort": "22", "IpPermissions.1.ToPort": "22", "IpPermissions.1.IpRanges.1.CidrIp": "0.0.0.0/0" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        await ec2Request("POST", region, new URLSearchParams({ Action: "AuthorizeSecurityGroupIngress", Version: "2016-11-15", GroupId: sgId, "IpPermissions.1.IpProtocol": "tcp", "IpPermissions.1.FromPort": "443", "IpPermissions.1.ToPort": "443", "IpPermissions.1.IpRanges.1.CidrIp": "0.0.0.0/0" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+      }
+
+      return ok("network", action, `VPC stack created: ${vpcId} with ${subnets.length} subnets, IGW, route table, NACL, and security group`, { vpc_id: vpcId, igw_id: igwId, route_table_id: rtbId, nacl_id: naclId, security_group_id: sgId, subnets, region, vpc_cidr: vpcCidr });
+    }
+
+    case "discover": {
+      const dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcs", Version: "2016-11-15", "Filter.1.Name": "tag:ManagedBy", "Filter.1.Value.1": "UIDI" }).toString(), AWS_KEY, AWS_SECRET);
+      const dBody = await dRes.text();
+      if (!dRes.ok) return err("network", action, extractEc2Error(dBody) || "DescribeVpcs failed");
+      const vpcs = [...dBody.matchAll(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/g)].map(m => m[1]);
+      return ok("network", action, `Discovered ${vpcs.length} UIDI-managed VPC(s)`, { vpcs, region });
+    }
+
+    case "destroy": {
+      const vpcId = spec.vpc_id as string;
+      if (!vpcId) return err("network", action, "vpc_id required for destroy");
+      let dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSubnets", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+      let dBody = await dRes.text();
+      for (const sid of [...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].map(m => m[1])) {
+        await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSubnet", Version: "2016-11-15", SubnetId: sid }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+      }
+      dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeInternetGateways", Version: "2016-11-15", "Filter.1.Name": "attachment.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+      dBody = await dRes.text();
+      for (const gid of [...dBody.matchAll(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/g)].map(m => m[1])) {
+        await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+      }
+      dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpc", Version: "2016-11-15", VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
+      dBody = await dRes.text();
+      if (!dRes.ok) return err("network", action, extractEc2Error(dBody) || "DeleteVpc failed");
+      return ok("network", action, `VPC ${vpcId} destroyed`, { vpc_id: vpcId, region });
+    }
+
+    default:
+      return err("network", action, `Unknown network action: ${action}`);
+  }
+}
+
+// ───── EKS ─────
+
+async function handleEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("eks", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+
+  switch (action) {
+    case "deploy": {
+      const clusterName = spec.cluster_name as string || `uidi-cluster-${Date.now()}`;
+      const roleArn = spec.role_arn as string;
+      const subnetIds = spec.subnet_ids as string[];
+      const securityGroupIds = spec.security_group_ids as string[];
+      if (!roleArn) return err("eks", action, "role_arn required (IAM role with AmazonEKSClusterPolicy).");
+      if (!subnetIds?.length) return err("eks", action, "subnet_ids required (at least 2 AZs).");
+      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ name: clusterName, version: spec.kubernetes_version || "1.29", roleArn, resourcesVpcConfig: { subnetIds, securityGroupIds: securityGroupIds || [], endpointPublicAccess: true, endpointPrivateAccess: true }, tags: { ManagedBy: "UIDI", Environment: spec.environment || "dev" } }), extraHeaders: { "Content-Type": "application/json" } });
+      const body = await res.text();
+      if (!res.ok) { if (body.includes("ResourceInUseException")) return ok("eks", action, `Cluster ${clusterName} already exists`, { cluster_name: clusterName, status: "existing" }); return err("eks", action, `CreateCluster failed: ${body.slice(0, 500)}`); }
+      const data = JSON.parse(body);
+      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region });
+    }
+
+    case "discover":
+    case "status": {
+      const clusterName = spec.cluster_name as string;
+      if (clusterName) {
+        const res = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+        const body = await res.text();
+        if (!res.ok) return err("eks", action, `DescribeCluster failed: ${body.slice(0, 500)}`);
+        const data = JSON.parse(body);
+        return ok("eks", action, `Cluster ${clusterName}: ${data.cluster?.status}`, { cluster_name: clusterName, status: data.cluster?.status, endpoint: data.cluster?.endpoint, version: data.cluster?.version });
+      }
+      const res = await awsSignedRequest({ service: "eks", region, method: "GET", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `ListClusters failed: ${body.slice(0, 500)}`);
+      const data = JSON.parse(body);
+      return ok("eks", action, `Found ${data.clusters?.length || 0} cluster(s)`, { clusters: data.clusters || [], region });
+    }
+
+    case "add_nodegroup": {
+      const clusterName = spec.cluster_name as string;
+      if (!clusterName || !spec.node_role_arn || !(spec.subnet_ids as string[])?.length) return err("eks", action, "cluster_name, node_role_arn, subnet_ids required.");
+      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ nodegroupName: spec.nodegroup_name || `${clusterName}-nodes`, nodeRole: spec.node_role_arn, subnets: spec.subnet_ids, instanceTypes: spec.instance_types || ["t3.medium"], scalingConfig: { desiredSize: spec.desired_size || 2, minSize: spec.min_size || 1, maxSize: spec.max_size || 3 }, tags: { ManagedBy: "UIDI" } }), extraHeaders: { "Content-Type": "application/json" } });
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `CreateNodegroup failed: ${body.slice(0, 500)}`);
+      return ok("eks", action, `Node group creation started`, JSON.parse(body).nodegroup || {});
+    }
+
+    case "destroy": {
+      const clusterName = spec.cluster_name as string;
+      if (!clusterName) return err("eks", action, "cluster_name required.");
+      const ngRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const ngBody = await ngRes.text();
+      if (ngRes.ok) { for (const ng of (JSON.parse(ngBody).nodegroups || [])) { await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${clusterName}/node-groups/${ng}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET }).then(r => r.text()); } }
+      const res = await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const body = await res.text();
+      if (!res.ok && !body.includes("ResourceNotFoundException")) return err("eks", action, `DeleteCluster failed: ${body.slice(0, 500)}`);
+      return ok("eks", action, `EKS cluster ${clusterName} deletion initiated`, { cluster_name: clusterName, region });
+    }
+
+    default:
+      return err("eks", action, `Unknown EKS action: ${action}`);
+  }
+}
+
 async function ec2Request(method: string, region: string, body: string, accessKey: string, secretKey: string): Promise<Response> {
   const service = "ec2";
   const host = `${service}.${region}.amazonaws.com`;
