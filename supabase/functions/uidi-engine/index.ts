@@ -184,9 +184,12 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
     }
 
     case "destroy": {
-      if (!workspaceId) {
+      if (!rawWorkspaceId) {
         return err("terraform", action, "workspace_id is required for destroy.");
       }
+      const wsD = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
+      if (wsD.error) return err("terraform", action, wsD.error);
+      const workspaceId = wsD.id;
 
       const destroyRes = await fetch(`${TFE_BASE}/api/v2/runs`, {
         method: "POST",
