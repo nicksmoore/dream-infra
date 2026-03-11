@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
