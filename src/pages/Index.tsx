@@ -43,7 +43,7 @@ const DEFAULT_STACK: TerraformStack = {
   createdAt: new Date(),
 };
 
-export default function Index() {
+export default function Index() { 
   const [activeMode, setActiveMode] = useState<"ec2" | "terraform">("terraform");
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
