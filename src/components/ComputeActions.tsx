@@ -36,10 +36,10 @@ export function ComputeActions({ config, hasCredentials, onRequestCredentials }:
     try {
       const spec: Record<string, unknown> = {
         instance_type: config.instanceType,
-        os: config.amiId || "amazon-linux-2023",
+        os: config.os || "amazon-linux-2023",
         region: config.region,
-        environment: config.tags?.Environment || "dev",
-        name: config.tags?.Name || "uidi-instance",
+        environment: config.environment || "dev",
+        name: "uidi-instance",
         count: config.instanceCount || 1,
       };
 
