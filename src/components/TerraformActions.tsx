@@ -44,7 +44,8 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
         intent: "terraform",
         action,
         spec: {
-          workspace_id: workspaceId || stack.name,
+          workspace_id: workspaceId || stack.workspaceId || stack.name,
+          organization: stack.organization,
           hcl,
           region: stack.region,
           environment: stack.environment,

@@ -26,6 +26,40 @@ interface EngineResponse {
 
 // ───── Provider Clients ─────
 
+async function resolveWorkspaceId(
+  tfeBase: string,
+  headers: Record<string, string>,
+  workspaceIdOrName: string,
+  organization?: string,
+): Promise<{ id: string; error?: string }> {
+  // If it already looks like a workspace ID (ws-...), use it directly
+  if (workspaceIdOrName.startsWith("ws-")) {
+    return { id: workspaceIdOrName };
+  }
+
+  // Otherwise treat it as a name and look it up via the org
+  if (!organization) {
+    return { id: "", error: "organization is required when workspace_id is a name (not ws-xxx). Add 'organization' to spec." };
+  }
+
+  const res = await fetch(
+    `${tfeBase}/api/v2/organizations/${encodeURIComponent(organization)}/workspaces/${encodeURIComponent(workspaceIdOrName)}`,
+    { headers },
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    return { id: "", error: `Workspace lookup failed (${res.status}): ${body}` };
+  }
+
+  const data = await res.json();
+  const id = data.data?.id as string;
+  if (!id) {
+    return { id: "", error: "Workspace found but missing id in response." };
+  }
+  return { id };
+}
+
 async function handleTerraform(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
   const TFE_TOKEN = Deno.env.get("TFE_TOKEN");
   if (!TFE_TOKEN) {
@@ -33,7 +67,8 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
   }
 
   const TFE_BASE = spec.tfe_base_url as string || "https://app.terraform.io";
-  const workspaceId = spec.workspace_id as string;
+  const rawWorkspaceId = spec.workspace_id as string;
+  const organization = spec.organization as string | undefined;
 
   const headers = {
     "Authorization": `Bearer ${TFE_TOKEN}`,
@@ -44,12 +79,16 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
     case "plan":
     case "deploy":
     case "apply": {
-      // If we have HCL, upload a configuration version then trigger a run
       const hcl = spec.hcl as string | undefined;
 
-      if (!workspaceId) {
+      if (!rawWorkspaceId) {
         return err("terraform", action, "workspace_id is required in spec.");
       }
+
+      // Resolve workspace name → ID if needed
+      const ws = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
+      if (ws.error) return err("terraform", action, ws.error);
+      const workspaceId = ws.id;
 
       // Create a run (plan-only for "plan", auto-apply for "apply"/"deploy")
       const isAutoApply = action !== "plan";
@@ -145,9 +184,12 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
     }
 
     case "destroy": {
-      if (!workspaceId) {
+      if (!rawWorkspaceId) {
         return err("terraform", action, "workspace_id is required for destroy.");
       }
+      const wsD = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
+      if (wsD.error) return err("terraform", action, wsD.error);
+      const workspaceId = wsD.id;
 
       const destroyRes = await fetch(`${TFE_BASE}/api/v2/runs`, {
         method: "POST",
