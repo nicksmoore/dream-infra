@@ -97,11 +97,11 @@ export function TerraformActions({ stack, onStatusChange, hasCredentials, onRequ
       <div className="flex items-center justify-center gap-3 flex-wrap">
         <Button
           variant="outline"
-          onClick={() => runAction("plan")}
+          onClick={() => runAction("dry_run")}
           disabled={isRunning || stack.resources.length === 0}
         >
-          {isRunning && currentAction === "plan" ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileSearch className="h-4 w-4 mr-2" />}
-          Plan
+          {isRunning && currentAction === "dry_run" ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileSearch className="h-4 w-4 mr-2" />}
+          Dry Run
         </Button>
         <Button
           onClick={() => runAction("apply")}
