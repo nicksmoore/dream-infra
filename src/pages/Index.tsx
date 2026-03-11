@@ -183,7 +183,6 @@ export default function Index() {
               onStatusChange={handleStackStatusChange}
               hasCredentials={!!credentials}
               onRequestCredentials={() => setCredModalOpen(true)}
-              executeWorkflow={n8nConnected ? executeN8nWorkflow : undefined}
             />
           </TabsContent>
 
