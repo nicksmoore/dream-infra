@@ -2,12 +2,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { executeIntent } from "@/lib/uidi-engine";
 import type { EngineResponse } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck } from "lucide-react";
 
 interface OrchestrationStep {
   id: string;
@@ -39,9 +37,6 @@ export function OrchestrationPanel({
   os = "amazon-linux-2023",
   onComplete,
 }: OrchestrationPanelProps) {
-  const [eksRoleArn, setEksRoleArn] = useState("");
-  const [eksNodeRoleArn, setEksNodeRoleArn] = useState("");
-
   const buildSteps = (): OrchestrationStep[] => {
     const result: OrchestrationStep[] = [];
 
@@ -62,16 +57,16 @@ export function OrchestrationPanel({
       result.push({
         id: "eks",
         name: "EKS Cluster",
-        description: "Managed Kubernetes cluster (creation takes ~10-15 min)",
+        description: "Managed Kubernetes cluster — IAM role auto-provisioned (~10-15 min)",
         icon: <Box className="h-4 w-4" />,
         intent: "eks",
         action: "deploy",
         spec: {
           region, environment,
           cluster_name: `uidi-${environment}-cluster`,
-          role_arn: "", // filled at runtime
           subnet_ids: [], // filled from network step
           kubernetes_version: "1.29",
+          // role_arn intentionally omitted — engine auto-resolves
         },
         status: "pending",
       });
@@ -101,15 +96,7 @@ export function OrchestrationPanel({
   const [steps, setSteps] = useState<OrchestrationStep[]>(buildSteps);
   const [isRunning, setIsRunning] = useState(false);
 
-  const hasEks = resources.includes("eks");
-  const eksValid = !hasEks || eksRoleArn.trim().length > 0;
-
   async function runOrchestration() {
-    if (hasEks && !eksRoleArn) {
-      toast({ title: "EKS Role ARN required", description: "Provide the IAM role ARN with AmazonEKSClusterPolicy.", variant: "destructive" });
-      return;
-    }
-
     setIsRunning(true);
     let networkResult: EngineResponse | null = null;
 
@@ -128,7 +115,6 @@ export function OrchestrationPanel({
         const subnets = details.subnets as { id: string; type: string }[];
         spec.subnet_ids = subnets?.map(s => s.id) || [];
         spec.security_group_ids = details.security_group_id ? [details.security_group_id] : [];
-        spec.role_arn = eksRoleArn;
       }
 
       if (step.id === "ec2" && networkResult?.details) {
@@ -178,6 +164,8 @@ export function OrchestrationPanel({
     }
   };
 
+  const hasEks = resources.includes("eks");
+
   return (
     <Card className="bg-card border-primary/20">
       <CardHeader className="pb-3">
@@ -190,31 +178,14 @@ export function OrchestrationPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* EKS Role inputs */}
+        {/* IAM auto-provision notice */}
         {hasEks && (
-          <div className="space-y-3 p-3 rounded-lg bg-muted/30 border border-border">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">EKS Configuration</p>
-            <div className="space-y-2">
-              <Label htmlFor="eks-role" className="text-xs">Cluster Role ARN <span className="text-destructive">*</span></Label>
-              <Input
-                id="eks-role"
-                placeholder="arn:aws:iam::123456789:role/eks-cluster-role"
-                value={eksRoleArn}
-                onChange={e => setEksRoleArn(e.target.value)}
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">IAM role with AmazonEKSClusterPolicy attached</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="eks-node-role" className="text-xs">Node Role ARN (optional, for node groups)</Label>
-              <Input
-                id="eks-node-role"
-                placeholder="arn:aws:iam::123456789:role/eks-node-role"
-                value={eksNodeRoleArn}
-                onChange={e => setEksNodeRoleArn(e.target.value)}
-                className="font-mono text-xs"
-              />
-            </div>
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border">
+            <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">IAM roles auto-managed</span> — The engine will discover or create{" "}
+              <code className="text-xs bg-muted px-1 rounded">UIDI-EKS-Cluster-Role</code> with the correct trust policy and policies attached.
+            </p>
           </div>
         )}
 
@@ -250,7 +221,7 @@ export function OrchestrationPanel({
           ))}
         </div>
 
-        <Button onClick={runOrchestration} disabled={isRunning || !eksValid} className="w-full">
+        <Button onClick={runOrchestration} disabled={isRunning} className="w-full">
           {isRunning ? (
             <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Deploying Stack...</>
           ) : (

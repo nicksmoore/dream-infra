@@ -1236,7 +1236,7 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
       const body = await res.text();
       if (!res.ok) { if (body.includes("ResourceInUseException")) return ok("eks", action, `Cluster ${clusterName} already exists`, { cluster_name: clusterName, status: "existing" }); return err("eks", action, `CreateCluster failed: ${body.slice(0, 500)}`); }
       const data = JSON.parse(body);
-      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region });
+      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)${roleAutoProvisioned ? " (IAM role auto-provisioned)" : ""}`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region, role_arn: roleArn, role_auto_provisioned: roleAutoProvisioned });
     }
 
     case "discover":
