@@ -1163,13 +1163,27 @@ async function getOrCreateEksRole(accessKey: string, secretKey: string, roleType
     "Tag.member.1.Value": "UIDI",
   }).toString(), accessKey, secretKey);
   const createBody = await createRes.text();
+  console.log(`IAM CreateRole response: ${createRes.status} ${createBody.slice(0, 300)}`);
 
+  // Handle EntityAlreadyExists (role created on previous timed-out attempt)
   if (!createRes.ok) {
+    if (createBody.includes("EntityAlreadyExists")) {
+      console.log(`IAM Role Resolver: Role already exists (previous attempt), fetching ARN...`);
+      const retryGet = await iamRequest("POST", "/", new URLSearchParams({
+        Action: "GetRole",
+        Version: "2010-05-08",
+        RoleName: roleName,
+      }).toString(), accessKey, secretKey);
+      const retryBody = await retryGet.text();
+      const retryArn = retryBody.match(/<Arn>([^<]+)<\/Arn>/)?.[1];
+      if (retryArn) return { arn: retryArn, created: false };
+    }
     throw new Error(`Failed to create IAM role ${roleName}: ${createBody.match(/<Message>(.*?)<\/Message>/)?.[1] || createBody.slice(0, 300)}`);
   }
 
   const arnMatch = createBody.match(/<Arn>([^<]+)<\/Arn>/);
   if (!arnMatch) throw new Error(`Created role but couldn't extract ARN`);
+  console.log(`IAM Role Resolver: Role created with ARN ${arnMatch[1]}, attaching policies...`);
 
   // 3. Attach the required policy
   const attachRes = await iamRequest("POST", "/", new URLSearchParams({
@@ -1178,7 +1192,8 @@ async function getOrCreateEksRole(accessKey: string, secretKey: string, roleType
     RoleName: roleName,
     PolicyArn: policyArn,
   }).toString(), accessKey, secretKey);
-  await attachRes.text();
+  const attachBody = await attachRes.text();
+  console.log(`IAM AttachRolePolicy response: ${attachRes.status}`);
 
   // For node role, attach additional required policies
   if (roleType === "node") {
@@ -1198,8 +1213,8 @@ async function getOrCreateEksRole(accessKey: string, secretKey: string, roleType
 
   console.log(`IAM Role Resolver: Created and configured ${roleName} → ${arnMatch[1]}`);
 
-  // Brief wait for IAM propagation
-  await new Promise(r => setTimeout(r, 5000));
+  // Brief wait for IAM propagation (reduced from 5s)
+  await new Promise(r => setTimeout(r, 2000));
 
   return { arn: arnMatch[1], created: true };
 }
