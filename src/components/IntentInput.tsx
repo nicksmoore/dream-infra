@@ -26,7 +26,7 @@ export function IntentInput({ onParse, isLoading }: IntentInputProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder='e.g. "Deploy a small dev server for testing" or "I need a high-performance compute instance in EU for production"'
-          className="min-h-[100px] resize-none font-mono text-sm bg-card border-border"
+          className="min-h-[200px] resize-y font-mono text-sm bg-card border-border"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit();
           }}
