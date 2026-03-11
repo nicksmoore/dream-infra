@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.n8n-orchestrator]
 verify_jwt = false
+
+[functions.uidi-engine]
+verify_jwt = false
