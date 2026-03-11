@@ -125,6 +125,26 @@ export function StackBuilder({ stack, onUpdate }: StackBuilderProps) {
             </Select>
           </div>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">HCP Organization</Label>
+            <Input
+              value={stack.organization || ""}
+              onChange={e => onUpdate({ ...stack, organization: e.target.value })}
+              placeholder="my-org"
+              className="font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Workspace ID / Name</Label>
+            <Input
+              value={stack.workspaceId || ""}
+              onChange={e => onUpdate({ ...stack, workspaceId: e.target.value })}
+              placeholder="ws-xxxx or workspace-name"
+              className="font-mono text-sm"
+            />
+          </div>
+        </div>
 
         {/* Presets */}
         <div className="space-y-2">
