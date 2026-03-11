@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "terraform" | "kubernetes" | "ansible";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
@@ -735,6 +735,215 @@ async function getEksToken(
   return `k8s-aws-v1.${b64}`;
 }
 
+// ───── Compute (SDK-first, idempotent) ─────
+
+const AMI_MAP: Record<string, Record<string, string>> = {
+  "us-east-1": { "amazon-linux-2023": "ami-0c02fb55956c7d316", ubuntu: "ami-0c7217cdde317cfec", debian: "ami-0b6d6dac03916517a", rhel: "ami-0583d8c7a9c35822c" },
+  "us-east-2": { "amazon-linux-2023": "ami-0ea3c35c5c3284d82", ubuntu: "ami-0b8b44ec9a8f90422" },
+  "us-west-1": { "amazon-linux-2023": "ami-0f8e81a3da6e2510a", ubuntu: "ami-0ce2cb35386fc22e9" },
+  "us-west-2": { "amazon-linux-2023": "ami-017fecd1353bcc96e", ubuntu: "ami-03f65b8614a860c29" },
+  "eu-west-1": { "amazon-linux-2023": "ami-0905a3c97561e0b69", ubuntu: "ami-0694d931cee176e7d" },
+  "eu-central-1": { "amazon-linux-2023": "ami-0faab6bdbac9486fb", ubuntu: "ami-0faab6bdbac9486fb" },
+  "ap-southeast-1": { "amazon-linux-2023": "ami-0b825ad86f2aec8cc", ubuntu: "ami-078c1149d8ad719a7" },
+  "ap-northeast-1": { "amazon-linux-2023": "ami-0d52744d6551d851e", ubuntu: "ami-07c589821f2b353aa" },
+};
+
+async function handleCompute(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+
+  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+    return err("compute", action, "AWS credentials required. Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or pass in spec.");
+  }
+
+  const region = spec.region as string || "us-east-1";
+
+  switch (action) {
+    case "deploy":
+    case "apply": {
+      const instanceType = spec.instance_type as string || "t3.micro";
+      const os = spec.os as string || "amazon-linux-2023";
+      const count = spec.count as number || 1;
+      const name = spec.name as string || `uidi-${Date.now()}`;
+      const environment = spec.environment as string || "dev";
+
+      const ami = AMI_MAP[region]?.[os];
+      if (!ami) return err("compute", action, `No AMI for ${os} in ${region}. Try us-east-1.`);
+
+      // Idempotency via ClientToken — re-sending the same token returns the same instances
+      const clientToken = spec.client_token as string || `uidi-${name}-${environment}-${instanceType}-${region}`;
+
+      const params = new URLSearchParams({
+        Action: "RunInstances",
+        Version: "2016-11-15",
+        ImageId: ami,
+        InstanceType: instanceType,
+        MinCount: String(count),
+        MaxCount: String(count),
+        ClientToken: clientToken,
+        "TagSpecification.1.ResourceType": "instance",
+        "TagSpecification.1.Tag.1.Key": "Name",
+        "TagSpecification.1.Tag.1.Value": name,
+        "TagSpecification.1.Tag.2.Key": "ManagedBy",
+        "TagSpecification.1.Tag.2.Value": "UIDI",
+        "TagSpecification.1.Tag.3.Key": "Environment",
+        "TagSpecification.1.Tag.3.Value": environment,
+        "TagSpecification.1.Tag.4.Key": "ClientToken",
+        "TagSpecification.1.Tag.4.Value": clientToken,
+      });
+
+      // Optional: subnet, security groups, key pair, user data
+      if (spec.subnet_id) params.set("SubnetId", spec.subnet_id as string);
+      if (spec.key_name) params.set("KeyName", spec.key_name as string);
+      if (spec.user_data) params.set("UserData", btoa(spec.user_data as string));
+      const sgIds = spec.security_group_ids as string[] | undefined;
+      if (sgIds?.length) sgIds.forEach((sg, i) => params.set(`SecurityGroupId.${i + 1}`, sg));
+      if (spec.iam_instance_profile) {
+        const profile = spec.iam_instance_profile as string;
+        if (profile.startsWith("arn:")) params.set("IamInstanceProfile.Arn", profile);
+        else params.set("IamInstanceProfile.Name", profile);
+      }
+
+      // EBS root volume
+      if (spec.root_volume_size) {
+        params.set("BlockDeviceMapping.1.DeviceName", os.startsWith("windows") ? "/dev/sda1" : "/dev/xvda");
+        params.set("BlockDeviceMapping.1.Ebs.VolumeSize", String(spec.root_volume_size));
+        params.set("BlockDeviceMapping.1.Ebs.VolumeType", spec.root_volume_type as string || "gp3");
+        params.set("BlockDeviceMapping.1.Ebs.DeleteOnTermination", "true");
+      }
+
+      console.log(`Compute deploy: ${instanceType} x${count} in ${region}, token=${clientToken}`);
+
+      const res = await ec2Request("POST", region, params.toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
+      const body = await res.text();
+
+      if (!res.ok) {
+        // IdempotentParameterMismatch means same token, different params
+        if (body.includes("IdempotentParameterMismatch")) {
+          return err("compute", action, "Idempotent conflict: a deployment with this token exists but with different parameters. Use a new client_token or change the name.");
+        }
+        const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
+        return err("compute", action, errorMatch?.[1] || `EC2 API error (${res.status})`);
+      }
+
+      const instanceIds = [...body.matchAll(/<instanceId>(i-[a-f0-9]+)<\/instanceId>/g)].map(m => m[1]);
+
+      return ok("compute", action, `Launched ${instanceIds.length} instance(s) with idempotency token`, {
+        instance_ids: instanceIds,
+        client_token: clientToken,
+        instance_type: instanceType,
+        region,
+        ami,
+        idempotent: true,
+      });
+    }
+
+    case "discover":
+    case "status": {
+      // Query real AWS state — no tfstate needed
+      const filters: string[][] = [];
+      if (spec.name) filters.push(["tag:Name", spec.name as string]);
+      if (spec.environment) filters.push(["tag:Environment", spec.environment as string]);
+      if (spec.client_token) filters.push(["client-token", spec.client_token as string]);
+      filters.push(["tag:ManagedBy", "UIDI"]);
+      // Exclude terminated
+      filters.push(["instance-state-name", "pending", "running", "stopping", "stopped"]);
+
+      const params = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15" });
+      filters.forEach((f, i) => {
+        params.set(`Filter.${i + 1}.Name`, f[0]);
+        f.slice(1).forEach((v, vi) => params.set(`Filter.${i + 1}.Value.${vi + 1}`, v));
+      });
+
+      const res = await ec2Request("POST", region, params.toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
+      const body = await res.text();
+
+      if (!res.ok) {
+        const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
+        return err("compute", action, errorMatch?.[1] || `DescribeInstances failed (${res.status})`);
+      }
+
+      // Parse instances from XML
+      const instances = [...body.matchAll(/<instanceId>(i-[a-f0-9]+)<\/instanceId>/g)].map(m => m[1]);
+      const states = [...body.matchAll(/<name>(pending|running|stopping|stopped|shutting-down|terminated)<\/name>/g)].map(m => m[1]);
+      const types = [...body.matchAll(/<instanceType>([^<]+)<\/instanceType>/g)].map(m => m[1]);
+      const publicIps = [...body.matchAll(/<ipAddress>([^<]+)<\/ipAddress>/g)].map(m => m[1]);
+      const privateIps = [...body.matchAll(/<privateIpAddress>([^<]+)<\/privateIpAddress>/g)].map(m => m[1]);
+      const launchTimes = [...body.matchAll(/<launchTime>([^<]+)<\/launchTime>/g)].map(m => m[1]);
+
+      const discovered = instances.map((id, i) => ({
+        instance_id: id,
+        state: states[i] || "unknown",
+        instance_type: types[i] || "unknown",
+        public_ip: publicIps[i] || null,
+        private_ip: privateIps[i] || null,
+        launch_time: launchTimes[i] || null,
+      }));
+
+      return ok("compute", action, `Discovered ${discovered.length} UIDI-managed instance(s)`, {
+        instances: discovered,
+        region,
+        source: "aws-api-realtime",
+      });
+    }
+
+    case "destroy": {
+      const instanceIds = spec.instance_ids as string[] || (spec.instance_id ? [spec.instance_id as string] : []);
+      if (!instanceIds.length) return err("compute", action, "instance_ids or instance_id required for destroy.");
+
+      const params = new URLSearchParams({ Action: "TerminateInstances", Version: "2016-11-15" });
+      instanceIds.forEach((id, i) => params.set(`InstanceId.${i + 1}`, id));
+
+      const res = await ec2Request("POST", region, params.toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
+      const body = await res.text();
+
+      if (!res.ok) {
+        const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
+        return err("compute", action, errorMatch?.[1] || `TerminateInstances failed (${res.status})`);
+      }
+
+      return ok("compute", action, `Terminated ${instanceIds.length} instance(s)`, { instance_ids: instanceIds, region });
+    }
+
+    default:
+      return err("compute", action, `Unknown compute action: ${action}. Supported: deploy, discover, status, destroy.`);
+  }
+}
+
+async function ec2Request(method: string, region: string, body: string, accessKey: string, secretKey: string): Promise<Response> {
+  const service = "ec2";
+  const host = `${service}.${region}.amazonaws.com`;
+  const url = `https://${host}/`;
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Host: host,
+    "X-Amz-Date": amzDate,
+  };
+
+  const bodyHash = await sha256Hex(body);
+  const signedHeaderKeys = Object.keys(headers).map(k => k.toLowerCase()).sort();
+  const canonicalHeaders = signedHeaderKeys.map(k => `${k}:${headers[Object.keys(headers).find(h => h.toLowerCase() === k)!]}`).join("\n") + "\n";
+  const signedHeadersStr = signedHeaderKeys.join(";");
+
+  const canonicalRequest = [method, "/", "", canonicalHeaders, signedHeadersStr, bodyHash].join("\n");
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256Hex(canonicalRequest)].join("\n");
+
+  const kDate = await hmacSha256(new TextEncoder().encode(`AWS4${secretKey}`), dateStamp);
+  const kRegion = await hmacSha256(kDate, region);
+  const kService = await hmacSha256(kRegion, service);
+  const kSigning = await hmacSha256(kService, "aws4_request");
+  const signature = await hmacSha256Hex(kSigning, stringToSign);
+
+  headers["Authorization"] = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`;
+
+  return fetch(url, { method, headers, body });
+}
+
 // ───── Helpers ─────
 
 function ok(intent: string, action: string, message: string, details?: unknown): EngineResponse {
@@ -775,8 +984,11 @@ serve(async (req) => {
       case "ansible":
         result = await handleAnsible(action, spec);
         break;
+      case "compute":
+        result = await handleCompute(action, spec);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute.`);
     }
 
     return new Response(JSON.stringify(result), {

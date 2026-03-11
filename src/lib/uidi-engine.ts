@@ -3,8 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ───── Types ─────
 
 export interface EngineRequest {
-  intent: "terraform" | "kubernetes" | "ansible";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
@@ -86,4 +86,42 @@ export async function ansibleRun(spec: {
   region?: string;
 }): Promise<EngineResponse> {
   return executeIntent({ intent: "ansible", action: "deploy", spec });
+}
+
+// ───── Compute (SDK-first) ─────
+
+export async function computeDeploy(spec: {
+  instance_type?: string;
+  os?: string;
+  region?: string;
+  count?: number;
+  name?: string;
+  environment?: string;
+  client_token?: string;
+  subnet_id?: string;
+  key_name?: string;
+  security_group_ids?: string[];
+  user_data?: string;
+  iam_instance_profile?: string;
+  root_volume_size?: number;
+  root_volume_type?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "deploy", spec });
+}
+
+export async function computeDiscover(spec: {
+  region?: string;
+  name?: string;
+  environment?: string;
+  client_token?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "discover", spec });
+}
+
+export async function computeDestroy(spec: {
+  instance_ids?: string[];
+  instance_id?: string;
+  region?: string;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "compute", action: "destroy", spec });
 }
