@@ -1060,6 +1060,16 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
       const environment = spec.environment as string || "dev";
       const azCount = Math.min(spec.az_count as number || 2, 3);
 
+      const existingStack = await describeExistingNetworkStack(region, name, environment, AWS_KEY, AWS_SECRET);
+      if (existingStack) {
+        return ok(
+          "network",
+          action,
+          `Reused existing VPC stack: ${existingStack.vpc_id} with ${existingStack.subnets.length} subnets`,
+          existingStack,
+        );
+      }
+
       let res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateVpc", Version: "2016-11-15", CidrBlock: vpcCidr, "TagSpecification.1.ResourceType": "vpc", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": name, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI", "TagSpecification.1.Tag.3.Key": "Environment", "TagSpecification.1.Tag.3.Value": environment }).toString(), AWS_KEY, AWS_SECRET);
       let body = await res.text();
       if (!res.ok) return err("network", action, extractEc2Error(body) || "CreateVpc failed");
