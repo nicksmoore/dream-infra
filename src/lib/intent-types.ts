@@ -56,6 +56,7 @@ export interface ParsedIntent {
   environment: Environment;
   region: AwsRegion;
   os: OsType;
+  resources?: string[];
 }
 
 // ===== Full EC2 Config =====
