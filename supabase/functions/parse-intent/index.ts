@@ -32,7 +32,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are an infrastructure intent parser. Extract structured intent from natural language infrastructure requests. Use the tool provided to return the result.`,
+            content: `You are an infrastructure intent parser. Extract structured intent from natural language infrastructure requests. Identify ALL resource types mentioned (vpc, subnets, nacls, eks, ec2). Use the tool provided to return the result.`,
           },
           { role: "user", content: message },
         ],
@@ -45,15 +45,20 @@ serve(async (req) => {
               parameters: {
                 type: "object",
                 properties: {
+                  resources: {
+                    type: "array",
+                    items: { type: "string", enum: ["vpc", "subnets", "nacls", "eks", "ec2"] },
+                    description: "AWS resource types mentioned in the request. Include 'ec2' if any server/instance is mentioned. Include 'subnets' if VPC is mentioned (subnets are always needed with VPC).",
+                  },
                   workloadType: {
                     type: "string",
-                    enum: ["general", "compute", "memory"],
-                    description: "Type of workload: general purpose, compute intensive, or memory intensive",
+                    enum: ["general", "compute", "memory", "storage", "accelerated", "hpc"],
+                    description: "Type of workload: general purpose, compute intensive, memory intensive, storage optimized, GPU/accelerated, or HPC",
                   },
                   costSensitivity: {
                     type: "string",
                     enum: ["cheapest", "balanced", "production"],
-                    description: "Cost preference: cheapest possible, balanced, or production grade",
+                    description: "Cost preference. 'right-sizing' = balanced. cheap/small/minimal = cheapest. production/enterprise = production.",
                   },
                   environment: {
                     type: "string",
@@ -62,16 +67,16 @@ serve(async (req) => {
                   },
                   region: {
                     type: "string",
-                    enum: ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"],
+                    enum: ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1", "ap-northeast-1"],
                     description: "AWS region",
                   },
                   os: {
                     type: "string",
-                    enum: ["amazon-linux-2023", "ubuntu"],
-                    description: "Operating system",
+                    enum: ["amazon-linux-2023", "ubuntu", "debian", "rhel", "suse", "windows-2022", "windows-2019"],
+                    description: "Operating system for EC2 instances",
                   },
                 },
-                required: ["workloadType", "costSensitivity", "environment", "region", "os"],
+                required: ["resources", "workloadType", "costSensitivity", "environment", "region", "os"],
                 additionalProperties: false,
               },
             },

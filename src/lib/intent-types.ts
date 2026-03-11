@@ -368,6 +368,19 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
   const lower = input.toLowerCase();
   const result: Partial<ParsedIntent> = {};
 
+  // ── Detect resources ──
+  const resources: string[] = [];
+  if (/\bvpc\b/i.test(lower)) resources.push("vpc");
+  if (/\bsubnet/i.test(lower)) resources.push("subnets");
+  if (/\bnacl/i.test(lower) || /network.?acl/i.test(lower)) resources.push("nacls");
+  if (/\beks\b/i.test(lower) || /elastic.?kubernetes/i.test(lower) || /\bkubernetes\b/i.test(lower) || /\bk8s\b/i.test(lower)) resources.push("eks");
+  if (/\bec2\b/i.test(lower) || /\binstance\b/i.test(lower) || /\bserver\b/i.test(lower) || /\bvm\b/i.test(lower)) resources.push("ec2");
+  // If VPC mentioned but no subnets/nacls explicitly, include them as they're needed
+  if (resources.includes("vpc") && !resources.includes("subnets")) resources.push("subnets");
+  // If nothing specific detected, default to ec2
+  if (!resources.length) resources.push("ec2");
+  result.resources = resources;
+
   // Workload
   if (/gpu|accelerat|machine.?learn|deep.?learn|train|infer/i.test(lower)) result.workloadType = "accelerated";
   else if (/hpc|high.?perf|supercomput/i.test(lower)) result.workloadType = "hpc";
@@ -376,9 +389,10 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
   else if (/memory|ram|cache|redis|in-memory/i.test(lower)) result.workloadType = "memory";
   else result.workloadType = "general";
 
-  // Cost
+  // Cost — "right size" maps to balanced
   if (/cheap|small|minimal|free|low.?cost|budget|tiny|nano/i.test(lower)) result.costSensitivity = "cheapest";
   else if (/prod|production|enterprise|high.?avail|reliable|critical/i.test(lower)) result.costSensitivity = "production";
+  else if (/right.?siz/i.test(lower) || /balanced/i.test(lower)) result.costSensitivity = "balanced";
   else result.costSensitivity = "balanced";
 
   // Environment

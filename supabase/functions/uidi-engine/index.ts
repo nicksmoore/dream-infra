@@ -1031,8 +1031,14 @@ serve(async (req) => {
       case "compute":
         result = await handleCompute(action, spec);
         break;
+      case "network":
+        result = await handleNetwork(action, spec);
+        break;
+      case "eks":
+        result = await handleEks(action, spec);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks.`);
     }
 
     return new Response(JSON.stringify(result), {
