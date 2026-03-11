@@ -1081,6 +1081,129 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
   }
 }
 
+// ───── IAM Role Resolver ─────
+
+async function iamRequest(method: string, path: string, body: string | undefined, accessKey: string, secretKey: string): Promise<Response> {
+  const service = "iam";
+  const host = "iam.amazonaws.com";
+  const url = `https://${host}${path}`;
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Host: host,
+    "X-Amz-Date": amzDate,
+  };
+
+  const bodyStr = body || "";
+  const bodyHash = await sha256Hex(bodyStr);
+  const signedHeaderKeys = Object.keys(headers).map(k => k.toLowerCase()).sort();
+  const canonicalHeaders = signedHeaderKeys.map(k => `${k}:${headers[Object.keys(headers).find(h => h.toLowerCase() === k)!]}`).join("\n") + "\n";
+  const signedHeadersStr = signedHeaderKeys.join(";");
+
+  const canonicalRequest = [method, path, "", canonicalHeaders, signedHeadersStr, bodyHash].join("\n");
+  const credentialScope = `${dateStamp}/us-east-1/${service}/aws4_request`;
+  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256Hex(canonicalRequest)].join("\n");
+
+  const kDate = await hmacSha256(new TextEncoder().encode(`AWS4${secretKey}`), dateStamp);
+  const kRegion = await hmacSha256(kDate, "us-east-1");
+  const kService = await hmacSha256(kRegion, service);
+  const kSigning = await hmacSha256(kService, "aws4_request");
+  const signature = await hmacSha256Hex(kSigning, stringToSign);
+
+  headers["Authorization"] = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`;
+
+  return fetch(url, { method, headers, body: bodyStr || undefined });
+}
+
+async function getOrCreateEksRole(accessKey: string, secretKey: string, roleType: "cluster" | "node" = "cluster"): Promise<{ arn: string; created: boolean }> {
+  const roleName = roleType === "cluster" ? "UIDI-EKS-Cluster-Role" : "UIDI-EKS-Node-Role";
+  const policyArn = roleType === "cluster"
+    ? "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+    : "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy";
+  const trustService = roleType === "cluster" ? "eks.amazonaws.com" : "ec2.amazonaws.com";
+
+  // 1. Try to get the existing role
+  console.log(`IAM Role Resolver: Looking for ${roleName}...`);
+  const getRes = await iamRequest("POST", "/", new URLSearchParams({
+    Action: "GetRole",
+    Version: "2010-05-08",
+    RoleName: roleName,
+  }).toString(), accessKey, secretKey);
+  const getBody = await getRes.text();
+
+  if (getRes.ok) {
+    const arnMatch = getBody.match(/<Arn>([^<]+)<\/Arn>/);
+    if (arnMatch) {
+      console.log(`IAM Role Resolver: Found existing role ${arnMatch[1]}`);
+      return { arn: arnMatch[1], created: false };
+    }
+  }
+
+  // 2. Role not found — create it
+  console.log(`IAM Role Resolver: Creating ${roleName}...`);
+  const trustPolicy = JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Service: trustService },
+      Action: "sts:AssumeRole",
+    }],
+  });
+
+  const createRes = await iamRequest("POST", "/", new URLSearchParams({
+    Action: "CreateRole",
+    Version: "2010-05-08",
+    RoleName: roleName,
+    AssumeRolePolicyDocument: trustPolicy,
+    Description: `Auto-provisioned by UIDI for EKS ${roleType}`,
+    "Tag.member.1.Key": "ManagedBy",
+    "Tag.member.1.Value": "UIDI",
+  }).toString(), accessKey, secretKey);
+  const createBody = await createRes.text();
+
+  if (!createRes.ok) {
+    throw new Error(`Failed to create IAM role ${roleName}: ${createBody.match(/<Message>(.*?)<\/Message>/)?.[1] || createBody.slice(0, 300)}`);
+  }
+
+  const arnMatch = createBody.match(/<Arn>([^<]+)<\/Arn>/);
+  if (!arnMatch) throw new Error(`Created role but couldn't extract ARN`);
+
+  // 3. Attach the required policy
+  const attachRes = await iamRequest("POST", "/", new URLSearchParams({
+    Action: "AttachRolePolicy",
+    Version: "2010-05-08",
+    RoleName: roleName,
+    PolicyArn: policyArn,
+  }).toString(), accessKey, secretKey);
+  await attachRes.text();
+
+  // For node role, attach additional required policies
+  if (roleType === "node") {
+    for (const extraPolicy of [
+      "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+      "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+    ]) {
+      const extraRes = await iamRequest("POST", "/", new URLSearchParams({
+        Action: "AttachRolePolicy",
+        Version: "2010-05-08",
+        RoleName: roleName,
+        PolicyArn: extraPolicy,
+      }).toString(), accessKey, secretKey);
+      await extraRes.text();
+    }
+  }
+
+  console.log(`IAM Role Resolver: Created and configured ${roleName} → ${arnMatch[1]}`);
+
+  // Brief wait for IAM propagation
+  await new Promise(r => setTimeout(r, 5000));
+
+  return { arn: arnMatch[1], created: true };
+}
+
 // ───── EKS ─────
 
 async function handleEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
@@ -1092,16 +1215,28 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
   switch (action) {
     case "deploy": {
       const clusterName = spec.cluster_name as string || `uidi-cluster-${Date.now()}`;
-      const roleArn = spec.role_arn as string;
       const subnetIds = spec.subnet_ids as string[];
       const securityGroupIds = spec.security_group_ids as string[];
-      if (!roleArn) return err("eks", action, "role_arn required (IAM role with AmazonEKSClusterPolicy).");
       if (!subnetIds?.length) return err("eks", action, "subnet_ids required (at least 2 AZs).");
+
+      // Auto-resolve cluster role ARN
+      let roleArn = spec.role_arn as string;
+      let roleAutoProvisioned = false;
+      if (!roleArn) {
+        try {
+          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "cluster");
+          roleArn = resolved.arn;
+          roleAutoProvisioned = resolved.created;
+          console.log(`EKS deploy: role ${roleAutoProvisioned ? "auto-created" : "discovered"}: ${roleArn}`);
+        } catch (e) {
+          return err("eks", action, `IAM Role Resolver failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
       const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ name: clusterName, version: spec.kubernetes_version || "1.29", roleArn, resourcesVpcConfig: { subnetIds, securityGroupIds: securityGroupIds || [], endpointPublicAccess: true, endpointPrivateAccess: true }, tags: { ManagedBy: "UIDI", Environment: spec.environment || "dev" } }), extraHeaders: { "Content-Type": "application/json" } });
       const body = await res.text();
       if (!res.ok) { if (body.includes("ResourceInUseException")) return ok("eks", action, `Cluster ${clusterName} already exists`, { cluster_name: clusterName, status: "existing" }); return err("eks", action, `CreateCluster failed: ${body.slice(0, 500)}`); }
       const data = JSON.parse(body);
-      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region });
+      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)${roleAutoProvisioned ? " (IAM role auto-provisioned)" : ""}`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region, role_arn: roleArn, role_auto_provisioned: roleAutoProvisioned });
     }
 
     case "discover":
