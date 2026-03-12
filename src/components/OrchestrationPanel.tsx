@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { executeIntent } from "@/lib/uidi-engine";
-import type { EngineResponse } from "@/lib/uidi-engine";
+import { executeIntent, reconcile } from "@/lib/uidi-engine";
+import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface OrchestrationStep {
   id: string;
