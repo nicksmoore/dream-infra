@@ -1438,6 +1438,327 @@ function err(intent: string, action: string, error: string): EngineResponse {
   return { status: "error", intent, action, error, timestamp: new Date().toISOString() };
 }
 
+// ───── Reconciliation Engine (Drift Controller) ─────
+
+interface ReconcileSpec {
+  environment: string;
+  region: string;
+  desired_resources: {
+    network?: { name: string; vpc_cidr?: string; az_count?: number };
+    eks?: { cluster_name: string; kubernetes_version?: string };
+    compute?: { name: string; instance_type?: string; os?: string; count?: number };
+  };
+}
+
+interface ResourceState {
+  exists: boolean;
+  status: "match" | "drift" | "missing" | "orphan";
+  live?: Record<string, unknown>;
+  desired?: Record<string, unknown>;
+  delta?: string[];
+}
+
+interface ReconcileReport {
+  intent_hash: string;
+  timestamp: string;
+  region: string;
+  environment: string;
+  resources: Record<string, ResourceState>;
+  actions_taken: { resource: string; action: string; result: string }[];
+  summary: { total: number; matched: number; drifted: number; missing: number; created: number; updated: number; failed: number };
+}
+
+async function generateIntentHash(spec: ReconcileSpec): Promise<string> {
+  // Deterministic hash of the desired state — same intent always yields same hash
+  const normalized = JSON.stringify({
+    env: spec.environment,
+    region: spec.region,
+    resources: spec.desired_resources,
+  }, Object.keys(spec).sort());
+  return await sha256Hex(normalized);
+}
+
+function detectDrift(desired: Record<string, unknown>, live: Record<string, unknown>): string[] {
+  const drifts: string[] = [];
+  for (const [key, val] of Object.entries(desired)) {
+    if (val === undefined || val === null) continue;
+    const liveVal = live[key];
+    if (liveVal === undefined) {
+      drifts.push(`${key}: missing in live state`);
+    } else if (JSON.stringify(val) !== JSON.stringify(liveVal)) {
+      drifts.push(`${key}: desired=${JSON.stringify(val)} live=${JSON.stringify(liveVal)}`);
+    }
+  }
+  return drifts;
+}
+
+async function handleReconcile(spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("reconcile", "reconcile", "AWS credentials required.");
+
+  const reconcileSpec: ReconcileSpec = {
+    environment: spec.environment as string || "dev",
+    region: spec.region as string || "us-east-1",
+    desired_resources: spec.desired_resources as ReconcileSpec["desired_resources"] || {},
+  };
+
+  const { environment, region, desired_resources } = reconcileSpec;
+  const intentHash = await generateIntentHash(reconcileSpec);
+
+  console.log(`Reconcile: hash=${intentHash.slice(0, 12)}… env=${environment} region=${region}`);
+
+  const report: ReconcileReport = {
+    intent_hash: intentHash,
+    timestamp: new Date().toISOString(),
+    region,
+    environment,
+    resources: {},
+    actions_taken: [],
+    summary: { total: 0, matched: 0, drifted: 0, missing: 0, created: 0, updated: 0, failed: 0 },
+  };
+
+  // ── 1. Reconcile Network ──
+  if (desired_resources.network) {
+    const net = desired_resources.network;
+    const name = net.name || `uidi-vpc-${environment}`;
+    report.summary.total++;
+
+    try {
+      const liveStack = await describeExistingNetworkStack(region, name, environment, AWS_KEY, AWS_SECRET);
+
+      if (liveStack) {
+        // Network exists — check for drift
+        const desiredState = { vpc_cidr: net.vpc_cidr || "10.0.0.0/16", az_count: net.az_count || 2 };
+        const liveState: Record<string, unknown> = {
+          vpc_cidr: liveStack.vpc_cidr,
+          az_count: Math.floor(liveStack.subnets.length / 2), // pub+priv per AZ
+        };
+
+        const drifts = detectDrift(desiredState, liveState);
+
+        if (drifts.length === 0) {
+          report.resources.network = { exists: true, status: "match", live: liveStack as unknown as Record<string, unknown> };
+          report.summary.matched++;
+          report.actions_taken.push({ resource: "network", action: "none", result: `VPC ${liveStack.vpc_id} matches desired state` });
+        } else {
+          report.resources.network = {
+            exists: true,
+            status: "drift",
+            live: liveStack as unknown as Record<string, unknown>,
+            desired: desiredState,
+            delta: drifts,
+          };
+          report.summary.drifted++;
+          // Network drift is informational — VPC CIDR can't be changed in-place
+          report.actions_taken.push({ resource: "network", action: "drift_detected", result: `Drifts: ${drifts.join("; ")}` });
+        }
+      } else {
+        // Network missing — create it
+        report.resources.network = { exists: false, status: "missing", desired: net as Record<string, unknown> };
+        report.summary.missing++;
+
+        console.log(`Reconcile: Network missing, deploying...`);
+        const deployResult = await handleNetwork("deploy", {
+          region, environment, name,
+          vpc_cidr: net.vpc_cidr || "10.0.0.0/16",
+          az_count: net.az_count || 2,
+        });
+
+        if (deployResult.status === "success") {
+          report.summary.created++;
+          report.resources.network.live = deployResult.details as Record<string, unknown>;
+          report.actions_taken.push({ resource: "network", action: "created", result: deployResult.message || "VPC stack deployed" });
+        } else {
+          report.summary.failed++;
+          report.actions_taken.push({ resource: "network", action: "create_failed", result: deployResult.error || "Unknown error" });
+        }
+      }
+    } catch (e) {
+      report.summary.failed++;
+      report.resources.network = { exists: false, status: "missing" };
+      report.actions_taken.push({ resource: "network", action: "error", result: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // ── 2. Reconcile EKS ──
+  if (desired_resources.eks) {
+    const eks = desired_resources.eks;
+    const clusterName = eks.cluster_name || `uidi-${environment}-cluster`;
+    report.summary.total++;
+
+    try {
+      // Discover cluster
+      const descRes = await awsSignedRequest({
+        service: "eks", region, method: "GET",
+        path: `/clusters/${clusterName}`,
+        accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+      });
+      const descBody = await descRes.text();
+
+      if (descRes.ok) {
+        const clusterData = JSON.parse(descBody);
+        const liveVersion = clusterData.cluster?.version;
+        const desiredVersion = eks.kubernetes_version || "1.29";
+        const clusterStatus = clusterData.cluster?.status;
+
+        const drifts: string[] = [];
+        if (liveVersion !== desiredVersion) drifts.push(`kubernetes_version: desired=${desiredVersion} live=${liveVersion}`);
+
+        if (drifts.length === 0) {
+          report.resources.eks = {
+            exists: true, status: "match",
+            live: { cluster_name: clusterName, version: liveVersion, status: clusterStatus, endpoint: clusterData.cluster?.endpoint },
+          };
+          report.summary.matched++;
+          report.actions_taken.push({ resource: "eks", action: "none", result: `Cluster ${clusterName} matches (${clusterStatus})` });
+        } else {
+          report.resources.eks = {
+            exists: true, status: "drift",
+            live: { cluster_name: clusterName, version: liveVersion, status: clusterStatus },
+            desired: { cluster_name: clusterName, kubernetes_version: desiredVersion },
+            delta: drifts,
+          };
+          report.summary.drifted++;
+          report.actions_taken.push({ resource: "eks", action: "drift_detected", result: `Drifts: ${drifts.join("; ")}. EKS version upgrades require explicit action.` });
+        }
+      } else if (descBody.includes("ResourceNotFoundException")) {
+        // Cluster missing — create it
+        report.resources.eks = { exists: false, status: "missing", desired: eks as Record<string, unknown> };
+        report.summary.missing++;
+
+        // Need subnet IDs from network step
+        const networkState = report.resources.network?.live as Record<string, unknown> | undefined;
+        const subnets = networkState?.subnets as { id: string }[] | undefined;
+        const subnetIds = subnets?.map(s => s.id) || [];
+        const sgId = networkState?.security_group_id as string | undefined;
+
+        if (subnetIds.length >= 2) {
+          console.log(`Reconcile: EKS cluster missing, deploying with ${subnetIds.length} subnets...`);
+          const deployResult = await handleEks("deploy", {
+            region, environment,
+            cluster_name: clusterName,
+            subnet_ids: subnetIds,
+            security_group_ids: sgId ? [sgId] : [],
+            kubernetes_version: eks.kubernetes_version || "1.29",
+          });
+
+          if (deployResult.status === "success") {
+            report.summary.created++;
+            report.resources.eks.live = deployResult.details as Record<string, unknown>;
+            report.actions_taken.push({ resource: "eks", action: "created", result: deployResult.message || "Cluster creation started" });
+          } else {
+            report.summary.failed++;
+            report.actions_taken.push({ resource: "eks", action: "create_failed", result: deployResult.error || "Unknown error" });
+          }
+        } else {
+          report.summary.failed++;
+          report.actions_taken.push({ resource: "eks", action: "blocked", result: "Cannot create EKS — no subnet IDs available. Deploy network first." });
+        }
+      } else {
+        report.summary.failed++;
+        report.resources.eks = { exists: false, status: "missing" };
+        report.actions_taken.push({ resource: "eks", action: "error", result: `DescribeCluster failed: ${descBody.slice(0, 200)}` });
+      }
+    } catch (e) {
+      report.summary.failed++;
+      report.resources.eks = { exists: false, status: "missing" };
+      report.actions_taken.push({ resource: "eks", action: "error", result: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // ── 3. Reconcile Compute ──
+  if (desired_resources.compute) {
+    const comp = desired_resources.compute;
+    const name = comp.name || `uidi-${environment}-instance`;
+    report.summary.total++;
+
+    try {
+      // Discover existing instances with this name
+      const discoverResult = await handleCompute("discover", { region, environment, name });
+
+      if (discoverResult.status === "success") {
+        const instances = (discoverResult.details as Record<string, unknown>)?.instances as Record<string, unknown>[] || [];
+        const runningInstances = instances.filter(i => (i as Record<string, unknown>).state === "running");
+
+        if (runningInstances.length > 0) {
+          // Check for drift
+          const desiredType = comp.instance_type || "t3.micro";
+          const liveType = (runningInstances[0] as Record<string, unknown>).instance_type as string;
+          const desiredCount = comp.count || 1;
+
+          const drifts: string[] = [];
+          if (liveType !== desiredType) drifts.push(`instance_type: desired=${desiredType} live=${liveType}`);
+          if (runningInstances.length !== desiredCount) drifts.push(`count: desired=${desiredCount} live=${runningInstances.length}`);
+
+          if (drifts.length === 0) {
+            report.resources.compute = { exists: true, status: "match", live: { instances: runningInstances } };
+            report.summary.matched++;
+            report.actions_taken.push({ resource: "compute", action: "none", result: `${runningInstances.length} instance(s) match desired state` });
+          } else {
+            report.resources.compute = {
+              exists: true, status: "drift",
+              live: { instances: runningInstances, instance_type: liveType, count: runningInstances.length },
+              desired: { instance_type: desiredType, count: desiredCount },
+              delta: drifts,
+            };
+            report.summary.drifted++;
+            report.actions_taken.push({ resource: "compute", action: "drift_detected", result: `Drifts: ${drifts.join("; ")}` });
+          }
+        } else {
+          // No running instances — deploy
+          report.resources.compute = { exists: false, status: "missing", desired: comp as Record<string, unknown> };
+          report.summary.missing++;
+
+          const networkState = report.resources.network?.live as Record<string, unknown> | undefined;
+          const subnets = networkState?.subnets as { id: string; type: string }[] | undefined;
+          const publicSubnet = subnets?.find(s => s.type === "public");
+          const sgId = networkState?.security_group_id as string | undefined;
+
+          console.log(`Reconcile: Compute missing, deploying...`);
+          const deployResult = await handleCompute("deploy", {
+            region, environment, name,
+            instance_type: comp.instance_type || "t3.micro",
+            os: comp.os || "amazon-linux-2023",
+            count: comp.count || 1,
+            ...(publicSubnet ? { subnet_id: publicSubnet.id } : {}),
+            ...(sgId ? { security_group_ids: [sgId] } : {}),
+          });
+
+          if (deployResult.status === "success") {
+            report.summary.created++;
+            report.resources.compute.live = deployResult.details as Record<string, unknown>;
+            report.actions_taken.push({ resource: "compute", action: "created", result: deployResult.message || "Instance(s) launched" });
+          } else {
+            report.summary.failed++;
+            report.actions_taken.push({ resource: "compute", action: "create_failed", result: deployResult.error || "Unknown error" });
+          }
+        }
+      } else {
+        report.summary.failed++;
+        report.resources.compute = { exists: false, status: "missing" };
+        report.actions_taken.push({ resource: "compute", action: "error", result: discoverResult.error || "Discovery failed" });
+      }
+    } catch (e) {
+      report.summary.failed++;
+      report.resources.compute = { exists: false, status: "missing" };
+      report.actions_taken.push({ resource: "compute", action: "error", result: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // Build summary message
+  const { summary } = report;
+  const summaryMsg = [
+    `Reconciliation complete (hash: ${intentHash.slice(0, 12)}…)`,
+    `${summary.total} resource(s): ${summary.matched} matched, ${summary.drifted} drifted, ${summary.missing} missing`,
+    summary.created ? `${summary.created} created` : null,
+    summary.updated ? `${summary.updated} updated` : null,
+    summary.failed ? `${summary.failed} failed` : null,
+  ].filter(Boolean).join(" | ");
+
+  return ok("reconcile", "reconcile", summaryMsg, report);
+}
+
 // ───── Main Handler ─────
 
 serve(async (req) => {
@@ -1477,8 +1798,11 @@ serve(async (req) => {
       case "eks":
         result = await handleEks(action, spec);
         break;
+      case "reconcile":
+        result = await handleReconcile(spec);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile.`);
     }
 
     return new Response(JSON.stringify(result), {
