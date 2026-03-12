@@ -95,6 +95,8 @@ export function OrchestrationPanel({
 
   const [steps, setSteps] = useState<OrchestrationStep[]>(buildSteps);
   const [isRunning, setIsRunning] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
 
   async function runOrchestration() {
     setIsRunning(true);
