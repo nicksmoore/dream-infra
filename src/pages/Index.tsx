@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntentInput } from "@/components/IntentInput";
 import { IntentForm } from "@/components/IntentForm";
 import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
@@ -9,6 +10,7 @@ import { CredentialsModal } from "@/components/CredentialsModal";
 import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
+import { ResourceInventory } from "@/components/ResourceInventory";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +22,7 @@ import {
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
-import { Zap, KeyRound, Trash2 } from "lucide-react";
+import { Zap, KeyRound, Trash2, Eye, Rocket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
@@ -101,57 +103,71 @@ export default function Index() {
       </header>
 
       <main className="container max-w-5xl mx-auto px-4 py-8 space-y-6">
-        <Card className="bg-card">
-          <CardContent className="pt-6">
-            <IntentInput onParse={handleParse} isLoading={isParsing} />
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="deploy" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="deploy" className="gap-1.5">
+              <Rocket className="h-3.5 w-3.5" /> Deploy
+            </TabsTrigger>
+            <TabsTrigger value="inventory" className="gap-1.5">
+              <Eye className="h-3.5 w-3.5" /> Inventory
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Show detected resources */}
-        {detectedResources.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Detected Resources:</span>
-            {detectedResources.map(r => (
-              <Badge key={r} variant="secondary" className="text-xs uppercase">{r}</Badge>
-            ))}
-          </div>
-        )}
-
-        {isMultiResource ? (
-          /* Multi-resource orchestration mode */
-          <OrchestrationPanel
-            resources={detectedResources}
-            region={intent.region}
-            environment={intent.environment}
-            instanceType={config.instanceType}
-            os={config.os}
-          />
-        ) : (
-          /* Single resource (EC2) mode */
-          <>
+          <TabsContent value="deploy" className="space-y-6">
             <Card className="bg-card">
               <CardContent className="pt-6">
-                <IntentForm intent={intent} onChange={updateIntent} />
+                <IntentInput onParse={handleParse} isLoading={isParsing} />
               </CardContent>
             </Card>
 
-            <Card className="bg-card">
-              <CardContent className="pt-6">
-                <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
-              </CardContent>
-            </Card>
+            {detectedResources.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Detected Resources:</span>
+                {detectedResources.map(r => (
+                  <Badge key={r} variant="secondary" className="text-xs uppercase">{r}</Badge>
+                ))}
+              </div>
+            )}
 
-            <ConfigPreview config={config} />
+            {isMultiResource ? (
+              <OrchestrationPanel
+                resources={detectedResources}
+                region={intent.region}
+                environment={intent.environment}
+                instanceType={config.instanceType}
+                os={config.os}
+              />
+            ) : (
+              <>
+                <Card className="bg-card">
+                  <CardContent className="pt-6">
+                    <IntentForm intent={intent} onChange={updateIntent} />
+                  </CardContent>
+                </Card>
 
-            <ComputeActions
-              config={config}
-              hasCredentials={!!credentials}
-              onRequestCredentials={() => setCredModalOpen(true)}
-            />
-          </>
-        )}
+                <Card className="bg-card">
+                  <CardContent className="pt-6">
+                    <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
+                  </CardContent>
+                </Card>
 
-        <DeploymentHistory deployments={deployments} />
+                <ConfigPreview config={config} />
+
+                <ComputeActions
+                  config={config}
+                  hasCredentials={!!credentials}
+                  onRequestCredentials={() => setCredModalOpen(true)}
+                />
+              </>
+            )}
+
+            <DeploymentHistory deployments={deployments} />
+          </TabsContent>
+
+          <TabsContent value="inventory">
+            <ResourceInventory region={intent.region} />
+          </TabsContent>
+        </Tabs>
       </main>
 
       <CredentialsModal open={credModalOpen} onOpenChange={setCredModalOpen} onSave={setCredentials} />
