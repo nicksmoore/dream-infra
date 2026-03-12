@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
@@ -1759,6 +1759,243 @@ async function handleReconcile(spec: Record<string, unknown>): Promise<EngineRes
   return ok("reconcile", "reconcile", summaryMsg, report);
 }
 
+// ───── Inventory (Resource Discovery + Waste Hunter) ─────
+
+interface InventoryResource {
+  id: string;
+  type: "ec2" | "vpc" | "ebs" | "eip" | "eks" | "subnet" | "security_group";
+  name: string;
+  region: string;
+  state: string;
+  managed: boolean; // has ManagedBy:UIDI tag
+  waste?: { reason: string; savings_hint?: string };
+  tags: Record<string, string>;
+  details: Record<string, unknown>;
+}
+
+async function handleInventory(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("inventory", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+
+  switch (action) {
+    case "scan": {
+      const resources: InventoryResource[] = [];
+
+      // ── EC2 Instances ──
+      const ec2Params = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15" });
+      // Exclude terminated
+      ec2Params.set("Filter.1.Name", "instance-state-name");
+      ec2Params.set("Filter.1.Value.1", "pending");
+      ec2Params.set("Filter.1.Value.2", "running");
+      ec2Params.set("Filter.1.Value.3", "stopping");
+      ec2Params.set("Filter.1.Value.4", "stopped");
+
+      const ec2Res = await ec2Request("POST", region, ec2Params.toString(), AWS_KEY, AWS_SECRET);
+      const ec2Body = await ec2Res.text();
+      if (ec2Res.ok) {
+        // Parse reservation items to get instance blocks
+        const instanceBlocks = ec2Body.match(/<instancesSet>[\s\S]*?<\/instancesSet>/g) || [];
+        for (const block of instanceBlocks) {
+          const items = block.match(/<item>[\s\S]*?<\/item>/g) || [];
+          for (const item of items) {
+            const id = item.match(/<instanceId>(i-[a-f0-9]+)<\/instanceId>/)?.[1];
+            if (!id) continue;
+            const state = item.match(/<instanceState>[\s\S]*?<name>([^<]+)<\/name>/)?.[1] || "unknown";
+            const iType = item.match(/<instanceType>([^<]+)<\/instanceType>/)?.[1] || "unknown";
+            const launchTime = item.match(/<launchTime>([^<]+)<\/launchTime>/)?.[1] || "";
+            const publicIp = item.match(/<ipAddress>([^<]+)<\/ipAddress>/)?.[1];
+            const tags: Record<string, string> = {};
+            const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+            for (const m of tagMatches) tags[m[1]] = m[2];
+            const managed = tags["ManagedBy"] === "UIDI";
+            const name = tags["Name"] || id;
+
+            // Waste detection: stopped instance
+            let waste: InventoryResource["waste"] = undefined;
+            if (state === "stopped") {
+              waste = { reason: "Instance stopped — accruing EBS costs", savings_hint: "Terminate or snapshot & delete" };
+            }
+
+            resources.push({ id, type: "ec2", name, region, state, managed, waste, tags, details: { instance_type: iType, launch_time: launchTime, public_ip: publicIp } });
+          }
+        }
+      }
+
+      // ── EBS Volumes (orphaned = available) ──
+      const ebsParams = new URLSearchParams({ Action: "DescribeVolumes", Version: "2016-11-15" });
+      const ebsRes = await ec2Request("POST", region, ebsParams.toString(), AWS_KEY, AWS_SECRET);
+      const ebsBody = await ebsRes.text();
+      if (ebsRes.ok) {
+        const volItems = ebsBody.match(/<item>[\s\S]*?<volumeId>vol-[a-f0-9]+<\/volumeId>[\s\S]*?<\/item>/g) || [];
+        for (const item of volItems) {
+          const id = item.match(/<volumeId>(vol-[a-f0-9]+)<\/volumeId>/)?.[1];
+          if (!id) continue;
+          const volState = item.match(/<status>([^<]+)<\/status>/)?.[1] || "unknown";
+          const size = item.match(/<size>([^<]+)<\/size>/)?.[1] || "0";
+          const volType = item.match(/<volumeType>([^<]+)<\/volumeType>/)?.[1] || "gp3";
+          const tags: Record<string, string> = {};
+          const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+          for (const m of tagMatches) tags[m[1]] = m[2];
+          const managed = tags["ManagedBy"] === "UIDI";
+
+          let waste: InventoryResource["waste"] = undefined;
+          if (volState === "available") {
+            waste = { reason: "Orphaned volume — not attached", savings_hint: `Snapshot & delete to save ~$${(parseFloat(size) * 0.08).toFixed(2)}/mo` };
+          }
+
+          resources.push({ id, type: "ebs", name: tags["Name"] || id, region, state: volState, managed, waste, tags, details: { size_gb: size, volume_type: volType } });
+        }
+      }
+
+      // ── Elastic IPs (unused = no association) ──
+      const eipParams = new URLSearchParams({ Action: "DescribeAddresses", Version: "2016-11-15" });
+      const eipRes = await ec2Request("POST", region, eipParams.toString(), AWS_KEY, AWS_SECRET);
+      const eipBody = await eipRes.text();
+      if (eipRes.ok) {
+        const eipItems = eipBody.match(/<item>[\s\S]*?<\/item>/g) || [];
+        for (const item of eipItems) {
+          const allocId = item.match(/<allocationId>([^<]+)<\/allocationId>/)?.[1];
+          const publicIp = item.match(/<publicIp>([^<]+)<\/publicIp>/)?.[1];
+          if (!allocId) continue;
+          const assocId = item.match(/<associationId>([^<]+)<\/associationId>/)?.[1];
+          const tags: Record<string, string> = {};
+          const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+          for (const m of tagMatches) tags[m[1]] = m[2];
+          const managed = tags["ManagedBy"] === "UIDI";
+
+          let waste: InventoryResource["waste"] = undefined;
+          if (!assocId) {
+            waste = { reason: "Idle Elastic IP — not associated", savings_hint: "Release to avoid $3.60/mo idle fee" };
+          }
+
+          resources.push({ id: allocId, type: "eip", name: publicIp || allocId, region, state: assocId ? "associated" : "idle", managed, waste, tags, details: { public_ip: publicIp, association_id: assocId || null } });
+        }
+      }
+
+      // ── VPCs ──
+      const vpcParams = new URLSearchParams({ Action: "DescribeVpcs", Version: "2016-11-15" });
+      const vpcRes = await ec2Request("POST", region, vpcParams.toString(), AWS_KEY, AWS_SECRET);
+      const vpcBody = await vpcRes.text();
+      if (vpcRes.ok) {
+        const vpcItems = vpcBody.match(/<item>[\s\S]*?<vpcId>vpc-[a-f0-9]+<\/vpcId>[\s\S]*?<\/item>/g) || [];
+        for (const item of vpcItems) {
+          const id = item.match(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/)?.[1];
+          if (!id) continue;
+          const cidr = item.match(/<cidrBlock>([^<]+)<\/cidrBlock>/)?.[1] || "";
+          const isDefault = item.includes("<isDefault>true</isDefault>");
+          const tags: Record<string, string> = {};
+          const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+          for (const m of tagMatches) tags[m[1]] = m[2];
+          const managed = tags["ManagedBy"] === "UIDI";
+
+          resources.push({ id, type: "vpc", name: tags["Name"] || (isDefault ? "default-vpc" : id), region, state: "available", managed, tags, details: { cidr, is_default: isDefault } });
+        }
+      }
+
+      // ── EKS Clusters ──
+      try {
+        const eksListRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+        if (eksListRes.ok) {
+          const eksData = JSON.parse(await eksListRes.text());
+          for (const clusterName of (eksData.clusters || [])) {
+            const descRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+            if (descRes.ok) {
+              const cData = JSON.parse(await descRes.text());
+              const c = cData.cluster || {};
+              const tags = c.tags || {};
+              resources.push({
+                id: c.arn || clusterName, type: "eks", name: clusterName, region,
+                state: c.status || "unknown", managed: tags["ManagedBy"] === "UIDI",
+                tags, details: { version: c.version, endpoint: c.endpoint, status: c.status },
+              });
+            }
+          }
+        }
+      } catch { /* EKS scan optional */ }
+
+      // Categorize
+      const wasteResources = resources.filter(r => r.waste);
+      const managedResources = resources.filter(r => r.managed);
+      const orphanResources = resources.filter(r => !r.managed && r.type !== "vpc");
+
+      return ok("inventory", action, `Scanned ${resources.length} resource(s): ${managedResources.length} managed, ${wasteResources.length} waste, ${orphanResources.length} unmanaged`, {
+        resources,
+        summary: {
+          total: resources.length,
+          managed: managedResources.length,
+          waste: wasteResources.length,
+          orphan: orphanResources.length,
+          by_type: {
+            ec2: resources.filter(r => r.type === "ec2").length,
+            ebs: resources.filter(r => r.type === "ebs").length,
+            eip: resources.filter(r => r.type === "eip").length,
+            vpc: resources.filter(r => r.type === "vpc").length,
+            eks: resources.filter(r => r.type === "eks").length,
+          },
+        },
+        region,
+      });
+    }
+
+    case "nuke":
+    case "destroy": {
+      const resourceId = spec.resource_id as string;
+      const resourceType = spec.resource_type as string;
+      if (!resourceId || !resourceType) return err("inventory", action, "resource_id and resource_type required.");
+
+      // Dependency-aware smart deletion
+      switch (resourceType) {
+        case "ec2": {
+          const params = new URLSearchParams({ Action: "TerminateInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
+          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
+          const body = await res.text();
+          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "TerminateInstances failed");
+
+          // Verify deletion
+          await new Promise(r => setTimeout(r, 2000));
+          const verifyParams = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
+          const verifyRes = await ec2Request("POST", region, verifyParams.toString(), AWS_KEY, AWS_SECRET);
+          const verifyBody = await verifyRes.text();
+          const finalState = verifyBody.match(/<name>(shutting-down|terminated)<\/name>/)?.[1] || "terminating";
+
+          return ok("inventory", action, `Instance ${resourceId} ${finalState}`, { resource_id: resourceId, state: finalState });
+        }
+        case "ebs": {
+          const params = new URLSearchParams({ Action: "DeleteVolume", Version: "2016-11-15", VolumeId: resourceId });
+          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
+          const body = await res.text();
+          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "DeleteVolume failed");
+          return ok("inventory", action, `Volume ${resourceId} deleted`, { resource_id: resourceId });
+        }
+        case "eip": {
+          const params = new URLSearchParams({ Action: "ReleaseAddress", Version: "2016-11-15", AllocationId: resourceId });
+          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
+          const body = await res.text();
+          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "ReleaseAddress failed");
+          return ok("inventory", action, `Elastic IP ${resourceId} released`, { resource_id: resourceId });
+        }
+        case "vpc": {
+          // Smart deletion: reverse order (subnets → igw → sg → vpc)
+          const result = await handleNetwork("destroy", { vpc_id: resourceId, region });
+          return result;
+        }
+        case "eks": {
+          const clusterName = spec.cluster_name as string || resourceId;
+          const result = await handleEks("destroy", { cluster_name: clusterName, region });
+          return result;
+        }
+        default:
+          return err("inventory", action, `Unknown resource_type: ${resourceType}`);
+      }
+    }
+
+    default:
+      return err("inventory", action, `Unknown inventory action: ${action}. Supported: scan, nuke.`);
+  }
+}
+
 // ───── Main Handler ─────
 
 serve(async (req) => {
@@ -1800,6 +2037,9 @@ serve(async (req) => {
         break;
       case "reconcile":
         result = await handleReconcile(spec);
+        break;
+      case "inventory":
+        result = await handleInventory(action, spec);
         break;
       default:
         result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile.`);
