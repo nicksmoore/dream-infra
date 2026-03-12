@@ -2038,6 +2038,9 @@ serve(async (req) => {
       case "reconcile":
         result = await handleReconcile(spec);
         break;
+      case "inventory":
+        result = await handleInventory(action, spec);
+        break;
       default:
         result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile.`);
     }
