@@ -3,8 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ───── Types ─────
 
 export interface EngineRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
@@ -191,4 +191,36 @@ export async function ansibleRun(spec: {
   region?: string;
 }): Promise<EngineResponse> {
   return executeIntent({ intent: "ansible", action: "deploy", spec });
+}
+
+// ───── Reconciliation helpers ─────
+
+export interface ReconcileDesiredResources {
+  network?: { name: string; vpc_cidr?: string; az_count?: number };
+  eks?: { cluster_name: string; kubernetes_version?: string };
+  compute?: { name: string; instance_type?: string; os?: string; count?: number };
+}
+
+export interface ReconcileReport {
+  intent_hash: string;
+  timestamp: string;
+  region: string;
+  environment: string;
+  resources: Record<string, {
+    exists: boolean;
+    status: "match" | "drift" | "missing" | "orphan";
+    live?: Record<string, unknown>;
+    desired?: Record<string, unknown>;
+    delta?: string[];
+  }>;
+  actions_taken: { resource: string; action: string; result: string }[];
+  summary: { total: number; matched: number; drifted: number; missing: number; created: number; updated: number; failed: number };
+}
+
+export async function reconcile(spec: {
+  environment: string;
+  region: string;
+  desired_resources: ReconcileDesiredResources;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "reconcile", action: "reconcile", spec });
 }

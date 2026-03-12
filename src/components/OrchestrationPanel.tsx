@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { executeIntent } from "@/lib/uidi-engine";
-import type { EngineResponse } from "@/lib/uidi-engine";
+import { executeIntent, reconcile } from "@/lib/uidi-engine";
+import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface OrchestrationStep {
   id: string;
@@ -95,6 +95,8 @@ export function OrchestrationPanel({
 
   const [steps, setSteps] = useState<OrchestrationStep[]>(buildSteps);
   const [isRunning, setIsRunning] = useState(false);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
 
   async function runOrchestration() {
     setIsRunning(true);
@@ -221,13 +223,70 @@ export function OrchestrationPanel({
           ))}
         </div>
 
-        <Button onClick={runOrchestration} disabled={isRunning} className="w-full">
-          {isRunning ? (
-            <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Deploying Stack...</>
-          ) : (
-            <><Rocket className="h-4 w-4 mr-2" /> Deploy Stack</>
-          )}
-        </Button>
+        {/* Reconcile Report */}
+        {reconcileReport && (
+          <div className="space-y-2 p-3 rounded-lg bg-muted/30 border border-border">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold">Reconciliation Report</span>
+              <Badge variant="outline" className="text-xs font-mono">{reconcileReport.intent_hash.slice(0, 12)}…</Badge>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {reconcileReport.summary.matched > 0 && <Badge className="text-xs bg-primary/20 text-primary">{reconcileReport.summary.matched} matched</Badge>}
+              {reconcileReport.summary.drifted > 0 && <Badge variant="destructive" className="text-xs">{reconcileReport.summary.drifted} drifted</Badge>}
+              {reconcileReport.summary.created > 0 && <Badge className="text-xs bg-primary/20 text-primary">{reconcileReport.summary.created} created</Badge>}
+              {reconcileReport.summary.failed > 0 && <Badge variant="destructive" className="text-xs">{reconcileReport.summary.failed} failed</Badge>}
+            </div>
+            {reconcileReport.actions_taken.map((a, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                {a.action === "none" ? <CheckCircle2 className="h-3 w-3 text-primary mt-0.5 shrink-0" /> :
+                  a.action.includes("drift") ? <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" /> :
+                  a.action.includes("fail") || a.action === "error" ? <XCircle className="h-3 w-3 text-destructive mt-0.5 shrink-0" /> :
+                  <CheckCircle2 className="h-3 w-3 text-primary mt-0.5 shrink-0" />}
+                <span><span className="font-medium uppercase">{a.resource}</span>: {a.result}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <Button onClick={runOrchestration} disabled={isRunning || isReconciling} className="flex-1">
+            {isRunning ? (
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Deploying Stack...</>
+            ) : (
+              <><Rocket className="h-4 w-4 mr-2" /> Deploy Stack</>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setIsReconciling(true);
+              setReconcileReport(null);
+              try {
+                const desiredResources: Record<string, unknown> = {};
+                if (resources.some(r => ["vpc", "subnets", "nacls"].includes(r))) {
+                  desiredResources.network = { name: `uidi-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 2 };
+                }
+                if (resources.includes("eks")) {
+                  desiredResources.eks = { cluster_name: `uidi-${environment}-cluster`, kubernetes_version: "1.29" };
+                }
+                if (resources.includes("ec2")) {
+                  desiredResources.compute = { name: `uidi-${environment}-instance`, instance_type: instanceType, os, count: 1 };
+                }
+                const result = await reconcile({ environment, region, desired_resources: desiredResources as any });
+                if (result.details) setReconcileReport(result.details as ReconcileReport);
+                toast({ title: "Reconciliation complete", description: result.message });
+              } catch (e) {
+                toast({ title: "Reconciliation failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+              } finally {
+                setIsReconciling(false);
+              }
+            }}
+            disabled={isRunning || isReconciling}
+          >
+            {isReconciling ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
