@@ -3,8 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 // ───── Types ─────
 
 export interface EngineRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
