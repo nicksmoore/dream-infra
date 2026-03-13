@@ -162,10 +162,13 @@ export default function Index() {
           <TabsContent value="inventory">
             <ResourceInventory region={intent.region} />
           </TabsContent>
+
+          <TabsContent value="vault">
+            <CredentialVault />
+          </TabsContent>
         </Tabs>
       </main>
-
-      <CredentialsModal open={credModalOpen} onOpenChange={setCredModalOpen} onSave={setCredentials} />
+    </div>
     </div>
   );
 }
