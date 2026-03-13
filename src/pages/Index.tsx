@@ -89,15 +89,7 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-2">
             <McpConnectionStatus />
-            {credentials ? (
-              <Button variant="outline" size="sm" onClick={() => { setCredentials(null); toast({ title: "Credentials cleared" }); }}>
-                <Trash2 className="h-3 w-3 mr-1" /> Clear Creds
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => setCredModalOpen(true)}>
-                <KeyRound className="h-3 w-3 mr-1" /> Set AWS Creds
-              </Button>
-            )}
+            <UserMenu />
           </div>
         </div>
       </header>
