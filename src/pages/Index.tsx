@@ -169,7 +169,6 @@ export default function Index() {
         </Tabs>
       </main>
     </div>
-    </div>
   );
 }
 
