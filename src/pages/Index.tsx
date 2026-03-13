@@ -23,7 +23,7 @@ import {
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
-import { Zap, KeyRound, Trash2, Eye, Rocket } from "lucide-react";
+import { Zap, Eye, Rocket, Vault } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
