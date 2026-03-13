@@ -6,12 +6,13 @@ import { IntentInput } from "@/components/IntentInput";
 import { IntentForm } from "@/components/IntentForm";
 import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
 import { ConfigPreview } from "@/components/ConfigPreview";
-import { CredentialsModal } from "@/components/CredentialsModal";
 import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { ResourceInventory } from "@/components/ResourceInventory";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
+import { UserMenu } from "@/components/UserMenu";
+import { CredentialVault } from "@/components/CredentialVault";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
