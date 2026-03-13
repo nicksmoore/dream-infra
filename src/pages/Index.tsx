@@ -150,8 +150,11 @@ export default function Index() {
 
                 <ComputeActions
                   config={config}
-                  hasCredentials={!!credentials}
-                  onRequestCredentials={() => setCredModalOpen(true)}
+                  hasCredentials={hasVaultCredentials}
+                  onRequestCredentials={() => {
+                    // Navigate to vault tab
+                    toast({ title: "Add credentials in the Vault tab", description: "Your cloud keys are now managed via the encrypted BYOC vault." });
+                  }}
                 />
               </>
             )}
