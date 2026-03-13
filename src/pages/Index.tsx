@@ -103,6 +103,9 @@ export default function Index() {
             <TabsTrigger value="inventory" className="gap-1.5">
               <Eye className="h-3.5 w-3.5" /> Inventory
             </TabsTrigger>
+            <TabsTrigger value="vault" className="gap-1.5">
+              <Vault className="h-3.5 w-3.5" /> Vault
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="deploy" className="space-y-6">
