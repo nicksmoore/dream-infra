@@ -18,7 +18,6 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   ParsedIntent,
   Deployment,
-  Deployment,
   Ec2Config,
   mapIntentToEc2Config,
   parseIntentRuleBased,
