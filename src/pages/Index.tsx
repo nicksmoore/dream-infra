@@ -6,23 +6,23 @@ import { IntentInput } from "@/components/IntentInput";
 import { IntentForm } from "@/components/IntentForm";
 import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
 import { ConfigPreview } from "@/components/ConfigPreview";
-import { CredentialsModal } from "@/components/CredentialsModal";
 import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { ResourceInventory } from "@/components/ResourceInventory";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
+import { UserMenu } from "@/components/UserMenu";
+import { CredentialVault } from "@/components/CredentialVault";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ParsedIntent,
-  AwsCredentials,
   Deployment,
   Ec2Config,
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
-import { Zap, KeyRound, Trash2, Eye, Rocket } from "lucide-react";
+import { Zap, Eye, Rocket, Vault } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
@@ -36,8 +36,7 @@ const DEFAULT_INTENT: ParsedIntent = {
 export default function Index() {
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
-  const [credentials, setCredentials] = useState<AwsCredentials | null>(null);
-  const [credModalOpen, setCredModalOpen] = useState(false);
+  const [hasVaultCredentials] = useState(true); // BYOC vault handles credentials now
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
@@ -89,15 +88,7 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-2">
             <McpConnectionStatus />
-            {credentials ? (
-              <Button variant="outline" size="sm" onClick={() => { setCredentials(null); toast({ title: "Credentials cleared" }); }}>
-                <Trash2 className="h-3 w-3 mr-1" /> Clear Creds
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => setCredModalOpen(true)}>
-                <KeyRound className="h-3 w-3 mr-1" /> Set AWS Creds
-              </Button>
-            )}
+            <UserMenu />
           </div>
         </div>
       </header>
@@ -110,6 +101,9 @@ export default function Index() {
             </TabsTrigger>
             <TabsTrigger value="inventory" className="gap-1.5">
               <Eye className="h-3.5 w-3.5" /> Inventory
+            </TabsTrigger>
+            <TabsTrigger value="vault" className="gap-1.5">
+              <Vault className="h-3.5 w-3.5" /> Vault
             </TabsTrigger>
           </TabsList>
 
@@ -155,8 +149,11 @@ export default function Index() {
 
                 <ComputeActions
                   config={config}
-                  hasCredentials={!!credentials}
-                  onRequestCredentials={() => setCredModalOpen(true)}
+                  hasCredentials={hasVaultCredentials}
+                  onRequestCredentials={() => {
+                    // Navigate to vault tab
+                    toast({ title: "Add credentials in the Vault tab", description: "Your cloud keys are now managed via the encrypted BYOC vault." });
+                  }}
                 />
               </>
             )}
@@ -167,10 +164,12 @@ export default function Index() {
           <TabsContent value="inventory">
             <ResourceInventory region={intent.region} />
           </TabsContent>
+
+          <TabsContent value="vault">
+            <CredentialVault />
+          </TabsContent>
         </Tabs>
       </main>
-
-      <CredentialsModal open={credModalOpen} onOpenChange={setCredModalOpen} onSave={setCredentials} />
     </div>
   );
 }

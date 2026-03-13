@@ -14,16 +14,212 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_log: {
+        Row: {
+          action: string
+          created_at: string
+          error: string | null
+          id: string
+          intent_text: string | null
+          provider: Database["public"]["Enums"]["cloud_provider"] | null
+          region: string | null
+          resolved_calls: Json | null
+          result: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          intent_text?: string | null
+          provider?: Database["public"]["Enums"]["cloud_provider"] | null
+          region?: string | null
+          resolved_calls?: Json | null
+          result?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          intent_text?: string | null
+          provider?: Database["public"]["Enums"]["cloud_provider"] | null
+          region?: string | null
+          resolved_calls?: Json | null
+          result?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      metadata_cache: {
+        Row: {
+          cached_at: string
+          id: string
+          metadata: Json
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          region: string
+          resource_id: string
+          resource_type: string
+          ttl_seconds: number
+          user_id: string
+        }
+        Insert: {
+          cached_at?: string
+          id?: string
+          metadata: Json
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          region: string
+          resource_id: string
+          resource_type: string
+          ttl_seconds?: number
+          user_id: string
+        }
+        Update: {
+          cached_at?: string
+          id?: string
+          metadata?: Json
+          provider?: Database["public"]["Enums"]["cloud_provider"]
+          region?: string
+          resource_id?: string
+          resource_type?: string
+          ttl_seconds?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          organization_id: string | null
+          segment: Database["public"]["Enums"]["user_segment"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          organization_id?: string | null
+          segment?: Database["public"]["Enums"]["user_segment"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          organization_id?: string | null
+          segment?: Database["public"]["Enums"]["user_segment"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_mappings: {
+        Row: {
+          expires_at: string | null
+          id: string
+          ingested_at: string
+          mapping_data: Json
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          service_name: string
+          spec_hash: string
+          spec_version: string
+        }
+        Insert: {
+          expires_at?: string | null
+          id?: string
+          ingested_at?: string
+          mapping_data: Json
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          service_name: string
+          spec_hash: string
+          spec_version: string
+        }
+        Update: {
+          expires_at?: string | null
+          id?: string
+          ingested_at?: string
+          mapping_data?: Json
+          provider?: Database["public"]["Enums"]["cloud_provider"]
+          service_name?: string
+          spec_hash?: string
+          spec_version?: string
+        }
+        Relationships: []
+      }
+      user_credentials: {
+        Row: {
+          created_at: string
+          encrypted_credentials: string
+          id: string
+          iv: string
+          label: string
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_credentials: string
+          id?: string
+          iv: string
+          label?: string
+          provider: Database["public"]["Enums"]["cloud_provider"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_credentials?: string
+          id?: string
+          iv?: string
+          label?: string
+          provider?: Database["public"]["Enums"]["cloud_provider"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
+      cloud_provider: "aws" | "gcp" | "azure"
+      user_segment: "free" | "developer" | "team" | "enterprise"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +346,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+      cloud_provider: ["aws", "gcp", "azure"],
+      user_segment: ["free", "developer", "team", "enterprise"],
+    },
   },
 } as const
