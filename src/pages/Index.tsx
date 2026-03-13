@@ -37,8 +37,7 @@ const DEFAULT_INTENT: ParsedIntent = {
 export default function Index() {
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
-  const [credentials, setCredentials] = useState<AwsCredentials | null>(null);
-  const [credModalOpen, setCredModalOpen] = useState(false);
+  const [hasVaultCredentials] = useState(true); // BYOC vault handles credentials now
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
