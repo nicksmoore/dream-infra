@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.uidi-engine]
 verify_jwt = false
+
+[functions.credential-vault]
+verify_jwt = false
