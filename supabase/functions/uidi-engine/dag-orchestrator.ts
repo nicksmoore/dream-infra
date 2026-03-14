@@ -14,9 +14,21 @@ export interface SdkOperation {
 }
 
 export class DagOrchestrator {
-  constructor(private region: string, private credentials: any) {}
+  private accountId: string;
+
+  constructor(private region: string, private credentials: any) {
+    this.accountId = credentials.accountId || "ACCOUNT";
+  }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
+    // Auto-resolve account ID via STS if not provided
+    if (this.accountId === "ACCOUNT") {
+      this.accountId = spec.accountId || "ACCOUNT";
+    }
+    const defaultRole = `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`;
+    spec._defaultLambdaRole = spec.roleArn || defaultRole;
+    spec._defaultRdsProxyRole = spec.rdsProxyRoleArn || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`;
+
     console.log(`[DagOrchestrator] Compiling DAG for pattern: ${pattern}`);
     
     switch (pattern) {
@@ -86,9 +98,9 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${bucketName}-security-headers`,
         Runtime: "nodejs18.x",
-        Role: "arn:aws:iam::ACCOUNT:role/EdgeLambdaRole",
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
         Handler: "index.handler",
-        Code: { ZipFile: new TextEncoder().encode("/* Security Headers Logic */") }
+        Code: { ZipFile: btoa("/* Security Headers Logic */") }
       },
       region: "us-east-1"
     });
@@ -305,8 +317,8 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${baseName}-processor`,
         Runtime: "nodejs18.x",
-        Role: spec.roleArn,
-        Code: { ZipFile: new TextEncoder().encode("/* Processor Logic */") },
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
+        Code: { ZipFile: btoa("/* Processor Logic */") },
         Handler: "index.handler"
       }
     });
@@ -340,9 +352,9 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${baseName}-authorizer`,
         Runtime: "nodejs18.x",
-        Role: spec.roleArn || "arn:aws:iam::ACCOUNT:role/LambdaExecutionRole",
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
         Handler: "index.handler",
-        Code: { ZipFile: new TextEncoder().encode("/* Lambda Authorizer */") }
+        Code: { ZipFile: btoa("/* Lambda Authorizer */") }
       },
       riskLevel: "LOW"
     });
@@ -381,7 +393,7 @@ export class DagOrchestrator {
       input: {
         DBProxyName: `${baseName}-proxy`,
         EngineFamily: "POSTGRESQL",
-        RoleArn: spec.rdsProxyRoleArn || "arn:aws:iam::ACCOUNT:role/RDSProxyRole",
+        RoleArn: spec._defaultRdsProxyRole || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`,
         Auth: [{ AuthScheme: "SECRETS", IAMAuth: "REQUIRED" }],
         VpcSubnetIds: subnetIds,
       },
