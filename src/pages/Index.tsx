@@ -41,6 +41,7 @@ const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
   EVENT_PIPELINE: "event-pipeline",
   INTERNAL_API: "internal-api",
   THREE_TIER: "three-tier",
+  EDGE_CACHE: "edge-cache",
 };
 
 const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
