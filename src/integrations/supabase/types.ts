@@ -53,6 +53,127 @@ export type Database = {
         }
         Relationships: []
       }
+      contributions: {
+        Row: {
+          contribution_type: string
+          contributor_id: string
+          created_at: string
+          description: string | null
+          id: string
+          pr_url: string | null
+          title: string
+          xp_earned: number
+        }
+        Insert: {
+          contribution_type: string
+          contributor_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          pr_url?: string | null
+          title: string
+          xp_earned?: number
+        }
+        Update: {
+          contribution_type?: string
+          contributor_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          pr_url?: string | null
+          title?: string
+          xp_earned?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contributions_contributor_id_fkey"
+            columns: ["contributor_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contributor_badges: {
+        Row: {
+          awarded_at: string
+          badge: Database["public"]["Enums"]["badge_type"]
+          contributor_id: string
+          id: string
+        }
+        Insert: {
+          awarded_at?: string
+          badge: Database["public"]["Enums"]["badge_type"]
+          contributor_id: string
+          id?: string
+        }
+        Update: {
+          awarded_at?: string
+          badge?: Database["public"]["Enums"]["badge_type"]
+          contributor_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contributor_badges_contributor_id_fkey"
+            columns: ["contributor_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contributors: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string
+          display_name: string | null
+          github_username: string
+          id: string
+          intents_validated: number
+          is_founding: boolean
+          pr_count: number
+          tier: Database["public"]["Enums"]["contributor_tier"]
+          updated_at: string
+          user_id: string | null
+          xp: number
+          yaml_kills: number
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          display_name?: string | null
+          github_username: string
+          id?: string
+          intents_validated?: number
+          is_founding?: boolean
+          pr_count?: number
+          tier?: Database["public"]["Enums"]["contributor_tier"]
+          updated_at?: string
+          user_id?: string | null
+          xp?: number
+          yaml_kills?: number
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          display_name?: string | null
+          github_username?: string
+          id?: string
+          intents_validated?: number
+          is_founding?: boolean
+          pr_count?: number
+          tier?: Database["public"]["Enums"]["contributor_tier"]
+          updated_at?: string
+          user_id?: string | null
+          xp?: number
+          yaml_kills?: number
+        }
+        Relationships: []
+      }
       deployments: {
         Row: {
           created_at: string
@@ -248,6 +369,50 @@ export type Database = {
         }
         Relationships: []
       }
+      yaml_bounties: {
+        Row: {
+          contributor_id: string
+          created_at: string
+          id: string
+          is_featured: boolean
+          legacy_config_type: string
+          legacy_snippet: string
+          month: string
+          naawi_intent: string
+          votes: number
+        }
+        Insert: {
+          contributor_id: string
+          created_at?: string
+          id?: string
+          is_featured?: boolean
+          legacy_config_type: string
+          legacy_snippet: string
+          month: string
+          naawi_intent: string
+          votes?: number
+        }
+        Update: {
+          contributor_id?: string
+          created_at?: string
+          id?: string
+          is_featured?: boolean
+          legacy_config_type?: string
+          legacy_snippet?: string
+          month?: string
+          naawi_intent?: string
+          votes?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "yaml_bounties_contributor_id_fkey"
+            columns: ["contributor_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -263,7 +428,15 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      badge_type:
+        | "founder"
+        | "yaml_slayer"
+        | "intent_seeker"
+        | "logic_builder"
+        | "core_architect"
+        | "bounty_winner"
       cloud_provider: "aws" | "gcp" | "azure"
+      contributor_tier: "intent" | "logic" | "core"
       user_segment: "free" | "developer" | "team" | "enterprise"
     }
     CompositeTypes: {
@@ -393,7 +566,16 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      badge_type: [
+        "founder",
+        "yaml_slayer",
+        "intent_seeker",
+        "logic_builder",
+        "core_architect",
+        "bounty_winner",
+      ],
       cloud_provider: ["aws", "gcp", "azure"],
+      contributor_tier: ["intent", "logic", "core"],
       user_segment: ["free", "developer", "team", "enterprise"],
     },
   },
