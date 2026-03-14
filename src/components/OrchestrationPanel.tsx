@@ -158,7 +158,7 @@ export function OrchestrationPanel({
 
     setSteps(buildSteps());
     setPlanResult(null); // Reset plan when input changes
-  }, [naawiOperations, resources, region, environment, workloadType, instanceType, os]);
+  }, [stableOps, resources, region, environment, workloadType, instanceType, os]);
 
   async function runPlan() {
     setIsPlanning(true);
