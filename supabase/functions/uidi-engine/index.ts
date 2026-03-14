@@ -48,6 +48,8 @@ const REST_ROUTES: Record<string, Record<string, { method: string; path: (i: any
     PutFunctionConcurrency:  { method: "PUT",  path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}/concurrency` },
     GetFunction:             { method: "GET",  path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}` },
     DeleteFunction:          { method: "DELETE", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}` },
+    CreateEventSourceMapping:{ method: "POST", path: () => "/2015-03-31/event-source-mappings" },
+    AddPermission:           { method: "POST", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}/policy` },
   },
   EKS: {
     CreateCluster:   { method: "POST", path: () => "/clusters" },
