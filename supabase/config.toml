@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.credential-vault]
 verify_jwt = false
+
+[functions.eks-poller]
+verify_jwt = false
