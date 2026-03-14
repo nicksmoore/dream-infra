@@ -1,11 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // AWS SDK v3 Imports (Deno npm specifiers)
-import { EC2Client, DescribeInstancesCommand } from "npm:@aws-sdk/client-ec2";
-import { S3Client, CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand } from "npm:@aws-sdk/client-s3";
-import { CloudFrontClient, CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
-import { Route53Client, ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand } from "npm:@aws-sdk/client-route-53";
-import { LambdaClient, CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand } from "npm:@aws-sdk/client-lambda";
+import { EC2Client, DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand } from "npm:@aws-sdk/client-ec2";
+import { S3Client, CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand } from "npm:@aws-sdk/client-s3";
+import { CloudFrontClient, CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand } from "npm:@aws-sdk/client-cloudfront";
+import { Route53Client, ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand } from "npm:@aws-sdk/client-route-53";
+import { LambdaClient, CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand } from "npm:@aws-sdk/client-lambda";
+import { ACMClient, RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand } from "npm:@aws-sdk/client-acm";
 import { EKSClient, CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand } from "npm:@aws-sdk/client-eks";
 import { AppMeshClient, CreateMeshCommand, CreateVirtualNodeCommand } from "npm:@aws-sdk/client-app-mesh";
 import { ElasticLoadBalancingV2Client, CreateLoadBalancerCommand, CreateTargetGroupCommand, DescribeLoadBalancersCommand } from "npm:@aws-sdk/client-elastic-load-balancing-v2";
@@ -2020,14 +2021,65 @@ interface ExecutionState {
   [opId: string]: Record<string, any>;
 }
 
+// Client Registry for Project Naawi
+const CLIENT_MAP: Record<string, any> = {
+  S3: S3Client,
+  EC2: EC2Client,
+  CloudFront: CloudFrontClient,
+  Route53: Route53Client,
+  Lambda: LambdaClient,
+  ACM: ACMClient,
+  EKS: EKSClient,
+  AppMesh: AppMeshClient,
+  ELBv2: ElasticLoadBalancingV2Client,
+  SQS: SQSClient,
+  DynamoDB: DynamoDBClient,
+  EventBridge: EventBridgeClient,
+  ApiGatewayV2: ApiGatewayV2Client,
+  RDS: RDSClient,
+  AutoScaling: AutoScalingClient,
+  ElastiCache: ElastiCacheClient,
+};
+
+// Command Registry for Project Naawi
+const COMMAND_MAP: Record<string, any> = {
+  // S3
+  CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand,
+  // EC2
+  DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand,
+  // CloudFront
+  CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand,
+  // Route53
+  ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand,
+  // Lambda
+  CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand,
+  // ACM
+  RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand,
+  // EKS
+  CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand,
+};
+
 function resolveReferences(input: any, state: ExecutionState): any {
-  const json = JSON.stringify(input);
-  const resolved = json.replace(/ref\(([^.]+)\.([^)]+)\)/g, (match, opId, property) => {
-    const val = state[opId]?.[property];
-    if (val === undefined) return match; // Leave as is for circuit breaker check
-    return val;
-  });
-  return JSON.parse(resolved);
+  if (typeof input !== "object" || input === null) return input;
+  
+  if (Array.isArray(input)) {
+    return input.map(item => resolveReferences(item, state));
+  }
+
+  const result: any = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === "string") {
+      result[key] = value.replace(/ref\(([^.]+)\.([^)]+)\)/g, (match, opId, property) => {
+        const val = state[opId]?.[property];
+        return val !== undefined ? val : match;
+      });
+    } else if (typeof value === "object") {
+      result[key] = resolveReferences(value, state);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 async function handleDiscovery(ops: SdkOperation[], credentials: any, region: string): Promise<DiscoveryReport[]> {
@@ -2041,32 +2093,29 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
     let status: DiscoveryReport["status"] = "NOT_FOUND";
 
     try {
-      if (service === "S3") {
-        const s3 = new S3Client({ region, credentials });
-        for (const name of identifiers) {
-          try {
-            const head = await s3.send(new HeadBucketCommand({ Bucket: name }));
-            liveState = { BucketName: name, ...head };
-            status = "MATCH";
-            break;
-          } catch (e) {
-            if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e;
-          }
-        }
-      } else if (service === "EC2") {
-        const ec2 = new EC2Client({ region, credentials });
-        for (const id of identifiers) {
-          try {
-            const desc = await ec2.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
-            const instance = desc.Reservations?.[0]?.Instances?.[0];
-            if (instance) {
-              liveState = instance;
+      const ClientClass = CLIENT_MAP[service];
+      if (ClientClass) {
+        const client = new ClientClass({ region: service === "CloudFront" || service === "Route53" || service === "ACM" ? "us-east-1" : region, credentials });
+        
+        if (service === "S3") {
+          for (const name of identifiers) {
+            try {
+              const head = await client.send(new HeadBucketCommand({ Bucket: name }));
+              liveState = { BucketName: name, ...head };
               status = "MATCH";
               break;
-            }
-          } catch (e) {
-            if (e.name !== "InvalidInstanceID.NotFound") throw e;
+            } catch (e) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
           }
+        } else if (service === "EC2") {
+          for (const id of identifiers) {
+            try {
+              const desc = await client.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
+              const instance = desc.Reservations?.[0]?.Instances?.[0];
+              if (instance) { liveState = instance; status = "MATCH"; break; }
+            } catch (e) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
+          }
+        } else if (service === "Route53") {
+          // Discovery for Hosted Zones etc.
         }
       }
 
@@ -2077,11 +2126,7 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
         suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE",
       });
     } catch (e) {
-      reports.push({
-        operationId: id,
-        status: "ERROR",
-        suggestedAction: "NONE",
-      });
+      reports.push({ operationId: id, status: "ERROR", suggestedAction: "NONE" });
     }
   }
 
@@ -2093,33 +2138,32 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
   const history: { opId: string; status: string; result?: any; error?: string }[] = [];
 
   for (const op of ops) {
-    // 1. Resolve Late-Binding References
     const resolvedInput = resolveReferences(op.input, state);
     
-    // 2. Circuit Breaker: Check for unresolved refs
     if (JSON.stringify(resolvedInput).includes("ref(")) {
-      return err("naawi", "execute", `Circuit Breaker: Unresolved dependency in ${op.id}. Dependencies: ${op.dependsOn?.join(", ")}`);
+      return err("naawi", "execute", `Circuit Breaker: Unresolved dependency in ${op.id}.`);
     }
 
     try {
-      // 3. Dynamic SDK Dispatch (Simplified for S3/EC2 for now)
-      let result: any;
-      if (op.service === "S3") {
-        const s3 = new S3Client({ region, credentials });
-        // Map op.command to SDK Command instance
-        if (op.command === "CreateBucketCommand") result = await s3.send(new CreateBucketCommand(resolvedInput));
-        if (op.command === "PutBucketWebsiteCommand") result = await s3.send(new PutBucketWebsiteCommand(resolvedInput));
-      } else if (op.service === "EC2") {
-        const ec2 = new EC2Client({ region, credentials });
-        // Dynamic command mapping logic...
+      const ClientClass = CLIENT_MAP[op.service];
+      const CommandClass = COMMAND_MAP[op.command];
+
+      if (!ClientClass || !CommandClass) {
+        throw new Error(`Naawi Error: Unsupported service/command - ${op.service}.${op.command}`);
       }
 
-      // 4. Capture Physical Resource IDs into StateStore
+      const client = new ClientClass({ 
+        region: op.service === "CloudFront" || op.service === "Route53" || op.service === "ACM" ? "us-east-1" : region, 
+        credentials 
+      });
+      const commandInstance = new CommandClass(resolvedInput);
+      const result = await client.send(commandInstance);
+
       state[op.id] = result || {};
       history.push({ opId: op.id, status: "SUCCESS", result });
 
     } catch (e) {
-      // 5. Halt & Report (No automated rollback to avoid double-failure)
+      console.error(`Execution failed at ${op.id}:`, e);
       history.push({ opId: op.id, status: "FAILED", error: e.message });
       return err("naawi", "execute", `Execution Halted at ${op.id}: ${e.message}`, { history, state_at_failure: state });
     }
