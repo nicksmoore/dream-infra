@@ -121,30 +121,31 @@ export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProp
   const totalCount = steps.length;
 
   return (
-    <Card className="bg-card border-border/50">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-primary" />
-            Deployment DAG
-          </CardTitle>
-          <Badge variant="outline" className="text-[10px]">
+    <Collapsible>
+      <CollapsibleTrigger className="flex items-center justify-between w-full p-2.5 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors text-left">
+        <div className="flex items-center gap-2">
+          <GitBranch className="h-3.5 w-3.5 text-primary" />
+          <span className="text-xs font-medium text-foreground">Deployment DAG</span>
+          <Badge variant="outline" className="text-[10px] h-4">
             {completedCount}/{totalCount} ops
           </Badge>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div
-          ref={containerRef}
-          className="w-full overflow-x-auto [&_svg]:mx-auto [&_svg]:max-w-full"
-          style={{ minHeight: rendered ? undefined : 120 }}
-        />
-        {!rendered && (
-          <div className="flex items-center justify-center h-[120px] text-xs text-muted-foreground">
-            Rendering diagram...
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 p-3 rounded-lg border border-border/50 bg-card">
+          <div
+            ref={containerRef}
+            className="w-full overflow-x-auto [&_svg]:mx-auto [&_svg]:max-w-full"
+            style={{ minHeight: rendered ? undefined : 120 }}
+          />
+          {!rendered && (
+            <div className="flex items-center justify-center h-[120px] text-xs text-muted-foreground">
+              Rendering diagram...
+            </div>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
