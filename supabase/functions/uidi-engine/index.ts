@@ -2088,38 +2088,33 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
     let status: DiscoveryReport["status"] = "NOT_FOUND";
 
     try {
-      const ClientClass = CLIENT_MAP[service];
-      if (ClientClass) {
-        const client = new ClientClass({ region: (service === "CloudFront" || service === "Route53" || service === "ACM" || service === "Lambda") ? "us-east-1" : region, credentials });
+      if (SDK_MODULE_MAP[service] && identifiers.length > 0) {
+        const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
+        const client = await getClient(service, globalServices.includes(service) ? "us-east-1" : region, credentials);
         
         if (service === "S3") {
+          const HeadBucketCmd = await getCommand("S3", "HeadBucketCommand");
           for (const name of identifiers) {
             try {
-              const head = await client.send(new HeadBucketCommand({ Bucket: name }));
+              const head = await client.send(new HeadBucketCmd({ Bucket: name }));
               liveState = { BucketName: name, ...head };
               status = "MATCH";
               break;
-            } catch (e) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
+            } catch (e: any) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
           }
         } else if (service === "EC2") {
-          for (const id of identifiers) {
+          const DescribeCmd = await getCommand("EC2", "DescribeInstancesCommand");
+          for (const resId of identifiers) {
             try {
-              const desc = await client.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
+              const desc = await client.send(new DescribeCmd({ InstanceIds: [resId] }));
               const instance = desc.Reservations?.[0]?.Instances?.[0];
               if (instance) { liveState = instance; status = "MATCH"; break; }
-            } catch (e) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
+            } catch (e: any) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
           }
-        } else if (service === "Route53") {
-          // Discovery for Hosted Zones etc.
         }
       }
 
-      reports.push({
-        operationId: id,
-        status,
-        liveState,
-        suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE",
-      });
+      reports.push({ operationId: id, status, liveState, suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE" });
     } catch (e) {
       reports.push({ operationId: id, status: "ERROR", suggestedAction: "NONE" });
     }
