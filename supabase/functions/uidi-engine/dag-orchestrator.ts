@@ -1,15 +1,11 @@
-
-import { S3Client, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
-import { CloudFrontClient, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
-import { Route53Client, ListHostedZonesByNameCommand } from "npm:@aws-sdk/client-route-53";
-
+// DAG Orchestrator — generates SdkOperation specs (no SDK imports needed)
 
 export interface SdkOperation {
   id: string;
   service: string;
   command: string;
   input: Record<string, any>;
-  dependency?: string; // ID of the operation this depends on
+  dependency?: string;
   region?: string;
   riskLevel?: "LOW" | "HIGH";
   discoveryContext?: {
@@ -18,19 +14,7 @@ export interface SdkOperation {
 }
 
 export class DagOrchestrator {
-  
-  private s3: S3Client;
-  private cf: CloudFrontClient;
-  private r53: Route53Client;
-  
-
-  constructor(private region: string, private credentials: any) {
-    
-    this.s3 = new S3Client({ region, credentials });
-    this.cf = new CloudFrontClient({ region: "us-east-1", credentials }); // CF is global
-    this.r53 = new Route53Client({ region: "us-east-1", credentials }); // R53 is global
-    
-  }
+  constructor(private region: string, private credentials: any) {}
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
     console.log(`[DagOrchestrator] Compiling DAG for pattern: ${pattern}`);
