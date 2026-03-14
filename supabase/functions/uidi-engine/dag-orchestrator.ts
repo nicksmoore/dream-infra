@@ -18,7 +18,7 @@ export interface SdkOperation {
 }
 
 export class DagOrchestrator {
-  private ec2: EC2Client;
+  
   private s3: S3Client;
   private cf: CloudFrontClient;
   private r53: Route53Client;
