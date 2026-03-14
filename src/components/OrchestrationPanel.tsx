@@ -33,7 +33,7 @@ interface OrchestrationPanelProps {
   onComplete?: () => void;
 }
 
-const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier", "edge-cache"] as const;
+const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier", "edge-cache", "cross-region-peered"] as const;
 
 type PlanResult = {
   discovery?: Array<{ operationId: string; status: string; suggestedAction?: string }>;
@@ -95,6 +95,71 @@ export function OrchestrationPanel({
             spec: { operations: [op], region },
             status: "pending",
           });
+        });
+        return result;
+      }
+
+      // ── Cross-Region Peered Architecture (custom multi-step) ──
+      if (workloadType === "cross-region-peered") {
+        result.push({
+          id: "data-vpc",
+          name: "eu-central-1: Data VPC",
+          description: "VPC 10.1.0.0/16 with private subnet in Frankfurt",
+          icon: <Network className="h-4 w-4" />,
+          intent: "network",
+          action: "deploy",
+          spec: { region: "eu-central-1", environment, name: `data-vpc-${environment}`, vpc_cidr: "10.1.0.0/16", az_count: 1, public_subnets: false },
+          status: "pending",
+        });
+        result.push({
+          id: "eks-vpc",
+          name: "us-east-1: EKS Management VPC",
+          description: "VPC 10.0.0.0/16 with public + private subnets in N. Virginia",
+          icon: <Network className="h-4 w-4" />,
+          intent: "network",
+          action: "deploy",
+          spec: { region: "us-east-1", environment, name: `eks-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 3 },
+          status: "pending",
+        });
+        result.push({
+          id: "vpc-peering",
+          name: "VPC Peering: us-east-1 ↔ eu-central-1",
+          description: "Cross-region peering connection with auto-accept + route propagation",
+          icon: <GitCompareArrows className="h-4 w-4 text-primary" />,
+          intent: "network",
+          action: "deploy",
+          spec: { region: "us-east-1", peer_region: "eu-central-1", requester_vpc: `eks-vpc-${environment}`, accepter_vpc: `data-vpc-${environment}`, type: "vpc-peering" },
+          status: "pending",
+        });
+        result.push({
+          id: "peering-routes",
+          name: "Route Tables: Cross-Region Routes",
+          description: "Inject routes for 10.1.0.0/16 ↔ 10.0.0.0/16 via peering connection",
+          icon: <Network className="h-4 w-4" />,
+          intent: "network",
+          action: "deploy",
+          spec: { region: "us-east-1", peer_region: "eu-central-1", type: "peering-routes" },
+          status: "pending",
+        });
+        result.push({
+          id: "eks-cluster",
+          name: "us-east-1: EKS Cluster",
+          description: "Managed Kubernetes cluster with route to eu-central-1 Data VPC (~10-15 min)",
+          icon: <Box className="h-4 w-4" />,
+          intent: "eks",
+          action: "deploy",
+          spec: { region: "us-east-1", environment, cluster_name: `eks-${environment}-cluster`, subnet_ids: [], kubernetes_version: "1.29" },
+          status: "pending",
+        });
+        result.push({
+          id: "eks-nodegroup",
+          name: "us-east-1: EKS Node Group",
+          description: "t3.medium managed node group (2 nodes)",
+          icon: <Server className="h-4 w-4" />,
+          intent: "eks",
+          action: "add_nodegroup",
+          spec: { region: "us-east-1", cluster_name: `eks-${environment}-cluster`, instance_types: ["t3.medium"], desired_size: 2, min_size: 1, max_size: 3 },
+          status: "pending",
         });
         return result;
       }

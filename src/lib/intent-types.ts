@@ -22,7 +22,7 @@ export interface DiscoveryReport {
 }
 
 // ===== Core Intent Types =====
-export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier" | "edge-cache";
+export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier" | "edge-cache" | "cross-region-peered";
 export type CostSensitivity = "cheapest" | "balanced" | "production";
 export type Environment = "dev" | "staging" | "prod";
 export type OsType = "amazon-linux-2023" | "ubuntu" | "debian" | "rhel" | "suse" | "windows-2022" | "windows-2019";
@@ -398,6 +398,9 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
 
   // ── Detect resources ──
   const resources: string[] = [];
+  if (/cross.?region|vpc.?peer|peering/i.test(lower)) {
+    resources.push("vpc", "subnets", "vpc-peering", "eks");
+  }
   if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) {
     resources.push("dynamodb", "route53", "lambda", "cloudfront");
   }
@@ -430,7 +433,8 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
   if (!result.resources.length) result.resources = ["ec2"];
 
   // Workload / Pattern Detection
-  if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) result.workloadType = "edge-cache";
+  if (/cross.?region|vpc.?peer|peering/i.test(lower)) result.workloadType = "cross-region-peered";
+  else if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) result.workloadType = "edge-cache";
   else if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) result.workloadType = "global-spa";
   else if (/microservice|service.?mesh|app.?mesh|mesh/i.test(lower)) result.workloadType = "service-mesh";
   else if (/queue|pipeline|event.?driven|sqs|event.?bridge/i.test(lower)) result.workloadType = "event-pipeline";
