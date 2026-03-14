@@ -94,8 +94,7 @@ export function OrchestrationPanel({
       }
 
       // SRE-Supreme Pattern Detection
-      const srePatterns = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"];
-      if (srePatterns.includes(workloadType)) {
+      if (SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number])) {
         result.push({
           id: "sre-pattern",
           name: `SRE Supreme: ${workloadType.toUpperCase()}`,
