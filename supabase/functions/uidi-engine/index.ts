@@ -1334,6 +1334,7 @@ async function describeExistingNetworkStack(
   vpc_id: string;
   security_group_id: string | null;
   subnets: { id: string; type: string; az: string; cidr: string }[];
+  subnet_ids: string[];
   region: string;
   vpc_cidr?: string;
   reused: true;
@@ -1405,6 +1406,7 @@ async function describeExistingNetworkStack(
     vpc_id: vpcId,
     security_group_id: securityGroupId,
     subnets,
+    subnet_ids: subnets.map((subnet) => subnet.id),
     region,
     vpc_cidr: vpcCidr,
     reused: true,
