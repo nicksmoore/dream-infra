@@ -360,16 +360,14 @@ export function OrchestrationPanel({
         </div>
 
         <div className="flex gap-2">
-          {hasNaawi && !planResult && (
-            <Button onClick={runPlan} disabled={isPlanning || isRunning} className="flex-1" variant="secondary">
-              {isPlanning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-              Generate Plan
-            </Button>
-          )}
+          <Button onClick={runPlan} disabled={isPlanning || isRunning || steps.length === 0} className="flex-1" variant="secondary">
+            {isPlanning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+            {planResult ? "Refresh Plan" : "Generate Plan"}
+          </Button>
           
           <Button 
-            onClick={() => runOrchestration(planResult?.requires_approval)} 
-            disabled={isRunning || isPlanning || (hasNaawi && !planResult)} 
+            onClick={() => runOrchestration(Boolean(planResult?.requires_approval))} 
+            disabled={isRunning || isPlanning || !planResult || steps.length === 0 || (hasNaawi && !planResult) || (hasSrePattern && !planResult)} 
             className="flex-1"
           >
             {isRunning ? (
