@@ -52,7 +52,7 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
         outputs: ["peering_connection_id"],
       },
       dependsOn: ["data-vpc", "eks-vpc"],
-      rollbackAction: "destroy",
+      rollbackAction: "delete_peering",
       rollbackSpec: { peering_connection_id: "peering_connection_id" },
       status: "pending",
     },
@@ -71,6 +71,7 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
         },
       },
       dependsOn: ["vpc-peering"],
+      // Routes are cleaned up automatically when VPCs or peering are deleted — no standalone rollback needed
       status: "pending",
     },
     {

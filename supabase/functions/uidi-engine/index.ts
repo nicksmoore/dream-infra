@@ -1517,6 +1517,31 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
       return ok("network", action, `Discovered ${vpcs.length} UIDI-managed VPC(s)`, { vpcs, region });
     }
 
+    // Standalone peering connection delete (used by rollback)
+    case "delete_peering": {
+      const pcxId = spec.peering_connection_id as string;
+      if (!pcxId) return err("network", action, "peering_connection_id required for delete_peering");
+      const delRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpcPeeringConnection", Version: "2016-11-15", VpcPeeringConnectionId: pcxId }).toString(), AWS_KEY, AWS_SECRET);
+      const delBody = await delRes.text();
+      if (!delRes.ok && !delBody.includes("InvalidStateTransition")) {
+        return err("network", action, `DeleteVpcPeeringConnection failed: ${extractEc2Error(delBody) || delBody.slice(0, 300)}`);
+      }
+      return ok("network", action, `Peering connection ${pcxId} deleted`, { peering_connection_id: pcxId, region });
+    }
+
+    // Standalone route deletion (used by rollback for peering-routes)
+    case "delete_routes": {
+      const rtId = spec.route_table_id as string;
+      const destCidr = spec.destination_cidr as string;
+      if (!rtId || !destCidr) return ok("network", action, "No routes to delete (missing route_table_id or destination_cidr)", { region });
+      const delRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteRoute", Version: "2016-11-15", RouteTableId: rtId, DestinationCidrBlock: destCidr }).toString(), AWS_KEY, AWS_SECRET);
+      const delBody = await delRes.text();
+      if (!delRes.ok && !delBody.includes("InvalidRoute.NotFound")) {
+        console.log(`DeleteRoute ${rtId} ${destCidr}: ${delBody.slice(0, 200)}`);
+      }
+      return ok("network", action, `Route ${destCidr} deleted from ${rtId}`, { route_table_id: rtId, region });
+    }
+
     case "destroy": {
       const vpcId = spec.vpc_id as string;
       if (!vpcId) return err("network", action, "vpc_id required for destroy");
@@ -1568,7 +1593,6 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
         dBody = await dRes.text();
         const allRtIds = [...new Set([...dBody.matchAll(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/g)].map(m => m[1]))];
         for (const rtId of allRtIds) {
-          // Try to delete — will fail for main RT (that's fine, it goes with VPC)
           const delRt = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteRouteTable", Version: "2016-11-15", RouteTableId: rtId }).toString(), AWS_KEY, AWS_SECRET);
           const delRtBody = await delRt.text();
           if (delRt.ok || delRt.status === 200) {
@@ -1601,9 +1625,9 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           const detachRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
           const detachBody = await detachRes.text();
           console.log(`DetachIGW ${gid}: status=${detachRes.status} ${detachRes.status !== 200 ? detachBody.slice(0, 200) : 'OK'}`);
-          const delRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET);
-          const delBody = await delRes.text();
-          console.log(`DeleteIGW ${gid}: status=${delRes.status} ${delRes.status !== 200 ? delBody.slice(0, 200) : 'OK'}`);
+          const delIgwRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET);
+          const delIgwBody = await delIgwRes.text();
+          console.log(`DeleteIGW ${gid}: status=${delIgwRes.status} ${delIgwRes.status !== 200 ? delIgwBody.slice(0, 200) : 'OK'}`);
           destroyed.push(`igw:${gid}`);
         }
 
@@ -1613,7 +1637,6 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
         console.log(`Destroy ${vpcId}: DescribeENIs body=${dBody.slice(0, 800)}`);
         const eniIds = [...dBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
         for (const eniId of eniIds) {
-          // Detach first if attached
           const attachMatch = dBody.match(new RegExp(`<networkInterfaceId>${eniId}</networkInterfaceId>[\\s\\S]*?<attachmentId>(eni-attach-[a-f0-9]+)</attachmentId>`));
           if (attachMatch) {
             await ec2Request("POST", region, new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachMatch[1], Force: "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
