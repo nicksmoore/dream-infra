@@ -99,8 +99,79 @@ export function DeploymentDebugger() {
               >
                 SDK Traces
               </TabsTrigger>
+              <TabsTrigger 
+                value="moat" 
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent text-xs uppercase tracking-wider h-9 px-4"
+              >
+                SRE Moat Payloads
+              </TabsTrigger>
             </TabsList>
           </div>
+
+          <TabsContent value="moat" className="p-4 m-0 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
+                  <ShieldAlert className="h-3 w-3" /> Lambda@Edge: Security Headers
+                </h3>
+                <ScrollArea className="h-64 w-full bg-black/40 rounded border border-primary/20 p-2">
+                  <pre className="text-[9px] font-mono text-primary/80">
+{\`'use strict';
+exports.handler = (event, context, callback) => {
+    const response = event.Records[0].cf.response;
+    const headers = response.headers;
+
+    headers['strict-transport-security'] = [{
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload'
+    }];
+    headers['content-security-policy'] = [{
+        key: 'Content-Security-Policy',
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://naawi.com;"
+    }];
+    headers['x-frame-options'] = [{ key: 'X-Frame-Options', value: 'DENY' }];
+    headers['x-content-type-options'] = [{ key: 'X-Content-Type-Options', value: 'nosniff' }];
+
+    callback(null, response);
+};\`}
+                  </pre>
+                </ScrollArea>
+                <Button size="sm" className="w-full h-7 text-[9px] uppercase tracking-tighter bg-primary/20 hover:bg-primary/40 text-primary border border-primary/50">
+                  Inject into Call [04]
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
+                  <Layers className="h-3 w-3" /> S3: OAC Shielding Policy
+                </h3>
+                <ScrollArea className="h-64 w-full bg-black/40 rounded border border-primary/20 p-2">
+                  <pre className="text-[9px] font-mono text-primary/80">
+{\`{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontServicePrincipal",
+      "Effect": "Allow",
+      "Principal": { "Service": "cloudfront.amazonaws.com" },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::naawi-assets/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT:distribution/DIST_ID"
+        }
+      }
+    }
+  ]
+}\`}
+                  </pre>
+                </ScrollArea>
+                <Button size="sm" className="w-full h-7 text-[9px] uppercase tracking-tighter bg-primary/20 hover:bg-primary/40 text-primary border border-primary/50">
+                  Inject into Call [06]
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
 
           <TabsContent value="diff" className="p-4 m-0 space-y-4">
             <Alert variant="destructive" className="bg-destructive/10 border-destructive/30 text-destructive-foreground py-2">
