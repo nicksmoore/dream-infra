@@ -326,7 +326,7 @@ export const INSTANCE_TYPE_CATALOG: { family: string; category: string; types: s
 
 // Helper to get instance types filtered by workload
 export function getInstanceTypesForWorkload(workload: WorkloadType): { family: string; category: string; types: string[] }[] {
-  const categoryMap: Record<WorkloadType, string[]> = {
+  const categoryMap: Partial<Record<WorkloadType, string[]>> = {
     general: ["General Purpose", "Burstable"],
     compute: ["Compute Optimized"],
     memory: ["Memory Optimized", "High Memory"],
@@ -334,6 +334,7 @@ export function getInstanceTypesForWorkload(workload: WorkloadType): { family: s
     accelerated: ["GPU", "Inference", "Training"],
     hpc: ["HPC"],
   };
+  const keywords = categoryMap[workload] || [];
   const keywords = categoryMap[workload];
   return INSTANCE_TYPE_CATALOG.filter(g => keywords.some(k => g.category.includes(k)));
 }
