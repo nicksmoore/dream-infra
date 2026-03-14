@@ -163,8 +163,8 @@ export function OrchestrationPanel({
   async function runPlan() {
     setIsPlanning(true);
     try {
-      if (naawiOperations.length > 0) {
-        const result = await naawiPlan({ operations: naawiOperations, region });
+      if (stableOps.length > 0) {
+        const result = await naawiPlan({ operations: stableOps, region });
         if (result.status !== "success") throw new Error(result.error || "Plan failed");
         setPlanResult(result.details as PlanResult);
         toast({ title: "Naawi Plan Ready", description: "Review diff + estimated cost before execution." });
