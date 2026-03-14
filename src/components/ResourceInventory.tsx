@@ -89,10 +89,29 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
           resource_type: resource.type,
           region: resource.region,
           ...(resource.type === "eks" ? { cluster_name: resource.name } : {}),
+          ...(resource.type === "s3" ? { bucket_name: resource.name } : {}),
+          ...(resource.type === "lambda" ? { function_name: resource.name } : {}),
+          ...(resource.type === "app_mesh" ? { mesh_name: resource.name } : {}),
+          ...(resource.type === "sqs" ? { queue_url: (resource.details as any)?.queue_url } : {}),
         },
       });
       if (result.status === "error") throw new Error(result.error || result.message);
+      
+      // Handle CloudFront "disabling" state (needs retry)
+      const details = result.details as any;
+      if (details?.state === "disabling") {
+        toast({ 
+          title: "Distribution disabling", 
+          description: result.message || "CloudFront is disabling. Re-scan and nuke again in ~10 minutes.",
+        });
+        return;
+      }
+
       toast({ title: "Resource destroyed", description: result.message });
+      // Show dependency steps if any
+      if (details?.steps?.length > 1) {
+        toast({ title: "Cleanup steps", description: details.steps.join(" → ") });
+      }
       // Remove from list
       setResources(prev => prev.filter(r => r.id !== resource.id));
     } catch (e) {
