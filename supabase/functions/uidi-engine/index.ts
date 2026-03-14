@@ -2052,43 +2052,7 @@ interface ExecutionState {
   [opId: string]: Record<string, any>;
 }
 
-// Client Registry for Project Naawi
-const CLIENT_MAP: Record<string, any> = {
-  S3: S3Client,
-  EC2: EC2Client,
-  CloudFront: CloudFrontClient,
-  Route53: Route53Client,
-  Lambda: LambdaClient,
-  ACM: ACMClient,
-  EKS: EKSClient,
-  AppMesh: AppMeshClient,
-  ELBv2: ElasticLoadBalancingV2Client,
-  SQS: SQSClient,
-  DynamoDB: DynamoDBClient,
-  EventBridge: EventBridgeClient,
-  ApiGatewayV2: ApiGatewayV2Client,
-  RDS: RDSClient,
-  AutoScaling: AutoScalingClient,
-  ElastiCache: ElastiCacheClient,
-};
-
-// Command Registry for Project Naawi
-const COMMAND_MAP: Record<string, any> = {
-  // S3
-  CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand,
-  // EC2
-  DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand,
-  // CloudFront
-  CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand,
-  // Route53
-  ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand,
-  // Lambda
-  CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand, PublishVersionCommand,
-  // ACM
-  RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand,
-  // EKS
-  CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand,
-};
+// Client + Command loading now uses dynamic imports via getClient() and getCommand()
 
 function resolveReferences(input: any, state: ExecutionState): any {
   if (typeof input !== "object" || input === null) return input;
