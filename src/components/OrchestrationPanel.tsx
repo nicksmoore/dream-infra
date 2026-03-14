@@ -224,10 +224,15 @@ export function OrchestrationPanel({
             return;
           }
 
-          // Still pending — update progress message
-          const statusMsg = details?.status ? `Status: ${details.status}` : "Still provisioning...";
+          // Still pending — update progress message (include granular stage if provided)
+          const stage = typeof (details as any)?.stage === "string" ? String((details as any).stage) : undefined;
+          const status = (details as any)?.status ? String((details as any).status) : undefined;
+          const statusMsg = status ? `Status: ${status}` : "Still provisioning...";
+          const stageMsg = stage ? `Stage: ${stage}` : undefined;
+          const msg = [stageMsg, statusMsg].filter(Boolean).join(" · ");
+
           setSteps(prev => prev.map((s, idx) =>
-            idx === stepIndex ? { ...s, status: "polling" as any, output: `${statusMsg} (poll ${polls}/${MAX_POLLS})` } : s
+            idx === stepIndex ? { ...s, status: "polling" as any, output: `${msg} (poll ${polls}/${MAX_POLLS})` } : s
           ));
 
           if (polls >= MAX_POLLS) {
