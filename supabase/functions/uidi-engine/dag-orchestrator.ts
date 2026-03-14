@@ -86,16 +86,25 @@ export class DagOrchestrator {
 
   // ─── Pattern 1: The Global SPA (EDGE_STATIC_SPA) ───
   private async compileGlobalSpa(spec: any): Promise<SdkOperation[]> {
-    const { domainName, bucketName } = spec;
     const ops: SdkOperation[] = [];
     const intentHash = this.generateClientToken(spec, "pattern1");
+    const baseName = this.normalizeName(String(spec.name || "global-spa"), "global-spa", 36);
+    const suffix = Date.now().toString(36);
+    const bucketName = this.normalizeBucketName(String(spec.bucketName || `${baseName}-${this.region}-${suffix}`));
+    const domainName = typeof spec.domainName === "string" && spec.domainName.includes(".")
+      ? spec.domainName.toLowerCase()
+      : undefined;
+    const hostedZoneId = typeof spec.hostedZoneId === "string" && spec.hostedZoneId.trim().length > 0
+      ? spec.hostedZoneId.trim()
+      : undefined;
+    const enableCustomDomain = Boolean(spec.enableCustomDomain && domainName && hostedZoneId);
 
     ops.push({
       id: "s3-bucket",
       service: "S3",
       command: "CreateBucket",
       input: { Bucket: bucketName },
-      riskLevel: "LOW"
+      riskLevel: "LOW",
     });
 
     ops.push({
@@ -107,54 +116,33 @@ export class DagOrchestrator {
           Name: `${bucketName}-oac`,
           OriginAccessControlOriginType: "s3",
           SigningBehavior: "always",
-          SigningProtocol: "sigv4"
-        }
-      }
-    });
-
-    ops.push({
-      id: "acm-cert",
-      service: "ACM",
-      command: "RequestCertificate",
-      input: {
-        DomainName: domainName,
-        ValidationMethod: "DNS",
-        IdempotencyToken: intentHash.slice(0, 32)
+          SigningProtocol: "sigv4",
+        },
       },
-      region: "us-east-1"
     });
 
-    ops.push({
-      id: "lambda-security",
-      service: "Lambda",
-      command: "CreateFunction",
-      input: {
-        FunctionName: `${bucketName}-security-headers`,
-        Runtime: "nodejs18.x",
-        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
-        Handler: "index.handler",
-        Code: { ZipFile: btoa("/* Security Headers Logic */") }
-      },
-      region: "us-east-1"
-    });
+    if (enableCustomDomain) {
+      ops.push({
+        id: "acm-cert",
+        service: "ACM",
+        command: "RequestCertificate",
+        input: {
+          DomainName: domainName,
+          ValidationMethod: "DNS",
+          IdempotencyToken: intentHash.slice(0, 32),
+        },
+        region: "us-east-1",
+      });
 
-    ops.push({
-      id: "lambda-version",
-      service: "Lambda",
-      command: "PublishVersion",
-      input: { FunctionName: "ref(lambda-security.FunctionName)" },
-      dependency: "lambda-security",
-      region: "us-east-1"
-    });
-
-    ops.push({
-      id: "wait-cert",
-      service: "ACM",
-      command: "WaitUntilCertificateValidated",
-      input: { CertificateArn: "ref(acm-cert.CertificateArn)" },
-      dependency: "acm-cert",
-      region: "us-east-1"
-    });
+      ops.push({
+        id: "wait-cert",
+        service: "ACM",
+        command: "WaitUntilCertificateValidated",
+        input: { CertificateArn: "ref(acm-cert.CertificateArn)" },
+        dependency: "acm-cert",
+        region: "us-east-1",
+      });
+    }
 
     ops.push({
       id: "cf-dist",
@@ -170,8 +158,8 @@ export class DagOrchestrator {
               Id: "S3Origin",
               DomainName: `${bucketName}.s3.${this.region}.amazonaws.com`,
               OriginAccessControlId: "ref(cf-oac.OriginAccessControl.Id)",
-              S3OriginConfig: { OriginAccessIdentity: "" }
-            }]
+              S3OriginConfig: { OriginAccessIdentity: "" },
+            }],
           },
           DefaultCacheBehavior: {
             TargetOriginId: "S3Origin",
@@ -180,21 +168,18 @@ export class DagOrchestrator {
             MinTTL: 0,
             DefaultTTL: 86400,
             MaxTTL: 31536000,
-            LambdaFunctionAssociations: {
-              Quantity: 1,
-              Items: [{
-                EventType: "viewer-response",
-                LambdaFunctionARN: "ref(lambda-version.FunctionArn)"
-              }]
-            }
           },
-          ViewerCertificate: {
-            ACMCertificateArn: "ref(acm-cert.CertificateArn)",
-            SSLSupportMethod: "sni-only"
-          }
-        }
+          ViewerCertificate: enableCustomDomain
+            ? {
+                ACMCertificateArn: "ref(acm-cert.CertificateArn)",
+                SSLSupportMethod: "sni-only",
+              }
+            : {
+                CloudFrontDefaultCertificate: true,
+              },
+        },
       },
-      dependency: "wait-cert"
+      dependency: enableCustomDomain ? "wait-cert" : "cf-oac",
     });
 
     ops.push({
@@ -210,36 +195,38 @@ export class DagOrchestrator {
             Principal: { Service: "cloudfront.amazonaws.com" },
             Action: "s3:GetObject",
             Resource: `arn:aws:s3:::${bucketName}/*`,
-            Condition: { StringEquals: { "AWS:SourceArn": "ref(cf-dist.Distribution.ARN)" } }
-          }]
-        })
+            Condition: { StringEquals: { "AWS:SourceArn": "ref(cf-dist.Distribution.ARN)" } },
+          }],
+        }),
       },
-      dependency: "cf-dist"
+      dependency: "cf-dist",
     });
 
-    ops.push({
-      id: "r53-record",
-      service: "Route53",
-      command: "ChangeResourceRecordSets",
-      input: {
-        HostedZoneId: spec.hostedZoneId,
-        ChangeBatch: {
-          Changes: [{
-            Action: "UPSERT",
-            ResourceRecordSet: {
-              Name: domainName,
-              Type: "A",
-              AliasTarget: {
-                HostedZoneId: "Z2FDTNDATAQYW2",
-                DNSName: "ref(cf-dist.Distribution.DomainName)",
-                EvaluateTargetHealth: false
-              }
-            }
-          }]
-        }
-      },
-      dependency: "cf-dist"
-    });
+    if (enableCustomDomain) {
+      ops.push({
+        id: "r53-record",
+        service: "Route53",
+        command: "ChangeResourceRecordSets",
+        input: {
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Changes: [{
+              Action: "UPSERT",
+              ResourceRecordSet: {
+                Name: domainName,
+                Type: "A",
+                AliasTarget: {
+                  HostedZoneId: "Z2FDTNDATAQYW2",
+                  DNSName: "ref(cf-dist.Distribution.DomainName)",
+                  EvaluateTargetHealth: false,
+                },
+              },
+            }],
+          },
+        },
+        dependency: "cf-dist",
+      });
+    }
 
     ops.push({
       id: "cf-invalidation",
@@ -249,10 +236,10 @@ export class DagOrchestrator {
         DistributionId: "ref(cf-dist.Distribution.Id)",
         InvalidationBatch: {
           Paths: { Quantity: 1, Items: ["/*"] },
-          CallerReference: spec.buildHash || intentHash
-        }
+          CallerReference: spec.buildHash || intentHash,
+        },
       },
-      dependency: "cf-dist"
+      dependency: "cf-dist",
     });
 
     return ops;
