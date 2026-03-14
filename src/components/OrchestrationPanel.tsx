@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
+import { DeploymentDiagram } from "@/components/DeploymentDiagram";
+import { ValidationPhase } from "@/components/ValidationPhase";
 import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows } from "lucide-react";
 
 interface OrchestrationStep {
@@ -71,6 +73,7 @@ export function OrchestrationPanel({
   const [planResult, setPlanResult] = useState<PlanResult | null>(null);
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
+  const [deploymentResult, setDeploymentResult] = useState<any>(null);
 
   useEffect(() => {
     const buildSteps = (): OrchestrationStep[] => {
@@ -213,6 +216,7 @@ export function OrchestrationPanel({
         if (result.status === "error") throw new Error(result.error || result.message);
 
         setSteps(prev => prev.map(s => ({ ...s, status: "done", output: JSON.stringify(result.details, null, 2) })));
+        setDeploymentResult(result.details);
         toast({ title: "Deployment successful", description: result.message });
         onComplete?.();
       } catch (e) {
@@ -241,6 +245,7 @@ export function OrchestrationPanel({
         
 
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
+        if (i === steps.length - 1) setDeploymentResult(result.details);
         toast({ title: `${step.name} complete`, description: result.message });
       } catch (e) {
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "error", output: e instanceof Error ? e.message : "Failed" } : s));
@@ -337,6 +342,9 @@ export function OrchestrationPanel({
           </div>
         )}
 
+        {/* Deployment DAG Diagram */}
+        <DeploymentDiagram workloadType={workloadType} steps={steps} />
+
         {/* Steps */}
         <div className="space-y-3">
           {steps.map((step, i) => (
@@ -359,6 +367,14 @@ export function OrchestrationPanel({
             </div>
           ))}
         </div>
+
+        {/* Validation & Security Scan — shown after deployment */}
+        {steps.some(s => s.status === "done") && (
+          <ValidationPhase
+            workloadType={workloadType}
+            deploymentResult={deploymentResult}
+          />
+        )}
 
         <div className="flex gap-2">
           <Button onClick={runPlan} disabled={isPlanning || isRunning || steps.length === 0} className="flex-1" variant="secondary">
