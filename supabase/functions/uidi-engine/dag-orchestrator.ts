@@ -1,4 +1,4 @@
-import { EC2Client, DescribeVpcsCommand, DescribeSubnetsCommand } from "npm:@aws-sdk/client-ec2";
+
 import { S3Client, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
 import { CloudFrontClient, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
 import { Route53Client, ListHostedZonesByNameCommand } from "npm:@aws-sdk/client-route-53";
