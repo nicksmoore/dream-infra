@@ -1,56 +1,40 @@
-# Welcome to your Lovable project
+# Project Naawi: Intent-Driven Infrastructure
 
-## Project info
+## 🚀 The Mission
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Infrastructure-as-Code has hit a wall of "boilerplate fatigue." **Project Naawi** is breaking through it—making Intent-Driven Infrastructure (IDI) conversational, intuitive, and actually fun to build.
 
-## How can I edit this code?
+We're not just building a tool—we're building a high-energy movement to transform how Platform Engineers, SREs, and DevOps teams approach infrastructure deployment.
 
-There are several ways of editing your application.
+## 🎯 Project Goals
 
-**Use Lovable**
+- **Make Infrastructure Conversational**: Move from "How to deploy" to "What to deploy." No more DSL fatigue.
+- **Community-Driven Roadmap**: Solve the technical bottlenecks that keep Platform Engineers up at night through collective stress-testing and real-world validation.
+- **Gamify Contributions**: Track Impact Velocity and reward contributors as they climb from *Intent-Seeker* to *Core Architect*.
+- **Enable Open Source Bounties**: Partner with the business community to launch financial incentives for infrastructure innovation.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## 📊 Current Stage: Founding Contributors
 
-Changes made via Lovable will be committed automatically to this repo.
+We are officially opening the doors for:
 
-**Use your preferred IDE**
+- **Founding Contributors** - First 100 PRs earn "Founding 100" Badge and Founder Status
+- **Community Leaders** - Collaborate on intent-based orchestration standards
+- **Strategic Business Partners** - Support the project and gain direct visibility within an elite circle of SREs
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🎮 Key Features
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- **The Architect's Leaderboard**: Track Impact Velocity across the community
+- **Intent Compiler**: Natural language intents → Infrastructure automation
+- **Founding 100 Badge**: Recognition for early adopters and contributors
+- **YAML Bounties Program** (Coming Soon): Financial incentives for legacy boilerplate replacement
 
-Follow these steps:
+## 🤝 Get Involved
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+- **GitHub**: [github.com/nicksmoore/project-naawi](https://github.com/nicksmoore/project-naawi)
+- **Live Playground**: [project-naawi.lovable.app](https://project-naawi.lovable.app/)
+- **Contribute**: Submit PRs to earn your rank in the Intent-Driven Infrastructure movement
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
+## 🛠️ Tech Stack
 
 This project is built with:
 
@@ -60,14 +44,20 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
-## How can I deploy this project?
+## 📝 Development
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```sh
+# Clone and install
+git clone <YOUR_GIT_URL>
+cd project-naawi
+npm i
 
-## Can I connect a custom domain to my Lovable project?
+# Start development server
+npm run dev
+```
 
-Yes, you can!
+## 📢 Join the Movement
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Are you ready to be a Founding Architect or Strategic Sponsor? Let's make infrastructure conversational and fun again.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+**DM to get involved in shaping the future of Intent-Driven Infrastructure.**
