@@ -153,6 +153,7 @@ export class DagOrchestrator {
           CallerReference: intentHash,
           Comment: `${baseName} distribution`,
           Enabled: true,
+          DefaultRootObject: "index.html",
           Origins: {
             Quantity: 1,
             Items: [{
@@ -169,6 +170,15 @@ export class DagOrchestrator {
             MinTTL: 0,
             DefaultTTL: 86400,
             MaxTTL: 31536000,
+          },
+          CustomErrorResponses: {
+            Quantity: 1,
+            Items: [{
+              ErrorCode: 403,
+              ResponsePagePath: "/index.html",
+              ResponseCode: 200,
+              ErrorCachingMinTTL: 10,
+            }],
           },
           ViewerCertificate: enableCustomDomain
             ? {
