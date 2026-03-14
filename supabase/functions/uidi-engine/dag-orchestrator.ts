@@ -352,7 +352,7 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${baseName}-authorizer`,
         Runtime: "nodejs18.x",
-        Role: spec.roleArn || "arn:aws:iam::ACCOUNT:role/LambdaExecutionRole",
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
         Handler: "index.handler",
         Code: { ZipFile: btoa("/* Lambda Authorizer */") }
       },
