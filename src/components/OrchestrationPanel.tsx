@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, RefreshCw, AlertTriangle, Eye, ShieldAlert } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows } from "lucide-react";
 
 interface OrchestrationStep {
   id: string;
@@ -31,6 +31,30 @@ interface OrchestrationPanelProps {
   onComplete?: () => void;
 }
 
+const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"] as const;
+
+type PlanResult = {
+  discovery?: Array<{ operationId: string; status: string; suggestedAction?: string }>;
+  operations?: Array<{ id: string; service: string; command: string }>;
+  risk_level?: "LOW" | "HIGH";
+  requires_approval?: boolean;
+  estimated_monthly_cost_usd?: number;
+};
+
+function estimateLocalStepCost(step: OrchestrationStep): number {
+  if (step.intent === "compute") {
+    const it = String(step.spec.instance_type || "t3.micro");
+    if (it.includes("nano")) return 4;
+    if (it.includes("micro")) return 8;
+    if (it.includes("small")) return 16;
+    if (it.includes("medium")) return 32;
+    return 48;
+  }
+  if (step.intent === "network") return 12;
+  if (step.intent === "eks") return 75;
+  return 15;
+}
+
 export function OrchestrationPanel({
   resources,
   region,
@@ -44,7 +68,7 @@ export function OrchestrationPanel({
   const [steps, setSteps] = useState<OrchestrationStep[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
-  const [planResult, setPlanResult] = useState<any>(null);
+  const [planResult, setPlanResult] = useState<PlanResult | null>(null);
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
 
@@ -70,8 +94,7 @@ export function OrchestrationPanel({
       }
 
       // SRE-Supreme Pattern Detection
-      const srePatterns = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"];
-      if (srePatterns.includes(workloadType)) {
+      if (SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number])) {
         result.push({
           id: "sre-pattern",
           name: `SRE Supreme: ${workloadType.toUpperCase()}`,
@@ -79,7 +102,7 @@ export function OrchestrationPanel({
           icon: <ShieldCheck className="h-4 w-4 text-primary" />,
           intent: "sre-supreme",
           action: "deploy",
-          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}` },
+          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}`, intentText: workloadType },
           status: "pending",
         });
         return result;
@@ -132,16 +155,46 @@ export function OrchestrationPanel({
   }, [naawiOperations, resources, region, environment, workloadType, instanceType, os]);
 
   async function runPlan() {
-    if (naawiOperations.length === 0) return;
     setIsPlanning(true);
     try {
-      const result = await naawiPlan({ operations: naawiOperations, region });
-      if (result.status === "success") {
-        setPlanResult(result.details);
-        toast({ title: "Naawi Plan Ready", description: "Review the discovery report before execution." });
-      } else {
-        throw new Error(result.error || "Plan failed");
+      if (naawiOperations.length > 0) {
+        const result = await naawiPlan({ operations: naawiOperations, region });
+        if (result.status !== "success") throw new Error(result.error || "Plan failed");
+        setPlanResult(result.details as PlanResult);
+        toast({ title: "Naawi Plan Ready", description: "Review diff + estimated cost before execution." });
+        return;
       }
+
+      const isSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
+      if (isSrePattern) {
+        const result = await executeIntent({
+          intent: "sre-supreme",
+          action: "plan",
+          spec: {
+            workload_type: workloadType,
+            region,
+            environment,
+            name: `sre-${workloadType}-${environment}`,
+            intentText: workloadType,
+          },
+        });
+
+        if (result.status !== "success") throw new Error(result.error || result.message || "Plan failed");
+        setPlanResult(result.details as PlanResult);
+        toast({ title: "SRE Plan Ready", description: "Review planned SDK calls, diff, and cost before execution." });
+        return;
+      }
+
+      // Fallback local plan for non-SRE orchestration
+      const estimated = steps.reduce((sum, step) => sum + estimateLocalStepCost(step), 0);
+      setPlanResult({
+        risk_level: "LOW",
+        requires_approval: false,
+        estimated_monthly_cost_usd: estimated,
+        discovery: steps.map((step) => ({ operationId: step.id, status: "NOT_FOUND", suggestedAction: "CREATE" })),
+        operations: steps.map((step) => ({ id: step.id, service: step.intent.toUpperCase(), command: step.action })),
+      });
+      toast({ title: "Plan Ready", description: "Preview generated with estimated cost." });
     } catch (e) {
       toast({ title: "Planning failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
     } finally {
@@ -151,7 +204,6 @@ export function OrchestrationPanel({
 
   async function runOrchestration(approved = false) {
     setIsRunning(true);
-    let networkResult: EngineResponse | null = null;
 
     if (naawiOperations.length > 0) {
       try {
@@ -186,7 +238,7 @@ export function OrchestrationPanel({
         });
 
         if (result.status === "error") throw new Error(result.error || result.message);
-        if (step.id === "network") networkResult = result;
+        
 
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
         toast({ title: `${step.name} complete`, description: result.message });
@@ -213,6 +265,7 @@ export function OrchestrationPanel({
   };
 
   const hasNaawi = naawiOperations.length > 0;
+  const hasSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
 
   return (
     <Card className="bg-card border-primary/20">
@@ -226,30 +279,48 @@ export function OrchestrationPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Naawi Plan / Risk Alert */}
+        {/* Plan / Risk / Cost */}
         {planResult && (
           <div className="space-y-3 p-3 rounded-lg bg-muted/30 border border-border">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">Discovery Plan</span>
+                <GitCompareArrows className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Diff & Execution Plan</span>
               </div>
-              <Badge variant={planResult.risk_level === "HIGH" ? "destructive" : "secondary"}>
-                Risk: {planResult.risk_level}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={planResult.risk_level === "HIGH" ? "destructive" : "secondary"}>
+                  Risk: {planResult.risk_level || "LOW"}
+                </Badge>
+                {typeof planResult.estimated_monthly_cost_usd === "number" && (
+                  <Badge variant="outline" className="gap-1">
+                    <DollarSign className="h-3 w-3" /> ~${planResult.estimated_monthly_cost_usd.toFixed(2)}/mo
+                  </Badge>
+                )}
+              </div>
             </div>
-            
+
+            {planResult.operations?.length ? (
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Planned SDK Calls</p>
+                {planResult.operations.map((op, i) => (
+                  <div key={`${op.id}-${i}`} className="text-xs flex items-start gap-2">
+                    <Badge variant="outline" className="h-5 text-[10px]">{i + 1}</Badge>
+                    <span className="font-mono">{op.service}:{op.command}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="space-y-2">
-              {planResult.discovery?.map((report: any, i: number) => (
+              {planResult.discovery?.map((report, i) => (
                 <div key={i} className="text-xs flex items-start gap-2">
                   {report.status === "MATCH" ? (
                     <CheckCircle2 className="h-3 w-3 text-primary mt-0.5" />
                   ) : (
-                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5" />
+                    <AlertTriangle className="h-3 w-3 text-muted-foreground mt-0.5" />
                   )}
                   <span>
-                    <span className="font-medium">{report.operationId}</span>: 
-                    {report.status === "MATCH" ? " Existing resource found (Safe)" : " Resource missing (Will Create)"}
+                    <span className="font-medium">{report.operationId}</span>: {report.status === "MATCH" ? "No change (adopt existing)" : "Will create/update"}
                   </span>
                 </div>
               ))}
@@ -290,16 +361,14 @@ export function OrchestrationPanel({
         </div>
 
         <div className="flex gap-2">
-          {hasNaawi && !planResult && (
-            <Button onClick={runPlan} disabled={isPlanning || isRunning} className="flex-1" variant="secondary">
-              {isPlanning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-              Generate Plan
-            </Button>
-          )}
+          <Button onClick={runPlan} disabled={isPlanning || isRunning || steps.length === 0} className="flex-1" variant="secondary">
+            {isPlanning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+            {planResult ? "Refresh Plan" : "Generate Plan"}
+          </Button>
           
           <Button 
-            onClick={() => runOrchestration(planResult?.requires_approval)} 
-            disabled={isRunning || isPlanning || (hasNaawi && !planResult)} 
+            onClick={() => runOrchestration(Boolean(planResult?.requires_approval))} 
+            disabled={isRunning || isPlanning || !planResult || steps.length === 0 || (hasNaawi && !planResult) || (hasSrePattern && !planResult)} 
             className="flex-1"
           >
             {isRunning ? (

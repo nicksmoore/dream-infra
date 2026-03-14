@@ -1,8 +1,8 @@
-import { EC2Client, DescribeVpcsCommand, DescribeSubnetsCommand } from "npm:@aws-sdk/client-ec2";
+
 import { S3Client, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
 import { CloudFrontClient, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
 import { Route53Client, ListHostedZonesByNameCommand } from "npm:@aws-sdk/client-route-53";
-import { DescribeClusterCommand, EKSClient } from "npm:@aws-sdk/client-eks";
+
 
 export interface SdkOperation {
   id: string;
@@ -18,18 +18,18 @@ export interface SdkOperation {
 }
 
 export class DagOrchestrator {
-  private ec2: EC2Client;
+  
   private s3: S3Client;
   private cf: CloudFrontClient;
   private r53: Route53Client;
-  private eks: EKSClient;
+  
 
   constructor(private region: string, private credentials: any) {
-    this.ec2 = new EC2Client({ region, credentials });
+    
     this.s3 = new S3Client({ region, credentials });
     this.cf = new CloudFrontClient({ region: "us-east-1", credentials }); // CF is global
     this.r53 = new Route53Client({ region: "us-east-1", credentials }); // R53 is global
-    this.eks = new EKSClient({ region, credentials });
+    
   }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
@@ -40,6 +40,7 @@ export class DagOrchestrator {
       case "EDGE_STATIC_SPA":
         return this.compileGlobalSpa(spec);
       case "microservices-mesh":
+      case "service-mesh":
       case "SERVICE_MESH":
         return this.compileMicroservicesMesh(spec);
       case "event-pipeline":
@@ -332,24 +333,46 @@ export class DagOrchestrator {
   // ─── Pattern 4: Internal Tooling API ───
   private async compileInternalApi(spec: any): Promise<SdkOperation[]> {
     const ops: SdkOperation[] = [];
-    const vpcId = spec.vpcId;
+    const baseName = spec.name || "internal-api";
+    const subnetIds = (Array.isArray(spec.subnetIds) && spec.subnetIds.length >= 2)
+      ? spec.subnetIds.slice(0, 2)
+      : ["subnet-auto-a", "subnet-auto-b"];
 
-    const subnets = await this.ec2.send(new DescribeSubnetsCommand({
-      Filters: [{ Name: "vpc-id", Values: [vpcId] }]
-    }));
-    
-    const subnetIds = subnets.Subnets?.slice(0, 2).map(s => s.SubnetId) || [];
-    if (subnetIds.length < 2) throw new Error("Need at least 2 subnets for RDS");
+    ops.push({
+      id: "api-gateway",
+      service: "ApiGatewayV2",
+      command: "CreateApi",
+      input: {
+        Name: `${baseName}-http-api`,
+        ProtocolType: "HTTP"
+      },
+      riskLevel: "LOW"
+    });
+
+    ops.push({
+      id: "authorizer-lambda",
+      service: "Lambda",
+      command: "CreateFunction",
+      input: {
+        FunctionName: `${baseName}-authorizer`,
+        Runtime: "nodejs18.x",
+        Role: spec.roleArn || "arn:aws:iam::ACCOUNT:role/LambdaExecutionRole",
+        Handler: "index.handler",
+        Code: { ZipFile: new TextEncoder().encode("/* Lambda Authorizer */") }
+      },
+      riskLevel: "LOW"
+    });
 
     ops.push({
       id: "rds-subnet-group",
       service: "RDS",
       command: "CreateDBSubnetGroup",
       input: {
-        DBSubnetGroupName: `${spec.name}-subnet-group`,
-        DBSubnetGroupDescription: "Auto-discovered for Internal API",
+        DBSubnetGroupName: `${baseName}-subnet-group`,
+        DBSubnetGroupDescription: "IDI Internal API subnet group",
         SubnetIds: subnetIds
-      }
+      },
+      riskLevel: "LOW"
     });
 
     ops.push({
@@ -357,13 +380,45 @@ export class DagOrchestrator {
       service: "RDS",
       command: "CreateDBCluster",
       input: {
-        DBClusterIdentifier: `${spec.name}-aurora`,
+        DBClusterIdentifier: `${baseName}-aurora`,
         Engine: "aurora-postgresql",
-        DBSubnetGroupName: `${spec.name}-subnet-group`,
-        ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 1.0 }
+        EngineMode: "provisioned",
+        DBSubnetGroupName: `${baseName}-subnet-group`,
+        ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 2.0 }
       },
-      dependency: "rds-subnet-group"
+      dependency: "rds-subnet-group",
+      riskLevel: "HIGH"
     });
+
+    ops.push({
+      id: "rds-proxy",
+      service: "RDS",
+      command: "CreateDBProxy",
+      input: {
+        DBProxyName: `${baseName}-proxy`,
+        EngineFamily: "POSTGRESQL",
+        RoleArn: spec.rdsProxyRoleArn || "arn:aws:iam::ACCOUNT:role/RDSProxyRole",
+        Auth: [{ AuthScheme: "SECRETS", IAMAuth: "REQUIRED" }],
+        VpcSubnetIds: subnetIds,
+      },
+      dependency: "rds-cluster",
+      riskLevel: "LOW"
+    });
+
+    // Latency Guard for internal dashboards/tools
+    if (/dashboard|internal tool|internal api|bff/i.test(String(spec.intentText || baseName))) {
+      ops.push({
+        id: "provisioned-concurrency",
+        service: "Lambda",
+        command: "PutFunctionConcurrency",
+        input: {
+          FunctionName: `${baseName}-authorizer`,
+          ReservedConcurrentExecutions: 1
+        },
+        dependency: "authorizer-lambda",
+        riskLevel: "LOW"
+      });
+    }
 
     return ops;
   }

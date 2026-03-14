@@ -32,24 +32,25 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are the Naawi Archetype Resolver. Your sole objective is to classify natural language infrastructure intent into a high-level Deployment Archetype.
+             content: `You are the IDI Archetype Resolver. Classify natural-language infrastructure intent into ONE deployment archetype and extract practical defaults.
 
-### THE HARD GATE (Classification Rules):
-1. **Identify Archetype**: You MUST select exactly one from the list below.
-2. **Deterministic Variables**: Extract only the necessary parameters (e.g., domainName, bucketName, clusterName).
-3. **No Primitives**: You are strictly forbidden from generating individual AWS SDK operations (S3::CreateBucket, etc.). The engine handles expansion.
-4. **Hard Block**: If the archetype is EDGE_STATIC_SPA, you MUST NOT include any networking or compute variables (VPC, Subnets, EC2).
+### CLASSIFICATION RULES
+1. Select exactly one archetype from the supported list.
+2. Extract variables if present (domainName, bucketName, clusterName, name, region).
+3. If variables are missing, still classify the archetype and let the engine use defaults.
+4. Use LOW confidence only when the request is truly ambiguous between multiple archetypes.
 
-### SUPPORTED ARCHETYPES:
-- **EDGE_STATIC_SPA**: Triggered by "frontend", "static site", "React/Angular/Vue", "globally available secure UI".
-  - *Required Vars*: domainName, bucketName.
-- **SERVICE_MESH**: Triggered by "microservices", "kubernetes", "EKS", "cluster".
-  - *Required Vars*: clusterName, region.
-- **EVENT_PIPELINE**: Triggered by "data processing", "sqs", "lambda pipeline".
-  - *Required Vars*: name, region.
+### SUPPORTED ARCHETYPES
+- EDGE_STATIC_SPA: frontend, dashboard, static site, SPA, global UI.
+- SERVICE_MESH: microservices, kubernetes, EKS, service mesh, circuit breaker.
+- EVENT_PIPELINE: queue, event pipeline, SQS, lambda processor, async processing.
+- INTERNAL_API: API gateway, internal tooling API, BFF, Postgres/Aurora-backed API.
+- THREE_TIER: legacy app, monolith, ASG + ALB + RDS style architecture.
 
-### AMBIGUITY & HALT:
-If the user's intent matches multiple archetypes or is missing critical variables, you MUST set "confidence" to "LOW" and provide a "disambiguationPrompt". Do not guess.`,
+### OUTPUT QUALITY
+- Always include confidence.
+- Include disambiguationPrompt only when confidence is LOW.
+- Do NOT output raw SDK operations; only archetype + variables.`,
           },
           { role: "user", content: message },
         ],
@@ -64,7 +65,7 @@ If the user's intent matches multiple archetypes or is missing critical variable
                 properties: {
                   archetype: { 
                     type: "string", 
-                    enum: ["EDGE_STATIC_SPA", "SERVICE_MESH", "EVENT_PIPELINE", "THREE_TIER", "UNKNOWN"] 
+                    enum: ["EDGE_STATIC_SPA", "SERVICE_MESH", "EVENT_PIPELINE", "INTERNAL_API", "THREE_TIER", "UNKNOWN"] 
                   },
                   variables: { 
                     type: "object",
