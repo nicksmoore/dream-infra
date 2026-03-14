@@ -13,7 +13,7 @@ import {
 
 interface InventoryResource {
   id: string;
-  type: "ec2" | "vpc" | "ebs" | "eip" | "eks" | "subnet" | "security_group";
+  type: "ec2" | "vpc" | "ebs" | "eip" | "eks" | "subnet" | "security_group" | "s3" | "cloudfront" | "sqs" | "lambda" | "api_gateway" | "app_mesh";
   name: string;
   region: string;
   state: string;
@@ -39,6 +39,12 @@ const typeIcons: Record<string, React.ReactNode> = {
   eks: <Box className="h-4 w-4" />,
   subnet: <Network className="h-3 w-3" />,
   security_group: <Shield className="h-3 w-3" />,
+  s3: <HardDrive className="h-3.5 w-3.5" />,
+  cloudfront: <Globe className="h-3.5 w-3.5" />,
+  sqs: <RefreshCw className="h-3.5 w-3.5" />,
+  lambda: <Box className="h-3.5 w-3.5" />,
+  api_gateway: <Server className="h-3.5 w-3.5" />,
+  app_mesh: <Network className="h-3.5 w-3.5" />,
 };
 
 interface ResourceInventoryProps {
