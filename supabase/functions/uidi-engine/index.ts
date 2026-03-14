@@ -866,8 +866,10 @@ async function awsSignedRequest(opts: {
   const qIdx = opts.path.indexOf("?");
   const canonicalUri = qIdx >= 0 ? opts.path.slice(0, qIdx) : opts.path;
   const queryString = qIdx >= 0 ? opts.path.slice(qIdx + 1) : "";
-  // Sort query params for canonical query string
-  const sortedQS = queryString ? queryString.split("&").sort().join("&") : "";
+  // Sort query params for canonical query string; ensure key=value format for bare params
+  const sortedQS = queryString
+    ? queryString.split("&").map(p => p.includes("=") ? p : `${p}=`).sort().join("&")
+    : "";
 
   const url = `https://${host}${opts.path}`;
   const now = new Date();
