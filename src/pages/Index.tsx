@@ -43,6 +43,7 @@ const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
   INTERNAL_API: "internal-api",
   THREE_TIER: "three-tier",
   EDGE_CACHE: "edge-cache",
+  CROSS_REGION_PEERED: "cross-region-peered",
 };
 
 const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
