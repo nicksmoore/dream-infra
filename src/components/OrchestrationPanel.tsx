@@ -175,6 +175,7 @@ export function OrchestrationPanel({
             region,
             environment,
             name: `sre-${workloadType}-${environment}`,
+            intentText: workloadType,
           },
         });
 
