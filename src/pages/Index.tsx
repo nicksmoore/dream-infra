@@ -9,6 +9,7 @@ import { ConfigPreview } from "@/components/ConfigPreview";
 import { DeploymentHistory } from "@/components/DeploymentHistory";
 import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
+import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
 import { McpConnectionStatus } from "@/components/McpConnectionStatus";
 import { UserMenu } from "@/components/UserMenu";
@@ -41,6 +42,7 @@ export default function Index() {
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
   const [operations, setOperations] = useState<any[]>([]);
+  const [showDebugger, setShowDebugger] = useState(false);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
@@ -131,15 +133,32 @@ export default function Index() {
             )}
 
             {isMultiResource || operations.length > 0 ? (
-              <OrchestrationPanel
-                resources={detectedResources}
-                region={intent.region}
-                environment={intent.environment}
-                workloadType={intent.workloadType}
-                instanceType={config.instanceType}
-                os={config.os}
-                naawiOperations={operations}
-              />
+              <div className="space-y-6">
+                <OrchestrationPanel
+                  resources={detectedResources}
+                  region={intent.region}
+                  environment={intent.environment}
+                  workloadType={intent.workloadType}
+                  instanceType={config.instanceType}
+                  os={config.os}
+                  naawiOperations={operations}
+                />
+                
+                {operations.length > 0 && (
+                  <div className="flex justify-center">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setShowDebugger(!showDebugger)}
+                      className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+                    >
+                      {showDebugger ? "Hide Engine Traces" : "Inspect IDI Engine Traces"}
+                    </Button>
+                  </div>
+                )}
+
+                {showDebugger && <DeploymentDebugger />}
+              </div>
             ) : (
               <>
                 <Card className="bg-card">
