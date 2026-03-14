@@ -165,7 +165,7 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <McpConnectionStatus />
+            
             <UserMenu />
           </div>
         </div>
