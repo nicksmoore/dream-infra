@@ -245,6 +245,7 @@ export function OrchestrationPanel({
         
 
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
+        if (i === steps.length - 1) setDeploymentResult(result.details);
         toast({ title: `${step.name} complete`, description: result.message });
       } catch (e) {
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "error", output: e instanceof Error ? e.message : "Failed" } : s));
