@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,20 +7,17 @@ import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
 import { DeploymentDiagram } from "@/components/DeploymentDiagram";
 import { ValidationPhase } from "@/components/ValidationPhase";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows } from "lucide-react";
+import { useDeploymentState } from "@/hooks/use-deployment-state";
+import { resolveStepInputs, buildRollbackSpec, getExecutionOrder, getRollbackOrder } from "@/lib/dag-resolver";
+import type { DagStep } from "@/lib/dag-resolver";
+import { buildCrossRegionPeeredSteps, buildGenericSteps, buildSreStep, buildNaawiSteps } from "@/lib/dag-blueprints";
+import {
+  Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box,
+  ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows,
+  RotateCcw, Trash2,
+} from "lucide-react";
 
-interface OrchestrationStep {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  intent: string;
-  action: string;
-  spec: Record<string, unknown>;
-  status: "pending" | "running" | "done" | "error";
-  output?: string;
-  result?: EngineResponse;
-}
+// ───── Props & Constants ─────
 
 interface OrchestrationPanelProps {
   resources: string[];
@@ -43,7 +40,20 @@ type PlanResult = {
   estimated_monthly_cost_usd?: number;
 };
 
-function estimateLocalStepCost(step: OrchestrationStep): number {
+const ICON_MAP: Record<string, React.ReactNode> = {
+  network: <Network className="h-4 w-4" />,
+  eks: <Box className="h-4 w-4" />,
+  compute: <Server className="h-4 w-4" />,
+  naawi: <Box className="h-4 w-4" />,
+  "sre-supreme": <ShieldCheck className="h-4 w-4 text-primary" />,
+};
+
+function getStepIcon(step: DagStep): React.ReactNode {
+  if (step.id === "vpc-peering") return <GitCompareArrows className="h-4 w-4 text-primary" />;
+  return ICON_MAP[step.intent] || <Box className="h-4 w-4" />;
+}
+
+function estimateStepCost(step: DagStep): number {
   if (step.intent === "compute") {
     const it = String(step.spec.instance_type || "t3.micro");
     if (it.includes("nano")) return 4;
@@ -59,6 +69,8 @@ function estimateLocalStepCost(step: OrchestrationStep): number {
 
 const EMPTY_OPS: any[] = [];
 
+// ───── Component ─────
+
 export function OrchestrationPanel({
   resources,
   region,
@@ -70,161 +82,57 @@ export function OrchestrationPanel({
   onComplete,
 }: OrchestrationPanelProps) {
   const stableOps = useMemo(() => naawiOperations ?? EMPTY_OPS, [naawiOperations]);
-  const [steps, setSteps] = useState<OrchestrationStep[]>([]);
+  const [steps, setSteps] = useState<DagStep[]>([]);
+  const [stepOutputs, setStepOutputs] = useState<Record<string, Record<string, unknown>>>({});
   const [isRunning, setIsRunning] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
   const [planResult, setPlanResult] = useState<PlanResult | null>(null);
-  const [isReconciling, setIsReconciling] = useState(false);
-  const [reconcileReport, setReconcileReport] = useState<ReconcileReport | null>(null);
   const [deploymentResult, setDeploymentResult] = useState<any>(null);
 
+  const {
+    restoredState,
+    isRestoring,
+    createDeployment,
+    saveProgress,
+    completeDeployment,
+    clearRestoredState,
+  } = useDeploymentState();
+
+  // ── Restore state from DB if available ──
   useEffect(() => {
-    const buildSteps = (): OrchestrationStep[] => {
-      const result: OrchestrationStep[] = [];
+    if (restoredState && restoredState.workload_type === workloadType) {
+      setSteps(restoredState.steps);
+      setStepOutputs(restoredState.step_outputs);
+      if (restoredState.plan_result) setPlanResult(restoredState.plan_result as PlanResult);
+      toast({ title: "Deployment restored", description: "Resumed from last saved state." });
+      clearRestoredState();
+    }
+  }, [restoredState, workloadType, clearRestoredState]);
 
-      // ── Project Naawi: Granular SDK Operations (Highest Priority) ──
-      if (stableOps && stableOps.length > 0) {
-        stableOps.forEach(op => {
-          result.push({
-            id: op.id,
-            name: `${op.service}.${op.command}`,
-            description: `Direct SDK call: ${op.id} (Risk: ${op.riskLevel})`,
-            icon: <Box className="h-4 w-4" />,
-            intent: "naawi",
-            action: "execute",
-            spec: { operations: [op], region },
-            status: "pending",
-          });
-        });
-        return result;
-      }
+  // ── Build steps from declarative blueprints ──
+  useEffect(() => {
+    // Don't rebuild if we restored from DB
+    if (restoredState) return;
 
-      // ── Cross-Region Peered Architecture (custom multi-step) ──
-      if (workloadType === "cross-region-peered") {
-        result.push({
-          id: "data-vpc",
-          name: "eu-central-1: Data VPC",
-          description: "VPC 10.1.0.0/16 with private subnet in Frankfurt",
-          icon: <Network className="h-4 w-4" />,
-          intent: "network",
-          action: "deploy",
-          spec: { region: "eu-central-1", environment, name: `data-vpc-${environment}`, vpc_cidr: "10.1.0.0/16", az_count: 1, public_subnets: false },
-          status: "pending",
-        });
-        result.push({
-          id: "eks-vpc",
-          name: "us-east-1: EKS Management VPC",
-          description: "VPC 10.0.0.0/16 with public + private subnets in N. Virginia",
-          icon: <Network className="h-4 w-4" />,
-          intent: "network",
-          action: "deploy",
-          spec: { region: "us-east-1", environment, name: `eks-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 3 },
-          status: "pending",
-        });
-        result.push({
-          id: "vpc-peering",
-          name: "VPC Peering: us-east-1 ↔ eu-central-1",
-          description: "Cross-region peering connection with auto-accept + route propagation",
-          icon: <GitCompareArrows className="h-4 w-4 text-primary" />,
-          intent: "network",
-          action: "deploy",
-          spec: { region: "us-east-1", peer_region: "eu-central-1", requester_vpc: `eks-vpc-${environment}`, accepter_vpc: `data-vpc-${environment}`, type: "vpc-peering" },
-          status: "pending",
-        });
-        result.push({
-          id: "peering-routes",
-          name: "Route Tables: Cross-Region Routes",
-          description: "Inject routes for 10.1.0.0/16 ↔ 10.0.0.0/16 via peering connection",
-          icon: <Network className="h-4 w-4" />,
-          intent: "network",
-          action: "deploy",
-          spec: { region: "us-east-1", peer_region: "eu-central-1", type: "peering-routes" },
-          status: "pending",
-        });
-        result.push({
-          id: "eks-cluster",
-          name: "us-east-1: EKS Cluster",
-          description: "Managed Kubernetes cluster with route to eu-central-1 Data VPC (~10-15 min)",
-          icon: <Box className="h-4 w-4" />,
-          intent: "eks",
-          action: "deploy",
-          spec: { region: "us-east-1", environment, cluster_name: `eks-${environment}-cluster`, subnet_ids: [], kubernetes_version: "1.29" },
-          status: "pending",
-        });
-        result.push({
-          id: "eks-nodegroup",
-          name: "us-east-1: EKS Node Group",
-          description: "t3.medium managed node group (2 nodes)",
-          icon: <Server className="h-4 w-4" />,
-          intent: "eks",
-          action: "add_nodegroup",
-          spec: { region: "us-east-1", cluster_name: `eks-${environment}-cluster`, instance_types: ["t3.medium"], desired_size: 2, min_size: 1, max_size: 3 },
-          status: "pending",
-        });
-        return result;
-      }
+    let built: DagStep[];
 
-      // SRE-Supreme Pattern Detection
-      if (SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number])) {
-        result.push({
-          id: "sre-pattern",
-          name: `SRE Supreme: ${workloadType.toUpperCase()}`,
-          description: `Deploying professional-grade ${workloadType} pattern with SRE Moat features.`,
-          icon: <ShieldCheck className="h-4 w-4 text-primary" />,
-          intent: "sre-supreme",
-          action: "deploy",
-          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}`, intentText: workloadType },
-          status: "pending",
-        });
-        return result;
-      }
+    if (stableOps.length > 0) {
+      built = buildNaawiSteps(stableOps, region);
+    } else if (workloadType === "cross-region-peered") {
+      built = buildCrossRegionPeeredSteps(environment);
+    } else if (SRE_PATTERNS.includes(workloadType as any)) {
+      built = buildSreStep(workloadType, region, environment);
+    } else {
+      built = buildGenericSteps(resources, region, environment, instanceType, os, workloadType);
+    }
 
-      if (resources.some(r => ["vpc", "subnets", "nacls"].includes(r))) {
-        result.push({
-          id: "network",
-          name: "Network Stack",
-          description: "VPC, Subnets (public + private), Internet Gateway, Route Tables, NACLs, Security Group",
-          icon: <Network className="h-4 w-4" />,
-          intent: "network",
-          action: "deploy",
-          spec: { region, environment, name: `uidi-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 2 },
-          status: "pending",
-        });
-      }
-
-      if (resources.includes("eks")) {
-        result.push({
-          id: "eks",
-          name: "EKS Cluster",
-          description: "Managed Kubernetes cluster — IAM role auto-provisioned (~10-15 min)",
-          icon: <Box className="h-4 w-4" />,
-          intent: "eks",
-          action: "deploy",
-          spec: { region, environment, cluster_name: `uidi-${environment}-cluster`, subnet_ids: [], kubernetes_version: "1.29" },
-          status: "pending",
-        });
-      }
-
-      if (resources.includes("ec2")) {
-        result.push({
-          id: "ec2",
-          name: "EC2 Instance",
-          description: `${instanceType} running ${os}`,
-          icon: <Server className="h-4 w-4" />,
-          intent: "compute",
-          action: "deploy",
-          spec: { instance_type: instanceType, os, region, environment, name: `uidi-${environment}-instance`, count: 1 },
-          status: "pending",
-        });
-      }
-
-      return result;
-    };
-
-    setSteps(buildSteps());
-    setPlanResult(null); // Reset plan when input changes
+    setSteps(built);
+    setStepOutputs({});
+    setPlanResult(null);
   }, [stableOps, resources, region, environment, workloadType, instanceType, os]);
 
+  // ── Planning ──
   async function runPlan() {
     setIsPlanning(true);
     try {
@@ -236,34 +144,24 @@ export function OrchestrationPanel({
         return;
       }
 
-      const isSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
-      if (isSrePattern) {
+      if (SRE_PATTERNS.includes(workloadType as any)) {
         const result = await executeIntent({
-          intent: "sre-supreme",
-          action: "plan",
-          spec: {
-            workload_type: workloadType,
-            region,
-            environment,
-            name: `sre-${workloadType}-${environment}`,
-            intentText: workloadType,
-          },
+          intent: "sre-supreme", action: "plan",
+          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}`, intentText: workloadType },
         });
-
         if (result.status !== "success") throw new Error(result.error || result.message || "Plan failed");
         setPlanResult(result.details as PlanResult);
         toast({ title: "SRE Plan Ready", description: "Review planned SDK calls, diff, and cost before execution." });
         return;
       }
 
-      // Fallback local plan for non-SRE orchestration
-      const estimated = steps.reduce((sum, step) => sum + estimateLocalStepCost(step), 0);
+      const estimated = steps.reduce((sum, step) => sum + estimateStepCost(step), 0);
       setPlanResult({
         risk_level: "LOW",
         requires_approval: false,
         estimated_monthly_cost_usd: estimated,
-        discovery: steps.map((step) => ({ operationId: step.id, status: "NOT_FOUND", suggestedAction: "CREATE" })),
-        operations: steps.map((step) => ({ id: step.id, service: step.intent.toUpperCase(), command: step.action })),
+        discovery: steps.map(s => ({ operationId: s.id, status: "NOT_FOUND", suggestedAction: "CREATE" })),
+        operations: steps.map(s => ({ id: s.id, service: s.intent.toUpperCase(), command: s.action })),
       });
       toast({ title: "Plan Ready", description: "Preview generated with estimated cost." });
     } catch (e) {
@@ -273,22 +171,27 @@ export function OrchestrationPanel({
     }
   }
 
+  // ── Execution with declarative output threading ──
   async function runOrchestration(approved = false) {
     setIsRunning(true);
+    const outputs: Record<string, Record<string, unknown>> = { ...stepOutputs };
+
+    // Persist deployment
+    const depId = await createDeployment(workloadType, region, environment, steps, planResult);
 
     if (stableOps.length > 0) {
       try {
         setSteps(prev => prev.map(s => ({ ...s, status: "running" })));
         const result = await naawiExecute({ operations: stableOps, region }, approved);
-        
         if (result.status === "error") throw new Error(result.error || result.message);
-
         setSteps(prev => prev.map(s => ({ ...s, status: "done", output: JSON.stringify(result.details, null, 2) })));
         setDeploymentResult(result.details);
+        if (depId) await completeDeployment(depId, "completed");
         toast({ title: "Deployment successful", description: result.message });
         onComplete?.();
       } catch (e) {
         setSteps(prev => prev.map(s => ({ ...s, status: "error", output: e instanceof Error ? e.message : "Failed" })));
+        if (depId) await completeDeployment(depId, "failed");
         toast({ title: "Deployment failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
       } finally {
         setIsRunning(false);
@@ -296,98 +199,182 @@ export function OrchestrationPanel({
       return;
     }
 
-    // Step-by-step logic with output threading (cross-region DAG)
-    const stepOutputs: Record<string, any> = {};
-
+    // DAG-aware sequential execution with declarative input resolution
     for (let i = 0; i < steps.length; i++) {
-      setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "running" } : s));
       const step = steps[i];
-      const spec = { ...step.spec };
+      setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "running" } : s));
 
-      // ── Output Threading: inject prior step outputs into downstream specs ──
-      if (step.id === "eks-cluster" || step.id === "eks") {
-        // Thread subnet IDs from the EKS VPC (or fallback network step)
-        const vpcOutput = stepOutputs["eks-vpc"] || stepOutputs["network"];
-        if (vpcOutput) {
-          const subnetIds = vpcOutput.subnet_ids || vpcOutput.subnets?.map((s: any) => s.SubnetId || s.subnet_id) || [];
-          if (subnetIds.length > 0) {
-            spec.subnet_ids = subnetIds;
-          }
-          if (vpcOutput.security_group_id) {
-            spec.security_group_ids = [vpcOutput.security_group_id];
-          }
-        }
-      }
-
-      if (step.id === "eks-nodegroup") {
-        // Thread cluster name + subnets + auto-resolve node role
-        const eksOutput = stepOutputs["eks-cluster"] || stepOutputs["eks"];
-        const vpcOutput = stepOutputs["eks-vpc"] || stepOutputs["network"];
-        if (eksOutput?.cluster_name) spec.cluster_name = eksOutput.cluster_name;
-        if (vpcOutput) {
-          const subnetIds = vpcOutput.subnet_ids || vpcOutput.subnets?.map((s: any) => s.SubnetId || s.subnet_id) || [];
-          if (subnetIds.length > 0) spec.subnet_ids = subnetIds;
-        }
-      }
-
-      if (step.id === "vpc-peering") {
-        // Thread VPC IDs from the two VPC steps
-        const dataVpc = stepOutputs["data-vpc"];
-        const eksVpc = stepOutputs["eks-vpc"];
-        if (dataVpc?.vpc_id) spec.accepter_vpc_id = dataVpc.vpc_id;
-        if (eksVpc?.vpc_id) spec.requester_vpc_id = eksVpc.vpc_id;
-      }
-
-      if (step.id === "peering-routes") {
-        const peeringOutput = stepOutputs["vpc-peering"];
-        if (peeringOutput?.peering_connection_id) spec.peering_connection_id = peeringOutput.peering_connection_id;
-        const dataVpc = stepOutputs["data-vpc"];
-        const eksVpc = stepOutputs["eks-vpc"];
-        if (dataVpc?.route_table_id) spec.accepter_route_table_id = dataVpc.route_table_id;
-        if (eksVpc?.route_table_id) spec.requester_route_table_id = eksVpc.route_table_id;
-      }
+      // Resolve inputs declaratively — no hardcoded step ID checks
+      const resolvedSpec = resolveStepInputs(step, outputs);
 
       try {
         const result = await executeIntent({
           intent: step.intent as any,
           action: step.action as any,
-          spec,
+          spec: resolvedSpec,
         });
 
         if (result.status === "error") throw new Error(result.error || result.message);
-        
-        // Store output for downstream threading
+
+        // Store outputs
         if (result.details && typeof result.details === "object") {
-          stepOutputs[step.id] = result.details;
+          outputs[step.id] = result.details as Record<string, unknown>;
+          setStepOutputs({ ...outputs });
         }
 
-        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
+        setSteps(prev => prev.map((s, idx) =>
+          idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s
+        ));
+
         if (i === steps.length - 1) setDeploymentResult(result.details);
+        if (depId) saveProgress(depId, steps, outputs, "running");
         toast({ title: `${step.name} complete`, description: result.message });
       } catch (e) {
-        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "error", output: e instanceof Error ? e.message : "Failed" } : s));
-        toast({ title: `${step.name} failed`, description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+        const errMsg = e instanceof Error ? e.message : "Failed";
+        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "error", output: errMsg } : s));
+
+        if (depId) {
+          saveProgress(depId, steps, outputs, "partial_failure");
+        }
+
+        toast({
+          title: `${step.name} failed — rollback available`,
+          description: errMsg,
+          variant: "destructive",
+        });
+
         setIsRunning(false);
         return;
       }
     }
 
     setIsRunning(false);
+    if (depId) await completeDeployment(depId, "completed");
     toast({ title: "Stack deployed!", description: "All resources provisioned successfully." });
     onComplete?.();
   }
 
+  // ── Rollback: reverse-walk completed steps and destroy ──
+  const runRollback = useCallback(async () => {
+    setIsRollingBack(true);
+    const rollbackSteps = getRollbackOrder(steps);
+
+    if (rollbackSteps.length === 0) {
+      toast({ title: "Nothing to roll back", description: "No completed steps found." });
+      setIsRollingBack(false);
+      return;
+    }
+
+    toast({ title: "Rolling back", description: `Destroying ${rollbackSteps.length} resources in reverse order...` });
+
+    let failures = 0;
+
+    for (const step of rollbackSteps) {
+      const rollbackAction = step.rollbackAction || "destroy";
+      const rollbackSpec = buildRollbackSpec(step, stepOutputs);
+
+      // Mark as running
+      setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "running" } : s));
+
+      try {
+        const result = await executeIntent({
+          intent: step.intent as any,
+          action: rollbackAction as any,
+          spec: rollbackSpec,
+        });
+
+        if (result.status === "error") throw new Error(result.error || result.message);
+
+        setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "rolled_back" as any, output: "Destroyed" } : s));
+        toast({ title: `Rolled back ${step.name}` });
+      } catch (e) {
+        failures++;
+        setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "error", output: `Rollback failed: ${e instanceof Error ? e.message : "Unknown"}` } : s));
+        toast({ title: `Rollback failed: ${step.name}`, description: e instanceof Error ? e.message : "Unknown", variant: "destructive" });
+      }
+    }
+
+    setIsRollingBack(false);
+    toast({
+      title: failures === 0 ? "Rollback complete" : `Rollback finished with ${failures} failure(s)`,
+      description: failures === 0 ? "All resources destroyed. 0 orphans." : "Some resources may need manual cleanup.",
+      variant: failures === 0 ? "default" : "destructive",
+    });
+  }, [steps, stepOutputs]);
+
+  // ── Stack-level destroy (all steps, reverse order) ──
+  const runStackDestroy = useCallback(async () => {
+    setIsRollingBack(true);
+    // Force all steps to "done" status so rollback picks them all up
+    const allForDestroy = [...steps].filter(s => s.rollbackAction || s.rollbackSpec).reverse();
+
+    if (allForDestroy.length === 0) {
+      toast({ title: "No destroyable resources", variant: "destructive" });
+      setIsRollingBack(false);
+      return;
+    }
+
+    toast({ title: "Tearing down stack", description: `Destroying ${allForDestroy.length} resources in reverse dependency order...` });
+
+    let failures = 0;
+
+    for (const step of allForDestroy) {
+      const rollbackAction = step.rollbackAction || "destroy";
+      const rollbackSpec = buildRollbackSpec(step, stepOutputs);
+
+      setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "running" } : s));
+
+      try {
+        const result = await executeIntent({
+          intent: step.intent as any,
+          action: rollbackAction as any,
+          spec: rollbackSpec,
+        });
+
+        if (result.status === "error") throw new Error(result.error || result.message);
+
+        setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "rolled_back" as any, output: "Destroyed" } : s));
+      } catch (e) {
+        failures++;
+        setSteps(prev => prev.map(s => s.id === step.id ? { ...s, status: "error", output: `Destroy failed: ${e instanceof Error ? e.message : "Unknown"}` } : s));
+      }
+    }
+
+    setIsRollingBack(false);
+    setStepOutputs({});
+    toast({
+      title: failures === 0 ? "Stack destroyed" : `Teardown finished with ${failures} failure(s)`,
+      variant: failures === 0 ? "default" : "destructive",
+    });
+  }, [steps, stepOutputs]);
+
+  // ── UI Helpers ──
   const statusIcon = (status: string) => {
     switch (status) {
       case "running": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
       case "done": return <CheckCircle2 className="h-4 w-4 text-primary" />;
       case "error": return <XCircle className="h-4 w-4 text-destructive" />;
+      case "rolled_back": return <RotateCcw className="h-4 w-4 text-muted-foreground" />;
       default: return <Circle className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
   const hasNaawi = stableOps.length > 0;
-  const hasSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
+  const hasSrePattern = SRE_PATTERNS.includes(workloadType as any);
+  const hasFailedSteps = steps.some(s => s.status === "error");
+  const hasCompletedSteps = steps.some(s => s.status === "done");
+  const allDone = steps.length > 0 && steps.every(s => s.status === "done");
+
+  if (isRestoring) {
+    return (
+      <Card className="bg-card border-primary/20">
+        <CardContent className="py-8 flex items-center justify-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Restoring deployment state...</span>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="bg-card border-primary/20">
@@ -459,8 +446,6 @@ export function OrchestrationPanel({
           </div>
         )}
 
-        {/* Deployment DAG Diagram (collapsible, below plan) */}
-
         {/* Steps */}
         <div className="space-y-3">
           {steps.map((step, i) => (
@@ -473,36 +458,40 @@ export function OrchestrationPanel({
               </div>
               <div className="flex-1 pb-3">
                 <div className="flex items-center gap-2">
+                  {getStepIcon(step)}
                   <span className="text-sm font-semibold">{step.name}</span>
-                  <Badge variant={step.status === "done" ? "default" : step.status === "error" ? "destructive" : "outline"} className="text-[10px] h-4">
+                  <Badge variant={step.status === "done" ? "default" : step.status === "error" ? "destructive" : step.status === "rolled_back" ? "secondary" : "outline"} className="text-[10px] h-4">
                     {step.status}
                   </Badge>
                 </div>
                 <p className="text-[10px] text-muted-foreground">{step.description}</p>
+                {step.dependsOn.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                    depends on: {step.dependsOn.join(", ")}
+                  </p>
+                )}
               </div>
             </div>
           ))}
         </div>
 
-        <DeploymentDiagram workloadType={workloadType} steps={steps} />
+        <DeploymentDiagram workloadType={workloadType} steps={steps as any} />
 
-        {/* Validation & Security Scan — shown after deployment */}
+        {/* Validation */}
         {steps.some(s => s.status === "done") && (
-          <ValidationPhase
-            workloadType={workloadType}
-            deploymentResult={deploymentResult}
-          />
+          <ValidationPhase workloadType={workloadType} deploymentResult={deploymentResult} />
         )}
 
-        <div className="flex gap-2">
-          <Button onClick={runPlan} disabled={isPlanning || isRunning || steps.length === 0} className="flex-1" variant="secondary">
+        {/* Actions */}
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={runPlan} disabled={isPlanning || isRunning || isRollingBack || steps.length === 0} className="flex-1" variant="secondary">
             {isPlanning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
             {planResult ? "Refresh Plan" : "Generate Plan"}
           </Button>
-          
-          <Button 
-            onClick={() => runOrchestration(Boolean(planResult?.requires_approval))} 
-            disabled={isRunning || isPlanning || !planResult || steps.length === 0 || (hasNaawi && !planResult) || (hasSrePattern && !planResult)} 
+
+          <Button
+            onClick={() => runOrchestration(Boolean(planResult?.requires_approval))}
+            disabled={isRunning || isPlanning || isRollingBack || !planResult || steps.length === 0}
             className="flex-1"
           >
             {isRunning ? (
@@ -512,6 +501,24 @@ export function OrchestrationPanel({
             )}
           </Button>
         </div>
+
+        {/* Rollback & Destroy */}
+        {(hasFailedSteps || allDone) && (
+          <div className="flex gap-2">
+            {hasFailedSteps && hasCompletedSteps && (
+              <Button onClick={runRollback} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
+                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                Rollback Completed Steps
+              </Button>
+            )}
+            {allDone && (
+              <Button onClick={runStackDestroy} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
+                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Tear Down Stack
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

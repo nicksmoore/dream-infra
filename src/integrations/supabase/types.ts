@@ -53,6 +53,51 @@ export type Database = {
         }
         Relationships: []
       }
+      deployments: {
+        Row: {
+          created_at: string
+          environment: string
+          id: string
+          plan_result: Json | null
+          region: string
+          stack_name: string
+          status: string
+          step_outputs: Json
+          steps: Json
+          updated_at: string
+          user_id: string
+          workload_type: string
+        }
+        Insert: {
+          created_at?: string
+          environment?: string
+          id?: string
+          plan_result?: Json | null
+          region?: string
+          stack_name?: string
+          status?: string
+          step_outputs?: Json
+          steps?: Json
+          updated_at?: string
+          user_id: string
+          workload_type?: string
+        }
+        Update: {
+          created_at?: string
+          environment?: string
+          id?: string
+          plan_result?: Json | null
+          region?: string
+          stack_name?: string
+          status?: string
+          step_outputs?: Json
+          steps?: Json
+          updated_at?: string
+          user_id?: string
+          workload_type?: string
+        }
+        Relationships: []
+      }
       metadata_cache: {
         Row: {
           cached_at: string
