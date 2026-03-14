@@ -384,8 +384,8 @@ export class DagOrchestrator {
       service: "ApiGatewayV2",
       command: "CreateApi",
       input: {
-        Name: `${baseName}-http-api`,
-        ProtocolType: "HTTP",
+        name: `${baseName}-http-api`,
+        protocolType: "HTTP",
       },
       riskLevel: "LOW",
     });
