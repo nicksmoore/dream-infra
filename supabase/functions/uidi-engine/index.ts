@@ -180,6 +180,8 @@ function parseSimpleXmlResponse(xml: string): Record<string, any> {
   const patterns: Record<string, RegExp> = {
     VpcId: /<vpcId>([^<]+)<\/vpcId>/i,
     SubnetId: /<subnetId>([^<]+)<\/subnetId>/i,
+    GroupId: /<groupId>([^<]+)<\/groupId>/i,
+    InternetGatewayId: /<internetGatewayId>([^<]+)<\/internetGatewayId>/i,
     Id: /<Id>([^<]+)<\/Id>/,
     DomainName: /<DomainName>([^<]+)<\/DomainName>/,
     ARN: /<ARN>([^<]+)<\/ARN>/,
