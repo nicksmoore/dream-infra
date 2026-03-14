@@ -92,6 +92,12 @@ function buildCloudFrontRequest(command: string, input: any): { method: string; 
       return { method: "POST", path: `/2020-05-31/distribution/${input.DistributionId}/invalidation`, body: jsonToXml("InvalidationBatch", input.InvalidationBatch, xmlns) };
     case "GetDistribution":
       return { method: "GET", path: `/2020-05-31/distribution/${input.Id}` };
+    case "GetDistributionConfig":
+      return { method: "GET", path: `/2020-05-31/distribution/${input.Id}/config` };
+    case "UpdateDistribution":
+      return { method: "PUT", path: `/2020-05-31/distribution/${input.Id}/config`, body: jsonToXml("DistributionConfig", input.DistributionConfig, xmlns) };
+    case "DeleteDistribution":
+      return { method: "DELETE", path: `/2020-05-31/distribution/${input.Id}` };
     default:
       throw new Error(`No CloudFront mapping for ${command}`);
   }
