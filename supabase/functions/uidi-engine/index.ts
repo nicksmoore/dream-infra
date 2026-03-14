@@ -2271,10 +2271,149 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
         }
       } catch { /* EKS scan optional */ }
 
+      // ── S3 Buckets ──
+      try {
+        const s3Res = await awsSignedRequest({ service: "s3", region, method: "GET", path: "/", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, hostOverride: `s3.${region}.amazonaws.com` });
+        if (s3Res.ok) {
+          const s3Body = await s3Res.text();
+          const bucketNames = [...s3Body.matchAll(/<Name>([^<]+)<\/Name>/g)].map(m => m[1]);
+          for (const bucketName of bucketNames) {
+            const managed = bucketName.includes("uidi") || bucketName.includes("sre-");
+            resources.push({
+              id: bucketName, type: "s3" as any, name: bucketName, region,
+              state: "available", managed, tags: {}, details: {},
+            });
+          }
+        }
+      } catch { /* S3 scan optional */ }
+
+      // ── CloudFront Distributions ──
+      try {
+        const cfRes = await awsSignedRequest({ service: "cloudfront", region: "us-east-1", method: "GET", path: "/2020-05-31/distribution", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, hostOverride: "cloudfront.amazonaws.com" });
+        if (cfRes.ok) {
+          const cfBody = await cfRes.text();
+          const distBlocks = cfBody.match(/<DistributionSummary>[\s\S]*?<\/DistributionSummary>/g) || [];
+          for (const block of distBlocks) {
+            const id = block.match(/<Id>([^<]+)<\/Id>/)?.[1];
+            const domain = block.match(/<DomainName>([^<]+)<\/DomainName>/)?.[1];
+            const status = block.match(/<Status>([^<]+)<\/Status>/)?.[1] || "unknown";
+            const comment = block.match(/<Comment>([^<]*)<\/Comment>/)?.[1] || "";
+            if (!id) continue;
+            const managed = comment.toLowerCase().includes("uidi") || comment.includes("sre-") || comment.includes("global-spa");
+            resources.push({
+              id, type: "cloudfront" as any, name: domain || id, region: "global",
+              state: status, managed, tags: {}, details: { domain, comment },
+            });
+          }
+        }
+      } catch { /* CloudFront scan optional */ }
+
+      // ── SQS Queues ──
+      try {
+        const sqsRes = await executeAwsCommand("SQS", "ListQueues", {}, region, { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+        const queueUrls = sqsRes?.QueueUrls || [];
+        for (const qUrl of queueUrls) {
+          const qName = String(qUrl).split("/").pop() || qUrl;
+          const managed = qName.includes("uidi") || qName.includes("pipeline") || qName.includes("sre-");
+          resources.push({
+            id: qUrl, type: "sqs" as any, name: qName, region,
+            state: "active", managed, tags: {}, details: { queue_url: qUrl },
+          });
+        }
+      } catch { /* SQS scan optional */ }
+
+      // ── Lambda Functions ──
+      try {
+        const lambdaRes = await awsSignedRequest({ service: "lambda", region, method: "GET", path: "/2015-03-31/functions", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, hostOverride: `lambda.${region}.amazonaws.com` });
+        if (lambdaRes.ok) {
+          const lambdaData = JSON.parse(await lambdaRes.text());
+          for (const fn of (lambdaData.Functions || [])) {
+            const managed = (fn.Tags?.ManagedBy === "UIDI") || fn.FunctionName?.includes("uidi") || fn.FunctionName?.includes("sre-");
+            resources.push({
+              id: fn.FunctionArn || fn.FunctionName, type: "lambda" as any, name: fn.FunctionName, region,
+              state: fn.State || "Active", managed, tags: fn.Tags || {},
+              details: { runtime: fn.Runtime, memory: fn.MemorySize, timeout: fn.Timeout },
+            });
+          }
+        }
+      } catch { /* Lambda scan optional */ }
+
+      // ── API Gateway (HTTP APIs) ──
+      try {
+        const apigwRes = await awsSignedRequest({ service: "apigateway", region, method: "GET", path: "/v2/apis", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, hostOverride: `apigateway.${region}.amazonaws.com` });
+        if (apigwRes.ok) {
+          const apigwData = JSON.parse(await apigwRes.text());
+          for (const api of (apigwData.Items || [])) {
+            const managed = api.Name?.includes("uidi") || api.Name?.includes("sre-") || api.Tags?.ManagedBy === "UIDI";
+            resources.push({
+              id: api.ApiId, type: "api_gateway" as any, name: api.Name || api.ApiId, region,
+              state: "active", managed, tags: api.Tags || {},
+              details: { protocol: api.ProtocolType, endpoint: api.ApiEndpoint },
+            });
+          }
+        }
+      } catch { /* API Gateway scan optional */ }
+
+      // ── Security Groups ──
+      try {
+        const sgParams = new URLSearchParams({ Action: "DescribeSecurityGroups", Version: "2016-11-15" });
+        const sgRes = await ec2Request("POST", region, sgParams.toString(), AWS_KEY, AWS_SECRET);
+        const sgBody = await sgRes.text();
+        if (sgRes.ok) {
+          const sgItems = sgBody.match(/<item>[\s\S]*?<groupId>sg-[a-f0-9]+<\/groupId>[\s\S]*?<\/item>/g) || [];
+          for (const item of sgItems) {
+            const id = item.match(/<groupId>(sg-[a-f0-9]+)<\/groupId>/)?.[1];
+            if (!id) continue;
+            const groupName = item.match(/<groupName>([^<]+)<\/groupName>/)?.[1] || id;
+            const vpcId = item.match(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/)?.[1] || "";
+            const tags: Record<string, string> = {};
+            const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+            for (const m of tagMatches) tags[m[1]] = m[2];
+            const managed = tags["ManagedBy"] === "UIDI" || groupName.includes("uidi") || groupName.includes("sre-");
+            if (groupName === "default") continue; // skip default SGs
+            resources.push({
+              id, type: "security_group" as any, name: tags["Name"] || groupName, region,
+              state: "active", managed, tags, details: { group_name: groupName, vpc_id: vpcId },
+            });
+          }
+        }
+      } catch { /* SG scan optional */ }
+
+      // ── Subnets ──
+      try {
+        const subParams = new URLSearchParams({ Action: "DescribeSubnets", Version: "2016-11-15" });
+        const subRes = await ec2Request("POST", region, subParams.toString(), AWS_KEY, AWS_SECRET);
+        const subBody = await subRes.text();
+        if (subRes.ok) {
+          const subItems = subBody.match(/<item>[\s\S]*?<subnetId>subnet-[a-f0-9]+<\/subnetId>[\s\S]*?<\/item>/g) || [];
+          for (const item of subItems) {
+            const id = item.match(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/)?.[1];
+            if (!id) continue;
+            const cidr = item.match(/<cidrBlock>([^<]+)<\/cidrBlock>/)?.[1] || "";
+            const az = item.match(/<availabilityZone>([^<]+)<\/availabilityZone>/)?.[1] || "";
+            const defaultForAz = item.includes("<defaultForAz>true</defaultForAz>");
+            const tags: Record<string, string> = {};
+            const tagMatches = item.matchAll(/<key>([^<]+)<\/key>\s*<value>([^<]*)<\/value>/g);
+            for (const m of tagMatches) tags[m[1]] = m[2];
+            const managed = tags["ManagedBy"] === "UIDI" || tags["Name"]?.includes("uidi") || tags["Name"]?.includes("sre-");
+            if (defaultForAz && !managed) continue; // skip default subnets
+            resources.push({
+              id, type: "subnet" as any, name: tags["Name"] || `${id} (${az})`, region,
+              state: "available", managed, tags, details: { cidr, availability_zone: az },
+            });
+          }
+        }
+      } catch { /* Subnet scan optional */ }
+
       // Categorize
       const wasteResources = resources.filter(r => r.waste);
       const managedResources = resources.filter(r => r.managed);
       const orphanResources = resources.filter(r => !r.managed && r.type !== "vpc");
+
+      const byType: Record<string, number> = {};
+      for (const r of resources) {
+        byType[r.type] = (byType[r.type] || 0) + 1;
+      }
 
       return ok("inventory", action, `Scanned ${resources.length} resource(s): ${managedResources.length} managed, ${wasteResources.length} waste, ${orphanResources.length} unmanaged`, {
         resources,
@@ -2283,13 +2422,7 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
           managed: managedResources.length,
           waste: wasteResources.length,
           orphan: orphanResources.length,
-          by_type: {
-            ec2: resources.filter(r => r.type === "ec2").length,
-            ebs: resources.filter(r => r.type === "ebs").length,
-            eip: resources.filter(r => r.type === "eip").length,
-            vpc: resources.filter(r => r.type === "vpc").length,
-            eks: resources.filter(r => r.type === "eks").length,
-          },
+          by_type: byType,
         },
         region,
       });
