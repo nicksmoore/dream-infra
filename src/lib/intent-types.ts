@@ -398,6 +398,9 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
 
   // ── Detect resources ──
   const resources: string[] = [];
+  if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) {
+    resources.push("dynamodb", "route53", "lambda", "cloudfront");
+  }
   if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) {
     resources.push("s3", "cloudfront", "route53", "lambda");
   }
