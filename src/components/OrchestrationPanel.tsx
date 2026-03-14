@@ -370,6 +370,8 @@ export function OrchestrationPanel({
           ))}
         </div>
 
+        <DeploymentDiagram workloadType={workloadType} steps={steps} />
+
         {/* Validation & Security Scan — shown after deployment */}
         {steps.some(s => s.status === "done") && (
           <ValidationPhase
