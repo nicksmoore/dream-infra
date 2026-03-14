@@ -2135,24 +2135,20 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
     }
 
     try {
-      const ClientClass = CLIENT_MAP[op.service];
-      const CommandClass = COMMAND_MAP[op.command];
-
-      if (!ClientClass || !CommandClass) {
-        throw new Error(`Naawi Error: Unsupported service/command - ${op.service}.${op.command}`);
+      if (!SDK_MODULE_MAP[op.service]) {
+        throw new Error(`Naawi Error: Unsupported service - ${op.service}`);
       }
 
-      const client = new ClientClass({ 
-        region: (op.service === "CloudFront" || op.service === "Route53" || op.service === "ACM" || op.service === "Lambda") ? "us-east-1" : region, 
-        credentials 
-      });
+      const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
+      const client = await getClient(op.service, globalServices.includes(op.service) ? "us-east-1" : region, credentials);
+      const CommandClass = await getCommand(op.service, op.command);
       const commandInstance = new CommandClass(resolvedInput);
       const result = await client.send(commandInstance);
 
       state[op.id] = result || {};
       history.push({ opId: op.id, status: "SUCCESS", result });
 
-    } catch (e) {
+    } catch (e: any) {
       console.error(`Execution failed at ${op.id}:`, e);
       history.push({ opId: op.id, status: "FAILED", error: e.message });
       return err("naawi", "execute", `Execution Halted at ${op.id}: ${e.message}`, { history, state_at_failure: state });
