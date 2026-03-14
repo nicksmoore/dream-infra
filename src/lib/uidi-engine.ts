@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface EngineRequest {
   intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
 }
