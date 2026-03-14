@@ -121,7 +121,7 @@ export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProp
   const totalCount = steps.length;
 
   return (
-    <Collapsible>
+    <Collapsible defaultOpen>
       <CollapsibleTrigger className="flex items-center justify-between w-full p-2.5 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors text-left">
         <div className="flex items-center gap-2">
           <GitBranch className="h-3.5 w-3.5 text-primary" />
