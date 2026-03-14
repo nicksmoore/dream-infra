@@ -211,10 +211,10 @@ export function OrchestrationPanel({
   async function runOrchestration(approved = false) {
     setIsRunning(true);
 
-    if (naawiOperations.length > 0) {
+    if (stableOps.length > 0) {
       try {
         setSteps(prev => prev.map(s => ({ ...s, status: "running" })));
-        const result = await naawiExecute({ operations: naawiOperations, region }, approved);
+        const result = await naawiExecute({ operations: stableOps, region }, approved);
         
         if (result.status === "error") throw new Error(result.error || result.message);
 
