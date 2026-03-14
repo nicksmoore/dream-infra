@@ -31,6 +31,30 @@ interface OrchestrationPanelProps {
   onComplete?: () => void;
 }
 
+const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"] as const;
+
+type PlanResult = {
+  discovery?: Array<{ operationId: string; status: string; suggestedAction?: string }>;
+  operations?: Array<{ id: string; service: string; command: string }>;
+  risk_level?: "LOW" | "HIGH";
+  requires_approval?: boolean;
+  estimated_monthly_cost_usd?: number;
+};
+
+function estimateLocalStepCost(step: OrchestrationStep): number {
+  if (step.intent === "compute") {
+    const it = String(step.spec.instance_type || "t3.micro");
+    if (it.includes("nano")) return 4;
+    if (it.includes("micro")) return 8;
+    if (it.includes("small")) return 16;
+    if (it.includes("medium")) return 32;
+    return 48;
+  }
+  if (step.intent === "network") return 12;
+  if (step.intent === "eks") return 75;
+  return 15;
+}
+
 export function OrchestrationPanel({
   resources,
   region,
