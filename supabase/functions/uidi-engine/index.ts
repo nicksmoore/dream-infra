@@ -1526,9 +1526,12 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
         // 1. Delete subnets
         let dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSubnets", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         let dBody = await dRes.text();
-        for (const sid of [...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].map(m => m[1])) {
+        console.log(`Destroy ${vpcId}: DescribeSubnets status=${dRes.status}, matches=${[...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].length}, body=${dBody.slice(0, 500)}`);
+        const subnetIds = [...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].map(m => m[1]);
+        for (const sid of subnetIds) {
           const r = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSubnet", Version: "2016-11-15", SubnetId: sid }).toString(), AWS_KEY, AWS_SECRET);
-          await r.text();
+          const rBody = await r.text();
+          console.log(`DeleteSubnet ${sid}: status=${r.status} ${r.status !== 200 ? rBody.slice(0, 200) : 'OK'}`);
           destroyed.push(`subnet:${sid}`);
         }
 
