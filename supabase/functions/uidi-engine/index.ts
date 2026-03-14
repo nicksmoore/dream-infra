@@ -1334,6 +1334,7 @@ async function describeExistingNetworkStack(
   vpc_id: string;
   security_group_id: string | null;
   subnets: { id: string; type: string; az: string; cidr: string }[];
+  subnet_ids: string[];
   region: string;
   vpc_cidr?: string;
   reused: true;
@@ -1405,6 +1406,7 @@ async function describeExistingNetworkStack(
     vpc_id: vpcId,
     security_group_id: securityGroupId,
     subnets,
+    subnet_ids: subnets.map((subnet) => subnet.id),
     region,
     vpc_cidr: vpcCidr,
     reused: true,
@@ -1426,12 +1428,24 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
 
       const existingStack = await describeExistingNetworkStack(region, name, environment, AWS_KEY, AWS_SECRET);
       if (existingStack) {
-        return ok(
-          "network",
-          action,
-          `Reused existing VPC stack: ${existingStack.vpc_id} with ${existingStack.subnets.length} subnets`,
-          existingStack,
-        );
+        const hasRequiredSubnetCount = existingStack.subnet_ids.length >= 2;
+        const hasSecurityGroup = Boolean(existingStack.security_group_id);
+
+        if (hasRequiredSubnetCount && hasSecurityGroup) {
+          return ok(
+            "network",
+            action,
+            `Reused existing VPC stack: ${existingStack.vpc_id} with ${existingStack.subnets.length} subnets`,
+            existingStack,
+          );
+        }
+
+        console.warn(`Existing VPC ${existingStack.vpc_id} is incomplete (subnets=${existingStack.subnet_ids.length}, sg=${existingStack.security_group_id || "none"}). Rebuilding network stack.`);
+
+        const cleanup = await handleNetwork("destroy", { vpc_id: existingStack.vpc_id, region });
+        if (cleanup.status === "error") {
+          console.warn(`Pre-rebuild cleanup failed for ${existingStack.vpc_id}: ${cleanup.error}`);
+        }
       }
 
       let res = await ec2Request("POST", region, new URLSearchParams({ Action: "CreateVpc", Version: "2016-11-15", CidrBlock: vpcCidr, "TagSpecification.1.ResourceType": "vpc", "TagSpecification.1.Tag.1.Key": "Name", "TagSpecification.1.Tag.1.Value": name, "TagSpecification.1.Tag.2.Key": "ManagedBy", "TagSpecification.1.Tag.2.Value": "UIDI", "TagSpecification.1.Tag.3.Key": "Environment", "TagSpecification.1.Tag.3.Value": environment }).toString(), AWS_KEY, AWS_SECRET);
