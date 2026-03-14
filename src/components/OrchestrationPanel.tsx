@@ -21,29 +21,50 @@ interface OrchestrationStep {
 }
 
 interface OrchestrationPanelProps {
-  resources: string[];
-  region: string;
-  environment: string;
-  workloadType?: string;
-  instanceType?: string;
-  os?: string;
-  onComplete?: () => void;
-}
+  interface OrchestrationPanelProps {
+    resources: string[];
+    region: string;
+    environment: string;
+    workloadType?: string;
+    instanceType?: string;
+    os?: string;
+    naawiOperations?: any[];
+    onComplete?: () => void;
+  }
 
-export function OrchestrationPanel({
-  resources,
-  region,
-  environment,
-  workloadType = "general",
-  instanceType = "t3.medium",
-  os = "amazon-linux-2023",
-  onComplete,
-}: OrchestrationPanelProps) {
-  const buildSteps = (): OrchestrationStep[] => {
-    const result: OrchestrationStep[] = [];
+  export function OrchestrationPanel({
+    resources,
+    region,
+    environment,
+    workloadType = "general",
+    instanceType = "t3.medium",
+    os = "amazon-linux-2023",
+    naawiOperations = [],
+    onComplete,
+  }: OrchestrationPanelProps) {
+    const buildSteps = (): OrchestrationStep[] => {
+      const result: OrchestrationStep[] = [];
 
-    // SRE-Supreme Pattern Detection
-    const srePatterns = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"];
+      // ── Project Naawi: Granular SDK Operations (Highest Priority) ──
+      if (naawiOperations.length > 0) {
+        naawiOperations.forEach(op => {
+          result.push({
+            id: op.id,
+            name: `${op.service}.${op.command}`,
+            description: `Direct SDK call: ${op.id} (Risk: ${op.riskLevel})`,
+            icon: <Box className="h-4 w-4" />,
+            intent: "naawi",
+            action: "execute",
+            spec: { operations: [op], region },
+            status: "pending",
+          });
+        });
+        return result;
+      }
+
+      // SRE-Supreme Pattern Detection
+      const srePatterns = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"];
+
     if (srePatterns.includes(workloadType)) {
       result.push({
         id: "sre-pattern",

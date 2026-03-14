@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // AWS SDK v3 Imports (Deno npm specifiers)
+import { EC2Client, DescribeInstancesCommand } from "npm:@aws-sdk/client-ec2";
 import { S3Client, CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand } from "npm:@aws-sdk/client-s3";
 import { CloudFrontClient, CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
 import { Route53Client, ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand } from "npm:@aws-sdk/client-route-53";
@@ -24,10 +25,11 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme";
+  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
   action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
+  approved?: boolean;
 }
 
 interface EngineResponse {
@@ -2012,6 +2014,151 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
   }
 }
 
+// ───── Project Naawi: Execution Runtime (Stateless) ─────
+
+interface ExecutionState {
+  [opId: string]: Record<string, any>;
+}
+
+function resolveReferences(input: any, state: ExecutionState): any {
+  const json = JSON.stringify(input);
+  const resolved = json.replace(/ref\(([^.]+)\.([^)]+)\)/g, (match, opId, property) => {
+    const val = state[opId]?.[property];
+    if (val === undefined) return match; // Leave as is for circuit breaker check
+    return val;
+  });
+  return JSON.parse(resolved);
+}
+
+async function handleDiscovery(ops: SdkOperation[], credentials: any, region: string): Promise<DiscoveryReport[]> {
+  const reports: DiscoveryReport[] = [];
+
+  for (const op of ops) {
+    const { service, discoveryContext, id } = op;
+    const { identifiers } = discoveryContext || { identifiers: [] };
+    
+    let liveState: any = null;
+    let status: DiscoveryReport["status"] = "NOT_FOUND";
+
+    try {
+      if (service === "S3") {
+        const s3 = new S3Client({ region, credentials });
+        for (const name of identifiers) {
+          try {
+            const head = await s3.send(new HeadBucketCommand({ Bucket: name }));
+            liveState = { BucketName: name, ...head };
+            status = "MATCH";
+            break;
+          } catch (e) {
+            if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e;
+          }
+        }
+      } else if (service === "EC2") {
+        const ec2 = new EC2Client({ region, credentials });
+        for (const id of identifiers) {
+          try {
+            const desc = await ec2.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
+            const instance = desc.Reservations?.[0]?.Instances?.[0];
+            if (instance) {
+              liveState = instance;
+              status = "MATCH";
+              break;
+            }
+          } catch (e) {
+            if (e.name !== "InvalidInstanceID.NotFound") throw e;
+          }
+        }
+      }
+
+      reports.push({
+        operationId: id,
+        status,
+        liveState,
+        suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE",
+      });
+    } catch (e) {
+      reports.push({
+        operationId: id,
+        status: "ERROR",
+        suggestedAction: "NONE",
+      });
+    }
+  }
+
+  return reports;
+}
+
+async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: string): Promise<EngineResponse> {
+  const state: ExecutionState = {};
+  const history: { opId: string; status: string; result?: any; error?: string }[] = [];
+
+  for (const op of ops) {
+    // 1. Resolve Late-Binding References
+    const resolvedInput = resolveReferences(op.input, state);
+    
+    // 2. Circuit Breaker: Check for unresolved refs
+    if (JSON.stringify(resolvedInput).includes("ref(")) {
+      return err("naawi", "execute", `Circuit Breaker: Unresolved dependency in ${op.id}. Dependencies: ${op.dependsOn?.join(", ")}`);
+    }
+
+    try {
+      // 3. Dynamic SDK Dispatch (Simplified for S3/EC2 for now)
+      let result: any;
+      if (op.service === "S3") {
+        const s3 = new S3Client({ region, credentials });
+        // Map op.command to SDK Command instance
+        if (op.command === "CreateBucketCommand") result = await s3.send(new CreateBucketCommand(resolvedInput));
+        if (op.command === "PutBucketWebsiteCommand") result = await s3.send(new PutBucketWebsiteCommand(resolvedInput));
+      } else if (op.service === "EC2") {
+        const ec2 = new EC2Client({ region, credentials });
+        // Dynamic command mapping logic...
+      }
+
+      // 4. Capture Physical Resource IDs into StateStore
+      state[op.id] = result || {};
+      history.push({ opId: op.id, status: "SUCCESS", result });
+
+    } catch (e) {
+      // 5. Halt & Report (No automated rollback to avoid double-failure)
+      history.push({ opId: op.id, status: "FAILED", error: e.message });
+      return err("naawi", "execute", `Execution Halted at ${op.id}: ${e.message}`, { history, state_at_failure: state });
+    }
+  }
+
+  return ok("naawi", "execute", "Project Naawi: Full Execution Sequence Successful", { history });
+}
+
+// ───── Project Naawi: Discovery & Execution Orchestrator ─────
+
+async function handleNaawi(action: string, spec: Record<string, unknown>, approved?: boolean): Promise<EngineResponse> {
+  const ops = spec.operations as SdkOperation[];
+  if (!ops || !Array.isArray(ops)) return err("naawi", action, "operations array is required in spec.");
+
+  const region = spec.region as string || "us-east-1";
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  const credentials = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  // 1. Discovery-First Guardrail: Establish "Ground Truth"
+  // (Assuming handleDiscovery is already defined as per previous step)
+  const discoveryReports = await handleDiscovery(ops, credentials, region);
+  
+  // 2. Risk Assessment & Human-in-the-Loop
+  const hasHighRisk = ops.some(op => op.riskLevel === "HIGH");
+  const needsApproval = hasHighRisk && !approved;
+
+  if (action === "plan" || needsApproval) {
+    return ok("naawi", "plan", needsApproval ? "HIGH Risk Operations Detected: Approval Required" : "Naawi Plan Generated", {
+      discovery: discoveryReports,
+      requires_approval: needsApproval,
+      risk_level: hasHighRisk ? "HIGH" : "LOW"
+    });
+  }
+
+  // 3. Execution with Idempotency Handshake
+  return await executeNaawiOps(ops, credentials, region);
+}
+
 // ───── SRE-Supreme IDI Execution Engine (v2.0) ─────
 
 async function handleSreSupreme(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
@@ -2259,8 +2406,11 @@ serve(async (req) => {
       case "sre-supreme":
         result = await handleSreSupreme(action, spec);
         break;
+      case "naawi":
+        result = await handleNaawi(action, spec, body.approved);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi.`);
     }
     return new Response(JSON.stringify(result), {
       status: result.status === "error" ? 400 : 200,

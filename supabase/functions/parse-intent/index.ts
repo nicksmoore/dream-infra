@@ -32,7 +32,18 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are an infrastructure intent parser. Extract structured intent from natural language infrastructure requests. Identify ALL resource types mentioned (vpc, subnets, nacls, eks, ec2, s3, cloudfront, sqs, lambda, api-gateway, rds). Use the tool provided to return the result.`,
+            content: `You are the Naawi IDI Compiler. Your objective is to translate natural language infrastructure intent into a deterministic array of AWS SDK v3 operations. You bypass all intermediary DSLs (Terraform, YAML, HCL) and target the native AWS Service Clients directly.
+
+Core Directives:
+1. Stateless Logic: Do not assume a local state file exists. If an intent references an existing resource, your first operation must be a Describe* or Get* call to retrieve the current state.
+2. Symbolic Referencing: Use the syntax ref(op_id.Property) to link dependent resources. Never hardcode ARNs or IDs that are created within the same intent.
+3. Idempotency: For every mutation (Create/Update), generate a unique ClientToken or IdempotencyToken to ensure the execution loop can safely retry calls.
+4. Surgical Scoping: Use the discoveryContext object to provide the Runtime with the exact identifiers (tags, names, or ARNs) needed to minimize API noise. Target 3–12 API calls per intent.
+
+Operational Rules:
+- No Hallucinations: Use only valid AWS SDK v3 parameters.
+- Security First: Default to private access, encrypted storage (KMS), and least-privilege IAM policies.
+- Validation: Ensure that if op_B depends on op_A, the dependsOn field reflects this.`,
           },
           { role: "user", content: message },
         ],
@@ -40,49 +51,44 @@ serve(async (req) => {
           {
             type: "function",
             function: {
-              name: "parse_infrastructure_intent",
-              description: "Parse a natural language infrastructure request into structured intent fields.",
+              name: "compile_infrastructure_intent",
+              description: "Compile a natural language infrastructure request into a deterministic sequence of AWS SDK v3 operations.",
               parameters: {
                 type: "object",
                 properties: {
-                  resources: {
+                  operations: {
                     type: "array",
-                    items: { type: "string", enum: ["vpc", "subnets", "nacls", "eks", "ec2", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds"] },
-                    description: "AWS resource types mentioned in the request.",
-                  },
-                  workloadType: {
-                    type: "string",
-                    enum: ["general", "compute", "memory", "storage", "accelerated", "hpc", "global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"],
-                    description: "Type of workload or pattern: global-spa (S3/CloudFront), service-mesh (EKS/AppMesh), event-pipeline (SQS/Lambda/DynamoDB), internal-api (API Gateway/Aurora), three-tier (ASG/RDS), or standard workload types",
-                  },
-                  costSensitivity: {
-                    type: "string",
-                    enum: ["cheapest", "balanced", "production"],
-                    description: "Cost preference. 'right-sizing' = balanced. cheap/small/minimal = cheapest. production/enterprise = production.",
-                  },
-                  environment: {
-                    type: "string",
-                    enum: ["dev", "staging", "prod"],
-                    description: "Target environment",
-                  },
-                  region: {
-                    type: "string",
-                    enum: ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1", "ap-northeast-1"],
-                    description: "AWS region",
-                  },
-                  os: {
-                    type: "string",
-                    enum: ["amazon-linux-2023", "ubuntu", "debian", "rhel", "suse", "windows-2022", "windows-2019"],
-                    description: "Operating system for EC2 instances",
-                  },
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string", description: "Unique, traceable ID for this operation (e.g., 'create_vpc_01')." },
+                        service: { type: "string", description: "AWS Service name (e.g., 'S3', 'EC2', 'RDS')." },
+                        command: { type: "string", description: "SDK Command name (e.g., 'CreateBucketCommand')." },
+                        discoveryContext: {
+                          type: "object",
+                          properties: {
+                            identifiers: { type: "array", items: { type: "string" }, description: "ARNs, IDs, or Names to check if the resource already exists." },
+                            tags: { type: "object", additionalProperties: { type: "string" } }
+                          }
+                        },
+                        input: { 
+                          type: "object", 
+                          description: "The exact SDK input payload. Use 'ref(op_id.Property)' for symbolic links to previous operations." 
+                        },
+                        riskLevel: { type: "string", enum: ["LOW", "HIGH"] },
+                        dependsOn: { type: "array", items: { type: "string" }, description: "Array of operation IDs that must complete first." }
+                      },
+                      required: ["id", "service", "command", "input", "riskLevel"]
+                    }
+                  }
                 },
-                required: ["resources", "workloadType", "costSensitivity", "environment", "region", "os"],
+                required: ["operations"],
                 additionalProperties: false,
               },
             },
           },
         ],
-        tool_choice: { type: "function", function: { name: "parse_infrastructure_intent" } },
+        tool_choice: { type: "function", function: { name: "compile_infrastructure_intent" } },
       }),
     });
 

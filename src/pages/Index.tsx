@@ -40,6 +40,7 @@ export default function Index() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
+  const [operations, setOperations] = useState<any[]>([]);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
@@ -53,7 +54,13 @@ export default function Index() {
         body: { message: input },
       });
       if (error) throw new Error(error.message);
-      if (data?.intent) {
+      if (data?.intent?.operations) {
+        setOperations(data.intent.operations);
+        // Map detected resources from operations for UI badges
+        const resources = Array.from(new Set(data.intent.operations.map((op: any) => op.service.toLowerCase())));
+        setDetectedResources(resources);
+        toast({ title: "Intent compiled", description: `Project Naawi: ${data.intent.operations.length} SDK operations generated.` });
+      } else if (data?.intent) {
         const merged = { ...DEFAULT_INTENT, ...data.intent };
         updateIntent(merged);
         setDetectedResources(data.intent.resources || ["ec2"]);
@@ -123,7 +130,7 @@ export default function Index() {
               </div>
             )}
 
-            {isMultiResource ? (
+            {isMultiResource || operations.length > 0 ? (
               <OrchestrationPanel
                 resources={detectedResources}
                 region={intent.region}
@@ -131,6 +138,7 @@ export default function Index() {
                 workloadType={intent.workloadType}
                 instanceType={config.instanceType}
                 os={config.os}
+                naawiOperations={operations}
               />
             ) : (
               <>

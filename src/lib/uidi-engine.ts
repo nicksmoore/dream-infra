@@ -205,6 +205,30 @@ export async function sreSupremeDeploy(spec: {
   return executeIntent({ intent: "sre-supreme", action: "deploy", spec });
 }
 
+// ───── Naawi helpers ─────
+
+export async function naawiPlan(spec: {
+  operations: any[];
+  region?: string;
+  [key: string]: any;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "naawi", action: "plan", spec });
+}
+
+export async function naawiExecute(spec: {
+  operations: any[];
+  region?: string;
+  [key: string]: any;
+}, approved?: boolean): Promise<EngineResponse> {
+  return executeIntent({ 
+    intent: "naawi", 
+    action: "execute", 
+    spec,
+    // @ts-ignore - approved is a top-level field in Naawi requests
+    approved 
+  });
+}
+
 // ───── Reconciliation helpers ─────
 
 export interface ReconcileDesiredResources {

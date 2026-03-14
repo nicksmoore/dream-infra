@@ -1,3 +1,26 @@
+// ===== Project Naawi: Stateless SDK Types =====
+
+export interface SdkOperation {
+  id: string;                // Traceable ID for the intent
+  service: string;           // e.g., "S3", "RDS", "EC2"
+  command: string;           // e.g., "CreateBucket", "ModifyDBInstance"
+  discoveryContext: {        // Parameters used for Surgical Discovery
+    identifiers: string[];   // ARNs, IDs, or Names to check first
+    tags?: Record<string, string>;
+  };
+  input: Record<string, any>; // The "Desired State" payload for the SDK
+  riskLevel: "LOW" | "HIGH";  // Dictates if a human-in-the-loop Diff is mandatory
+  dependsOn?: string[];      // IDs of operations that must complete first
+}
+
+export interface DiscoveryReport {
+  operationId: string;
+  status: "MATCH" | "DRIFT" | "NOT_FOUND" | "ERROR";
+  liveState?: Record<string, any>;
+  suggestedAction: "CREATE" | "UPDATE" | "NONE" | "REPLACE";
+  diff?: string[];
+}
+
 // ===== Core Intent Types =====
 export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier";
 export type CostSensitivity = "cheapest" | "balanced" | "production";
