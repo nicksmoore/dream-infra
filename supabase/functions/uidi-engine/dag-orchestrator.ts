@@ -40,6 +40,7 @@ export class DagOrchestrator {
       case "EDGE_STATIC_SPA":
         return this.compileGlobalSpa(spec);
       case "microservices-mesh":
+      case "service-mesh":
       case "SERVICE_MESH":
         return this.compileMicroservicesMesh(spec);
       case "event-pipeline":
