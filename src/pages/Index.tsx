@@ -163,7 +163,8 @@ export default function Index() {
               <p className="text-xs text-muted-foreground">Intent-Driven Infrastructure</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
             <McpConnectionStatus />
             <UserMenu />
           </div>
