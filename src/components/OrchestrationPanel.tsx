@@ -102,7 +102,7 @@ export function OrchestrationPanel({
           icon: <ShieldCheck className="h-4 w-4 text-primary" />,
           intent: "sre-supreme",
           action: "deploy",
-          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}` },
+          spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}`, intentText: workloadType },
           status: "pending",
         });
         return result;
