@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GitBranch } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { GitBranch, ChevronDown } from "lucide-react";
 
 mermaid.initialize({
   startOnLoad: false,
