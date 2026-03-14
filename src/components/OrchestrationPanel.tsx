@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { DeploymentDiagram } from "@/components/DeploymentDiagram";
 import { ValidationPhase } from "@/components/ValidationPhase";
