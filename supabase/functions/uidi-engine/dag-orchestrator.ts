@@ -25,7 +25,7 @@ export class DagOrchestrator {
   
 
   constructor(private region: string, private credentials: any) {
-    this.ec2 = new EC2Client({ region, credentials });
+    
     this.s3 = new S3Client({ region, credentials });
     this.cf = new CloudFrontClient({ region: "us-east-1", credentials }); // CF is global
     this.r53 = new Route53Client({ region: "us-east-1", credentials }); // R53 is global
