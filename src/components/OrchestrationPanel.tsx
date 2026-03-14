@@ -345,8 +345,7 @@ export function OrchestrationPanel({
           </div>
         )}
 
-        {/* Deployment DAG Diagram */}
-        <DeploymentDiagram workloadType={workloadType} steps={steps} />
+        {/* Deployment DAG Diagram (collapsible, below plan) */}
 
         {/* Steps */}
         <div className="space-y-3">
