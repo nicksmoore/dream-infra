@@ -516,7 +516,50 @@ export function OrchestrationPanel({
     });
   }, [steps, stepOutputs]);
 
-  // ── UI Helpers ──
+  // ── Force Nuke: ordered EKS→VPC teardown via inventory/nuke-stack ──
+  const runForceNuke = useCallback(async () => {
+    setIsForceNuking(true);
+    toast({ title: "Force Nuke started", description: "Destroying EKS clusters → VPCs in dependency order..." });
+
+    try {
+      const result = await executeIntent({
+        intent: "inventory" as any,
+        action: "nuke-stack" as any,
+        spec: { region, force: true },
+      });
+
+      const details = result.details as any;
+
+      if (result.status === "error") {
+        toast({
+          title: "Force Nuke had errors",
+          description: result.error || "Some resources could not be deleted",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Force Nuke complete", description: result.message });
+        setShowForceNuke(false);
+        // Mark all steps as rolled back
+        setSteps(prev => prev.map(s => ({ ...s, status: "rolled_back" as any, output: "Force nuked" })));
+        setStepOutputs({});
+      }
+
+      // Log steps for debugging
+      if (details?.steps) {
+        console.log("Force Nuke steps:", details.steps);
+      }
+    } catch (e) {
+      toast({
+        title: "Force Nuke failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsForceNuking(false);
+    }
+  }, [region]);
+
+
   const statusIcon = (status: string) => {
     switch (status) {
       case "running": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
