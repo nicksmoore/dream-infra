@@ -59,7 +59,7 @@ export default function Index() {
       if (data?.intent?.operations) {
         setOperations(data.intent.operations);
         // Map detected resources from operations for UI badges
-        const resources = Array.from(new Set(data.intent.operations.map((op: any) => op.service.toLowerCase())));
+        const resources = Array.from(new Set((data.intent.operations || []).map((op: any) => op.service.toLowerCase())));
         setDetectedResources(resources);
         toast({ title: "Intent compiled", description: `Project Naawi: ${data.intent.operations.length} SDK operations generated.` });
       } else if (data?.intent) {

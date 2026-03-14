@@ -33,7 +33,7 @@ export class DagOrchestrator {
   }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
-    console.log(`[DagOrchestrator] Compiling DAG for pattern: \${pattern}`);
+    console.log(`[DagOrchestrator] Compiling DAG for pattern: ${pattern}`);
     
     switch (pattern) {
       case "global-spa":
@@ -50,20 +50,16 @@ export class DagOrchestrator {
       case "three-tier":
         return this.compileThreeTier(spec);
       default:
-        throw new Error(`Unknown SRE pattern: \${pattern}`);
+        throw new Error(`Unknown SRE pattern: ${pattern}`);
     }
   }
 
   // ─── Pattern 1: The Global SPA (EDGE_STATIC_SPA) ───
-  // Parallel Group 1: S3 + OAC + ACM + Lambda@Edge
-  // Sync Point 2: CloudFront (Wait for Parallel 1)
-  // Final Group 3: R53 + S3 Policy + Invalidation
   private async compileGlobalSpa(spec: any): Promise<SdkOperation[]> {
     const { domainName, bucketName } = spec;
     const ops: SdkOperation[] = [];
     const intentHash = this.generateClientToken(spec, "pattern1");
 
-    // 1. S3 Bucket (Private, REST Origin)
     ops.push({
       id: "s3-bucket",
       service: "S3",
@@ -72,14 +68,13 @@ export class DagOrchestrator {
       riskLevel: "LOW"
     });
 
-    // 2. CloudFront OAC (Origin Shielding requirement)
     ops.push({
       id: "cf-oac",
       service: "CloudFront",
       command: "CreateOriginAccessControl",
       input: {
         OriginAccessControlConfig: {
-          Name: `\${bucketName}-oac`,
+          Name: `${bucketName}-oac`,
           OriginAccessControlOriginType: "s3",
           SigningBehavior: "always",
           SigningProtocol: "sigv4"
@@ -87,7 +82,6 @@ export class DagOrchestrator {
       }
     });
 
-    // 3. ACM Certificate (Global, parallel)
     ops.push({
       id: "acm-cert",
       service: "ACM",
@@ -100,17 +94,16 @@ export class DagOrchestrator {
       region: "us-east-1"
     });
 
-    // 4. Lambda@Edge: Security Headers (Edge Security requirement)
     ops.push({
       id: "lambda-security",
       service: "Lambda",
       command: "CreateFunction",
       input: {
-        FunctionName: `\${bucketName}-security-headers`,
+        FunctionName: `${bucketName}-security-headers`,
         Runtime: "nodejs18.x",
         Role: "arn:aws:iam::ACCOUNT:role/EdgeLambdaRole",
         Handler: "index.handler",
-        Code: { ZipFile: "/* Security Headers Logic */" }
+        Code: { ZipFile: new TextEncoder().encode("/* Security Headers Logic */") }
       },
       region: "us-east-1"
     });
@@ -124,7 +117,6 @@ export class DagOrchestrator {
       region: "us-east-1"
     });
 
-    // 5. Synchronization Point (ACM Waiter)
     ops.push({
       id: "wait-cert",
       service: "ACM",
@@ -134,7 +126,6 @@ export class DagOrchestrator {
       region: "us-east-1"
     });
 
-    // 6. CloudFront Distribution (Synchronization Point)
     ops.push({
       id: "cf-dist",
       service: "CloudFront",
@@ -147,8 +138,7 @@ export class DagOrchestrator {
             Quantity: 1,
             Items: [{
               Id: "S3Origin",
-              // SRE Logic: REST endpoint ({bucket}.s3.{region}.amazonaws.com), NOT website endpoint
-              DomainName: `\${bucketName}.s3.\${this.region}.amazonaws.com`,
+              DomainName: `${bucketName}.s3.${this.region}.amazonaws.com`,
               OriginAccessControlId: "ref(cf-oac.OriginAccessControl.Id)",
               S3OriginConfig: { OriginAccessIdentity: "" }
             }]
@@ -177,7 +167,6 @@ export class DagOrchestrator {
       dependency: "wait-cert"
     });
 
-    // 7. S3 Policy: Deny-all except OAC (Origin Shielding)
     ops.push({
       id: "s3-policy",
       service: "S3",
@@ -190,7 +179,7 @@ export class DagOrchestrator {
             Effect: "Allow",
             Principal: { Service: "cloudfront.amazonaws.com" },
             Action: "s3:GetObject",
-            Resource: `arn:aws:s3:::\${bucketName}/*`,
+            Resource: `arn:aws:s3:::${bucketName}/*`,
             Condition: { StringEquals: { "AWS:SourceArn": "ref(cf-dist.Distribution.ARN)" } }
           }]
         })
@@ -198,7 +187,6 @@ export class DagOrchestrator {
       dependency: "cf-dist"
     });
 
-    // 8. Route 53 A-Record (Alias)
     ops.push({
       id: "r53-record",
       service: "Route53",
@@ -223,7 +211,6 @@ export class DagOrchestrator {
       dependency: "cf-dist"
     });
 
-    // 9. CloudFront Invalidation (Drift/Hotfix requirement)
     ops.push({
       id: "cf-invalidation",
       service: "CloudFront",
@@ -299,7 +286,7 @@ export class DagOrchestrator {
       id: "sqs-dlq",
       service: "SQS",
       command: "CreateQueue",
-      input: { QueueName: `\${baseName}-dlq` }
+      input: { QueueName: `${baseName}-dlq` }
     });
 
     ops.push({
@@ -315,7 +302,7 @@ export class DagOrchestrator {
       service: "SQS",
       command: "CreateQueue",
       input: {
-        QueueName: `\${baseName}-main`,
+        QueueName: `${baseName}-main`,
         Attributes: {
           RedrivePolicy: JSON.stringify({
             deadLetterTargetArn: "ref(sqs-dlq-attrs.Attributes.QueueArn)",
@@ -331,10 +318,10 @@ export class DagOrchestrator {
       service: "Lambda",
       command: "CreateFunction",
       input: {
-        FunctionName: `\${baseName}-processor`,
+        FunctionName: `${baseName}-processor`,
         Runtime: "nodejs18.x",
         Role: spec.roleArn,
-        Code: { ZipFile: "/* Processor Logic */" },
+        Code: { ZipFile: new TextEncoder().encode("/* Processor Logic */") },
         Handler: "index.handler"
       }
     });
@@ -359,7 +346,7 @@ export class DagOrchestrator {
       service: "RDS",
       command: "CreateDBSubnetGroup",
       input: {
-        DBSubnetGroupName: `\${spec.name}-subnet-group`,
+        DBSubnetGroupName: `${spec.name}-subnet-group`,
         DBSubnetGroupDescription: "Auto-discovered for Internal API",
         SubnetIds: subnetIds
       }
@@ -370,9 +357,9 @@ export class DagOrchestrator {
       service: "RDS",
       command: "CreateDBCluster",
       input: {
-        DBClusterIdentifier: `\${spec.name}-aurora`,
+        DBClusterIdentifier: `${spec.name}-aurora`,
         Engine: "aurora-postgresql",
-        DBSubnetGroupName: `\${spec.name}-subnet-group`,
+        DBSubnetGroupName: `${spec.name}-subnet-group`,
         ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 1.0 }
       },
       dependency: "rds-subnet-group"
@@ -395,8 +382,8 @@ export class DagOrchestrator {
 
     const azs = ["us-east-1a", "us-east-1b"];
     azs.forEach((az, i) => {
-      const cidr = `10.0.\${i}.0/24`;
-      const id = `subnet-\${i}`;
+      const cidr = `10.0.${i}.0/24`;
+      const id = `subnet-${i}`;
       ops.push({
         id: id,
         service: "EC2",
@@ -414,6 +401,6 @@ export class DagOrchestrator {
   }
 
   private generateClientToken(spec: any, salt: string): string {
-    return `\${salt}-\${Date.now()}`; 
+    return `${salt}-${Date.now()}`; 
   }
 }

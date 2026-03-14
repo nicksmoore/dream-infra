@@ -59,6 +59,43 @@ export function DeploymentDebugger() {
     }, 2000);
   };
 
+  const lambdaCode = `'use strict';
+exports.handler = (event, context, callback) => {
+    const response = event.Records[0].cf.response;
+    const headers = response.headers;
+
+    headers['strict-transport-security'] = [{
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload'
+    }];
+    headers['content-security-policy'] = [{
+        key: 'Content-Security-Policy',
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://naawi.com;"
+    }];
+    headers['x-frame-options'] = [{ key: 'X-Frame-Options', value: 'DENY' }];
+    headers['x-content-type-options'] = [{ key: 'X-Content-Type-Options', value: 'nosniff' }];
+
+    callback(null, response);
+};`;
+
+  const s3Policy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontServicePrincipal",
+      "Effect": "Allow",
+      "Principal": { "Service": "cloudfront.amazonaws.com" },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::naawi-assets/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT:distribution/DIST_ID"
+        }
+      }
+    }
+  ]
+}`;
+
   return (
     <Card className="bg-black/90 border-primary/40 text-white overflow-hidden shadow-2xl">
       <CardHeader className="border-b border-white/10 bg-white/5 py-3">
@@ -116,24 +153,7 @@ export function DeploymentDebugger() {
                 </h3>
                 <ScrollArea className="h-64 w-full bg-black/40 rounded border border-primary/20 p-2">
                   <pre className="text-[9px] font-mono text-primary/80">
-{\`'use strict';
-exports.handler = (event, context, callback) => {
-    const response = event.Records[0].cf.response;
-    const headers = response.headers;
-
-    headers['strict-transport-security'] = [{
-        key: 'Strict-Transport-Security',
-        value: 'max-age=63072000; includeSubDomains; preload'
-    }];
-    headers['content-security-policy'] = [{
-        key: 'Content-Security-Policy',
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline' https://naawi.com;"
-    }];
-    headers['x-frame-options'] = [{ key: 'X-Frame-Options', value: 'DENY' }];
-    headers['x-content-type-options'] = [{ key: 'X-Content-Type-Options', value: 'nosniff' }];
-
-    callback(null, response);
-};\`}
+                    {lambdaCode}
                   </pre>
                 </ScrollArea>
                 <Button size="sm" className="w-full h-7 text-[9px] uppercase tracking-tighter bg-primary/20 hover:bg-primary/40 text-primary border border-primary/50">
@@ -147,23 +167,7 @@ exports.handler = (event, context, callback) => {
                 </h3>
                 <ScrollArea className="h-64 w-full bg-black/40 rounded border border-primary/20 p-2">
                   <pre className="text-[9px] font-mono text-primary/80">
-{\`{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowCloudFrontServicePrincipal",
-      "Effect": "Allow",
-      "Principal": { "Service": "cloudfront.amazonaws.com" },
-      "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::naawi-assets/*",
-      "Condition": {
-        "StringEquals": {
-          "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT:distribution/DIST_ID"
-        }
-      }
-    }
-  ]
-}\`}
+                    {s3Policy}
                   </pre>
                 </ScrollArea>
                 <Button size="sm" className="w-full h-7 text-[9px] uppercase tracking-tighter bg-primary/20 hover:bg-primary/40 text-primary border border-primary/50">
