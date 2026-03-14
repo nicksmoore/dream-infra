@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,7 +16,7 @@ import { buildCrossRegionPeeredSteps, buildGenericSteps, buildSreStep, buildNaaw
 import {
   Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box,
   ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows,
-  RotateCcw, Trash2,
+  RotateCcw, Trash2, Clock, Timer,
 } from "lucide-react";
 
 // ───── Props & Constants ─────
