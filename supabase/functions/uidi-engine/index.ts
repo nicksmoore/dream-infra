@@ -1883,11 +1883,36 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
 
     case "add_nodegroup": {
       const clusterName = spec.cluster_name as string;
-      if (!clusterName || !spec.node_role_arn || !(spec.subnet_ids as string[])?.length) return err("eks", action, "cluster_name, node_role_arn, subnet_ids required.");
-      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ nodegroupName: spec.nodegroup_name || `${clusterName}-nodes`, nodeRole: spec.node_role_arn, subnets: spec.subnet_ids, instanceTypes: spec.instance_types || ["t3.medium"], scalingConfig: { desiredSize: spec.desired_size || 2, minSize: spec.min_size || 1, maxSize: spec.max_size || 3 }, tags: { ManagedBy: "UIDI" } }), extraHeaders: { "Content-Type": "application/json" } });
+      const subnetIds = spec.subnet_ids as string[];
+      if (!clusterName || !subnetIds?.length) return err("eks", action, "cluster_name, subnet_ids required.");
+
+      // Auto-resolve node role ARN if not provided
+      let nodeRoleArn = spec.node_role_arn as string;
+      if (!nodeRoleArn) {
+        try {
+          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "nodegroup");
+          nodeRoleArn = resolved.arn;
+          console.log(`EKS add_nodegroup: node role ${resolved.created ? "auto-created" : "discovered"}: ${nodeRoleArn}`);
+        } catch (e) {
+          return err("eks", action, `IAM Node Role Resolver failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // Ensure cluster is ACTIVE before adding nodegroup
+      const checkRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const checkBody = await checkRes.text();
+      if (checkRes.ok) {
+        const checkData = JSON.parse(checkBody);
+        if (checkData.cluster?.status !== "ACTIVE") {
+          return { status: "pending" as const, intent: "eks", action, message: `Cluster ${clusterName} is ${checkData.cluster?.status} — waiting for ACTIVE before adding nodegroup.`, details: { cluster_name: clusterName, status: checkData.cluster?.status, region, async_job: true, wait_for: "cluster_active" }, timestamp: new Date().toISOString() };
+        }
+      }
+
+      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ nodegroupName: spec.nodegroup_name || `${clusterName}-nodes`, nodeRole: nodeRoleArn, subnets: subnetIds, instanceTypes: spec.instance_types || ["t3.medium"], scalingConfig: { desiredSize: spec.desired_size || 2, minSize: spec.min_size || 1, maxSize: spec.max_size || 3 }, tags: { ManagedBy: "UIDI" } }), extraHeaders: { "Content-Type": "application/json" } });
       const body = await res.text();
       if (!res.ok) return err("eks", action, `CreateNodegroup failed: ${body.slice(0, 500)}`);
-      return ok("eks", action, `Node group creation started`, JSON.parse(body).nodegroup || {});
+      const ngData = JSON.parse(body).nodegroup || {};
+      return ok("eks", action, `Node group creation started`, { ...ngData, nodegroup_name: ngData.nodegroupName || spec.nodegroup_name || `${clusterName}-nodes`, cluster_name: clusterName, region });
     }
 
     case "destroy": {

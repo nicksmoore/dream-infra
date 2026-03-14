@@ -29,9 +29,13 @@ export interface DagStep {
   rollbackAction?: string;
   /** Keys from outputs needed to build the rollback spec */
   rollbackSpec?: Record<string, string>;
-  status: "pending" | "running" | "done" | "error" | "rolled_back";
+  status: "pending" | "running" | "done" | "error" | "rolled_back" | "polling";
   output?: string;
   result?: unknown;
+  /** Set when engine returns status:"pending" — UI must poll until async_complete */
+  asyncJob?: boolean;
+  /** Poll interval in ms for async jobs (default: 30000) */
+  pollIntervalMs?: number;
 }
 
 // ───── Resolver ─────
