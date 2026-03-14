@@ -248,33 +248,41 @@ export class DagOrchestrator {
   // ─── Pattern 2: Microservices Mesh (SERVICE_MESH) ───
   private async compileMicroservicesMesh(spec: any): Promise<SdkOperation[]> {
     const ops: SdkOperation[] = [];
-    const meshName = spec.meshName || "micro-mesh";
+    const baseName = this.normalizeName(String(spec.name || "service-mesh"), "service-mesh", 36);
+    const meshName = this.normalizeName(String(spec.meshName || `${baseName}-mesh`), "micro-mesh", 32);
+    const clusterName = this.normalizeName(String(spec.clusterName || `${baseName}-eks`), "uidi-eks", 32);
+    const subnetIds = this.asSubnetIds(spec.subnetIds);
+    const roleArn = this.asRoleArn(spec.roleArn);
+    const canCreateEks = subnetIds.length >= 2 && Boolean(roleArn);
 
     ops.push({
       id: "app-mesh",
       service: "AppMesh",
       command: "CreateMesh",
-      input: { meshName }
+      input: { meshName },
+      riskLevel: "LOW",
     });
 
-    ops.push({
-      id: "eks-cluster",
-      service: "EKS",
-      command: "CreateCluster",
-      input: {
-        name: spec.clusterName,
-        roleArn: spec.roleArn,
-        resourcesVpcConfig: { subnetIds: spec.subnetIds }
-      }
-    });
+    if (canCreateEks) {
+      ops.push({
+        id: "eks-cluster",
+        service: "EKS",
+        command: "CreateCluster",
+        input: {
+          name: clusterName,
+          roleArn,
+          resourcesVpcConfig: { subnetIds },
+        },
+      });
 
-    ops.push({
-      id: "wait-eks",
-      service: "EKS",
-      command: "WaitUntilClusterActive",
-      input: { name: spec.clusterName },
-      dependency: "eks-cluster"
-    });
+      ops.push({
+        id: "wait-eks",
+        service: "EKS",
+        command: "WaitUntilClusterActive",
+        input: { name: clusterName },
+        dependency: "eks-cluster",
+      });
+    }
 
     ops.push({
       id: "virtual-node",
@@ -285,10 +293,10 @@ export class DagOrchestrator {
         virtualNodeName: "gateway",
         spec: {
           listeners: [{ portMapping: { port: 80, protocol: "http" } }],
-          serviceDiscovery: { dns: { hostname: "gateway.local" } }
-        }
+          serviceDiscovery: { dns: { hostname: "gateway.local" } },
+        },
       },
-      dependency: "wait-eks"
+      dependency: canCreateEks ? "wait-eks" : "app-mesh",
     });
 
     return ops;
