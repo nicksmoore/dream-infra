@@ -215,6 +215,13 @@ export function OrchestrationPanel({
 
           if (result.status === "error") {
             clearInterval(pollIntervalRef.current);
+
+            // Persist granular failure payload for expandable debug view
+            if (details && typeof details === "object") {
+              outputs[step.id] = { ...outputs[step.id], ...details };
+              setStepOutputs({ ...outputs });
+            }
+
             setSteps(prev => prev.map((s, idx) =>
               idx === stepIndex ? { ...s, status: "error", output: result.error || "Async operation failed" } : s
             ));
@@ -224,10 +231,15 @@ export function OrchestrationPanel({
             return;
           }
 
-          // Still pending — update progress message
-          const statusMsg = details?.status ? `Status: ${details.status}` : "Still provisioning...";
+          // Still pending — update progress message (include granular stage if provided)
+          const stage = typeof (details as any)?.stage === "string" ? String((details as any).stage) : undefined;
+          const status = (details as any)?.status ? String((details as any).status) : undefined;
+          const statusMsg = status ? `Status: ${status}` : "Still provisioning...";
+          const stageMsg = stage ? `Stage: ${stage}` : undefined;
+          const msg = [stageMsg, statusMsg].filter(Boolean).join(" · ");
+
           setSteps(prev => prev.map((s, idx) =>
-            idx === stepIndex ? { ...s, status: "polling" as any, output: `${statusMsg} (poll ${polls}/${MAX_POLLS})` } : s
+            idx === stepIndex ? { ...s, status: "polling" as any, output: `${msg} (poll ${polls}/${MAX_POLLS})` } : s
           ));
 
           if (polls >= MAX_POLLS) {
@@ -713,6 +725,18 @@ export function OrchestrationPanel({
                   <p className="text-[10px] font-mono mt-1 text-muted-foreground bg-muted/50 rounded px-2 py-1 truncate max-w-full">
                     {step.output.slice(0, 200)}
                   </p>
+                )}
+
+                {/* Granular EKS debug (shows stage + raw error payloads like "No cluster found") */}
+                {step.intent === "eks" && (step.status === "polling" || step.status === "error") && stepOutputs[step.id] && (
+                  <details className="mt-2">
+                    <summary className="text-[10px] text-muted-foreground cursor-pointer select-none">
+                      View EKS details
+                    </summary>
+                    <pre className="mt-1 text-[10px] font-mono text-muted-foreground bg-muted/30 border border-border rounded p-2 overflow-auto max-h-40">
+{JSON.stringify(stepOutputs[step.id], null, 2)}
+                    </pre>
+                  </details>
                 )}
               </div>
             </div>
