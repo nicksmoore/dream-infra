@@ -2222,6 +2222,8 @@ async function handleNaawi(action: string, spec: Record<string, unknown>, approv
   if (action === "plan" || needsApproval) {
     return ok("naawi", "plan", needsApproval ? "HIGH Risk Operations Detected: Approval Required" : "Naawi Plan Generated", {
       discovery: discoveryReports,
+      operations: ops.map(op => ({ id: op.id, service: op.service, command: op.command, riskLevel: op.riskLevel })),
+      estimated_monthly_cost_usd: estimateOpsMonthlyCost(ops),
       requires_approval: needsApproval,
       risk_level: hasHighRisk ? "HIGH" : "LOW"
     });
