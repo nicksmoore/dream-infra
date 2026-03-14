@@ -305,13 +305,14 @@ export class DagOrchestrator {
   // ─── Pattern 3: Event-Driven Pipeline (EVENT_PIPELINE) ───
   private async compileEventPipeline(spec: any): Promise<SdkOperation[]> {
     const ops: SdkOperation[] = [];
-    const baseName = spec.name || "pipeline";
+    const baseName = this.normalizeName(String(spec.name || "pipeline"), "pipeline", 40);
 
     ops.push({
       id: "sqs-dlq",
       service: "SQS",
       command: "CreateQueue",
-      input: { QueueName: `${baseName}-dlq` }
+      input: { QueueName: `${baseName}-dlq` },
+      riskLevel: "LOW",
     });
 
     ops.push({
@@ -319,7 +320,7 @@ export class DagOrchestrator {
       service: "SQS",
       command: "GetQueueAttributes",
       input: { QueueUrl: "ref(sqs-dlq.QueueUrl)", AttributeNames: ["QueueArn"] },
-      dependency: "sqs-dlq"
+      dependency: "sqs-dlq",
     });
 
     ops.push({
@@ -331,25 +332,32 @@ export class DagOrchestrator {
         Attributes: {
           RedrivePolicy: JSON.stringify({
             deadLetterTargetArn: "ref(sqs-dlq-attrs.Attributes.QueueArn)",
-            maxReceiveCount: 3
-          })
-        }
+            maxReceiveCount: 3,
+          }),
+        },
       },
-      dependency: "sqs-dlq-attrs"
+      dependency: "sqs-dlq-attrs",
     });
 
-    ops.push({
-      id: "lambda-fn",
-      service: "Lambda",
-      command: "CreateFunction",
-      input: {
-        FunctionName: `${baseName}-processor`,
-        Runtime: "nodejs18.x",
-        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
-        Code: { ZipFile: btoa("/* Processor Logic */") },
-        Handler: "index.handler"
-      }
-    });
+    const lambdaRoleArn = this.asRoleArn(spec.lambdaRoleArn || spec.roleArn);
+    const lambdaZipBase64 = typeof spec.lambdaZipBase64 === "string" && spec.lambdaZipBase64.length > 0
+      ? spec.lambdaZipBase64
+      : undefined;
+
+    if (lambdaRoleArn && lambdaZipBase64) {
+      ops.push({
+        id: "lambda-fn",
+        service: "Lambda",
+        command: "CreateFunction",
+        input: {
+          FunctionName: `${baseName}-processor`,
+          Runtime: "nodejs18.x",
+          Role: lambdaRoleArn,
+          Code: { ZipFile: lambdaZipBase64 },
+          Handler: "index.handler",
+        },
+      });
+    }
 
     return ops;
   }
