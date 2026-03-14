@@ -3333,7 +3333,7 @@ serve(async (req) => {
         result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi.`);
     }
     return new Response(JSON.stringify(result), {
-      status: result.status === "error" ? 400 : 200,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
