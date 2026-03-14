@@ -183,27 +183,25 @@ export class DagOrchestrator {
       dependency: enableCustomDomain ? "wait-cert" : "cf-oac",
     });
 
-    if (spec.enableBucketPolicy === true) {
-      ops.push({
-        id: "s3-policy",
-        service: "S3",
-        command: "PutBucketPolicy",
-        input: {
-          Bucket: bucketName,
-          Policy: JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [{
-              Effect: "Allow",
-              Principal: { Service: "cloudfront.amazonaws.com" },
-              Action: "s3:GetObject",
-              Resource: `arn:aws:s3:::${bucketName}/*`,
-              Condition: { StringEquals: { "AWS:SourceArn": "ref(cf-dist.Distribution.ARN)" } },
-            }],
-          }),
-        },
-        dependency: "cf-dist",
-      });
-    }
+    ops.push({
+      id: "s3-policy",
+      service: "S3",
+      command: "PutBucketPolicy",
+      input: {
+        Bucket: bucketName,
+        Policy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [{
+            Effect: "Allow",
+            Principal: { Service: "cloudfront.amazonaws.com" },
+            Action: "s3:GetObject",
+            Resource: `arn:aws:s3:::${bucketName}/*`,
+            Condition: { StringEquals: { "AWS:SourceArn": "ref(cf-dist.Distribution.ARN)" } },
+          }],
+        }),
+      },
+      dependency: "cf-dist",
+    });
 
     if (enableCustomDomain) {
       ops.push({
