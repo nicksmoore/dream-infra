@@ -1618,10 +1618,19 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           destroyed.push(`nat:${natId}`);
         }
 
-        // 8. Delete the VPC
+        // 8. Also check for VPC endpoints
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcEndpoints", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        for (const vpceId of [...dBody.matchAll(/<vpcEndpointId>(vpce-[a-f0-9]+)<\/vpcEndpointId>/g)].map(m => m[1])) {
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpcEndpoints", Version: "2016-11-15", "VpcEndpointId.1": vpceId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`vpce:${vpceId}`);
+        }
+
+        // 9. Delete the VPC
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpc", Version: "2016-11-15", VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        if (!dRes.ok) return err("network", action, `DeleteVpc failed after cleaning ${destroyed.length} deps [${destroyed.join(", ")}]: ${extractEc2Error(dBody)}`);
+        console.log(`Destroy ${vpcId}: DeleteVpc status=${dRes.status}, raw=${dBody.slice(0, 600)}`);
+        if (!dRes.ok) return err("network", action, `DeleteVpc failed after cleaning ${destroyed.length} deps [${destroyed.join(", ")}]: ${dBody.slice(0, 400)}`);
         return ok("network", action, `VPC ${vpcId} and ${destroyed.length} dependencies destroyed`, { vpc_id: vpcId, region, destroyed });
       } catch (e) {
         return err("network", action, `Destroy failed after cleaning [${destroyed.join(", ")}]: ${e instanceof Error ? e.message : String(e)}`);
