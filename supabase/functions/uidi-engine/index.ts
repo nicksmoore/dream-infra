@@ -1549,35 +1549,46 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           destroyed.push(`peering:${pcx}`);
         }
 
-        // 3. Delete non-main route tables
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeRouteTables", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        // 3. Delete non-default NACLs
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkAcls", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        // Extract route table blocks individually
-        const rtBlocks = dBody.split(/<item>/).slice(1);
-        for (const block of rtBlocks) {
-          const rtMatch = block.match(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/);
-          if (!rtMatch) continue;
-          const rtId = rtMatch[1];
-          // Skip main route table
-          if (block.includes("<main>true</main>")) continue;
-          // Disassociate any associations
-          for (const assocMatch of block.matchAll(/<routeTableAssociationId>(rtbassoc-[a-f0-9]+)<\/routeTableAssociationId>/g)) {
-            await ec2Request("POST", region, new URLSearchParams({ Action: "DisassociateRouteTable", Version: "2016-11-15", AssociationId: assocMatch[1] }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          }
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteRouteTable", Version: "2016-11-15", RouteTableId: rtId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          destroyed.push(`rtb:${rtId}`);
+        console.log(`Destroy ${vpcId}: DescribeNACLs body=${dBody.slice(0, 600)}`);
+        // Find non-default NACLs
+        for (const naclId of [...dBody.matchAll(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/g)].map(m => m[1])) {
+          // Check if default — default NACLs have <default>true</default> and can't be deleted
+          const naclSection = dBody.slice(dBody.indexOf(naclId));
+          if (naclSection.includes("<default>true</default>")) continue;
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkAcl", Version: "2016-11-15", NetworkAclId: naclId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`nacl:${naclId}`);
         }
 
-        // 4. Delete non-default security groups
+        // 4. Delete non-main route tables (try-delete, skip failures for main RT)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeRouteTables", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const allRtIds = [...new Set([...dBody.matchAll(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/g)].map(m => m[1]))];
+        for (const rtId of allRtIds) {
+          // Try to delete — will fail for main RT (that's fine, it goes with VPC)
+          const delRt = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteRouteTable", Version: "2016-11-15", RouteTableId: rtId }).toString(), AWS_KEY, AWS_SECRET);
+          const delRtBody = await delRt.text();
+          if (delRt.ok || delRt.status === 200) {
+            destroyed.push(`rtb:${rtId}`);
+          } else {
+            console.log(`Skip RT ${rtId} (likely main): ${delRtBody.slice(0, 150)}`);
+          }
+        }
+
+        // 5. Delete non-default security groups (try-delete, skip default SG)
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSecurityGroups", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        const sgBlocks = dBody.split(/<item>/).slice(1);
-        for (const block of sgBlocks) {
-          const sgMatch = block.match(/<groupId>(sg-[a-f0-9]+)<\/groupId>/);
-          if (!sgMatch) continue;
-          if (block.includes("<groupName>default</groupName>")) continue;
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSecurityGroup", Version: "2016-11-15", GroupId: sgMatch[1] }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          destroyed.push(`sg:${sgMatch[1]}`);
+        const allSgIds = [...new Set([...dBody.matchAll(/<groupId>(sg-[a-f0-9]+)<\/groupId>/g)].map(m => m[1]))];
+        for (const sgId of allSgIds) {
+          const delSg = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSecurityGroup", Version: "2016-11-15", GroupId: sgId }).toString(), AWS_KEY, AWS_SECRET);
+          const delSgBody = await delSg.text();
+          if (delSg.ok || delSg.status === 200) {
+            destroyed.push(`sg:${sgId}`);
+          } else {
+            console.log(`Skip SG ${sgId} (likely default): ${delSgBody.slice(0, 150)}`);
+          }
         }
 
         // 5. Detach & delete internet gateways
