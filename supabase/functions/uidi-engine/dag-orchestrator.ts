@@ -386,6 +386,20 @@ export class DagOrchestrator {
           Handler: "index.handler",
         },
       });
+
+      // Auto-wire SQS → Lambda event source mapping
+      ops.push({
+        id: "lambda-esm",
+        service: "Lambda",
+        command: "CreateEventSourceMapping",
+        input: {
+          EventSourceArn: "ref(sqs-dlq-attrs.Attributes.QueueArn)",
+          FunctionName: `${baseName}-processor`,
+          BatchSize: 10,
+          Enabled: true,
+        },
+        dependency: "lambda-fn",
+      });
     }
 
     return ops;
