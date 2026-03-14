@@ -317,7 +317,7 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${baseName}-processor`,
         Runtime: "nodejs18.x",
-        Role: spec.roleArn,
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
         Code: { ZipFile: btoa("/* Processor Logic */") },
         Handler: "index.handler"
       }
