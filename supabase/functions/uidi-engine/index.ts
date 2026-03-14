@@ -1779,8 +1779,8 @@ function ok(intent: string, action: string, message: string, details?: unknown):
   return { status: "success", intent, action, message, details, timestamp: new Date().toISOString() };
 }
 
-function err(intent: string, action: string, error: string): EngineResponse {
-  return { status: "error", intent, action, error, timestamp: new Date().toISOString() };
+function err(intent: string, action: string, error: string, details?: unknown): EngineResponse {
+  return { status: "error", intent, action, error, details, timestamp: new Date().toISOString() };
 }
 
 // ───── Reconciliation Engine (Drift Controller) ─────
