@@ -1,23 +1,53 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 
-// AWS SDK v3 Imports (Deno npm specifiers)
-import { EC2Client, DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand } from "npm:@aws-sdk/client-ec2";
-import { S3Client, CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand } from "npm:@aws-sdk/client-s3";
-import { CloudFrontClient, CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand } from "npm:@aws-sdk/client-cloudfront";
-import { Route53Client, ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand } from "npm:@aws-sdk/client-route-53";
-import { LambdaClient, CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand, PublishVersionCommand } from "npm:@aws-sdk/client-lambda";
-import { ACMClient, RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand } from "npm:@aws-sdk/client-acm";
-import { EKSClient, CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand } from "npm:@aws-sdk/client-eks";
-import { AppMeshClient, CreateMeshCommand, CreateVirtualNodeCommand } from "npm:@aws-sdk/client-app-mesh";
-import { ElasticLoadBalancingV2Client, CreateLoadBalancerCommand, CreateTargetGroupCommand, DescribeLoadBalancersCommand } from "npm:@aws-sdk/client-elastic-load-balancing-v2";
-import { SQSClient, CreateQueueCommand, GetQueueAttributesCommand, SetQueueAttributesCommand } from "npm:@aws-sdk/client-sqs";
-import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from "npm:@aws-sdk/client-dynamodb";
-import { EventBridgeClient, PutRuleCommand, PutTargetsCommand } from "npm:@aws-sdk/client-eventbridge";
-import { ApiGatewayV2Client, CreateApiCommand, GetApiCommand } from "npm:@aws-sdk/client-apigatewayv2";
-import { RDSClient, CreateDBClusterCommand, CreateDBProxyCommand, CreateDBInstanceCommand, DescribeDBClustersCommand } from "npm:@aws-sdk/client-rds";
-import { AutoScalingClient, CreateAutoScalingGroupCommand, DescribeAutoScalingGroupsCommand } from "npm:@aws-sdk/client-auto-scaling";
-import { ElastiCacheClient, CreateReplicationGroupCommand, DescribeReplicationGroupsCommand } from "npm:@aws-sdk/client-elasticache";
+// ───── Dynamic AWS SDK Loader (prevents bundle timeout) ─────
+// SDK modules are loaded on-demand at runtime, not at bundle time.
+
+const SDK_MODULE_MAP: Record<string, string> = {
+  EC2: "npm:@aws-sdk/client-ec2",
+  S3: "npm:@aws-sdk/client-s3",
+  CloudFront: "npm:@aws-sdk/client-cloudfront",
+  Route53: "npm:@aws-sdk/client-route-53",
+  Lambda: "npm:@aws-sdk/client-lambda",
+  ACM: "npm:@aws-sdk/client-acm",
+  EKS: "npm:@aws-sdk/client-eks",
+  AppMesh: "npm:@aws-sdk/client-app-mesh",
+  ELBv2: "npm:@aws-sdk/client-elastic-load-balancing-v2",
+  SQS: "npm:@aws-sdk/client-sqs",
+  DynamoDB: "npm:@aws-sdk/client-dynamodb",
+  EventBridge: "npm:@aws-sdk/client-eventbridge",
+  ApiGatewayV2: "npm:@aws-sdk/client-apigatewayv2",
+  RDS: "npm:@aws-sdk/client-rds",
+  AutoScaling: "npm:@aws-sdk/client-auto-scaling",
+  ElastiCache: "npm:@aws-sdk/client-elasticache",
+};
+
+const _sdkCache: Record<string, any> = {};
+
+async function loadSdkModule(service: string): Promise<any> {
+  if (_sdkCache[service]) return _sdkCache[service];
+  const specifier = SDK_MODULE_MAP[service];
+  if (!specifier) throw new Error(`Unknown SDK service: ${service}`);
+  const mod = await import(specifier);
+  _sdkCache[service] = mod;
+  return mod;
+}
+
+async function getClient(service: string, region: string, credentials: any): Promise<any> {
+  const mod = await loadSdkModule(service);
+  // All AWS SDK v3 clients follow the pattern: <Service>Client
+  const clientName = Object.keys(mod).find(k => k.endsWith("Client") && k !== "Client");
+  if (!clientName) throw new Error(`No Client export found in ${service} SDK`);
+  return new mod[clientName]({ region, credentials });
+}
+
+async function getCommand(service: string, commandName: string): Promise<any> {
+  const mod = await loadSdkModule(service);
+  const CommandClass = mod[commandName];
+  if (!CommandClass) throw new Error(`Command ${commandName} not found in ${service} SDK`);
+  return CommandClass;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
