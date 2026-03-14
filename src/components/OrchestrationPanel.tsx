@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { DeploymentDiagram } from "@/components/DeploymentDiagram";
 import { ValidationPhase } from "@/components/ValidationPhase";
@@ -171,7 +172,92 @@ export function OrchestrationPanel({
     }
   }
 
-  // ── Execution with declarative output threading ──
+  // ── Async polling for long-running steps ──
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  const pollAsyncStep = useCallback(async (
+    stepIndex: number,
+    step: DagStep,
+    outputs: Record<string, Record<string, unknown>>,
+    depId: string | null,
+    allSteps: DagStep[],
+  ): Promise<boolean> => {
+    const POLL_INTERVAL = 30_000; // 30s
+    const MAX_POLLS = 40; // ~20 min max
+
+    return new Promise((resolve) => {
+      let polls = 0;
+      const pollFn = async () => {
+        polls++;
+        try {
+          const result = await executeIntent({
+            intent: step.intent as any,
+            action: "wait",
+            spec: { cluster_name: (outputs[step.id] as any)?.cluster_name, region: step.spec.region || "us-east-1" },
+          });
+
+          const details = result.details as Record<string, unknown> | undefined;
+
+          if (result.status === "success" && details?.async_complete) {
+            // Completed!
+            clearInterval(pollIntervalRef.current);
+            outputs[step.id] = { ...outputs[step.id], ...details };
+            setStepOutputs({ ...outputs });
+            setSteps(prev => prev.map((s, idx) =>
+              idx === stepIndex ? { ...s, status: "done", output: result.message || JSON.stringify(details, null, 2), asyncJob: false } : s
+            ));
+            if (depId) saveProgress(depId, allSteps, outputs, "running");
+            toast({ title: `${step.name} is ACTIVE`, description: result.message });
+            resolve(true);
+            return;
+          }
+
+          if (result.status === "error") {
+            clearInterval(pollIntervalRef.current);
+            setSteps(prev => prev.map((s, idx) =>
+              idx === stepIndex ? { ...s, status: "error", output: result.error || "Async operation failed" } : s
+            ));
+            if (depId) saveProgress(depId, allSteps, outputs, "partial_failure");
+            toast({ title: `${step.name} failed`, description: result.error, variant: "destructive" });
+            resolve(false);
+            return;
+          }
+
+          // Still pending — update progress message
+          const statusMsg = details?.status ? `Status: ${details.status}` : "Still provisioning...";
+          setSteps(prev => prev.map((s, idx) =>
+            idx === stepIndex ? { ...s, status: "polling" as any, output: `${statusMsg} (poll ${polls}/${MAX_POLLS})` } : s
+          ));
+
+          if (polls >= MAX_POLLS) {
+            clearInterval(pollIntervalRef.current);
+            setSteps(prev => prev.map((s, idx) =>
+              idx === stepIndex ? { ...s, status: "error", output: `Timed out after ${MAX_POLLS} polls (~${Math.round(MAX_POLLS * POLL_INTERVAL / 60000)} min)` } : s
+            ));
+            if (depId) saveProgress(depId, allSteps, outputs, "partial_failure");
+            toast({ title: `${step.name} timed out`, variant: "destructive" });
+            resolve(false);
+          }
+        } catch (e) {
+          // Network error — don't fail, retry on next poll
+          console.warn(`Poll error for ${step.name}:`, e);
+        }
+      };
+
+      // First poll immediately
+      pollFn();
+      pollIntervalRef.current = setInterval(pollFn, POLL_INTERVAL);
+    });
+  }, [saveProgress]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
+  // ── Execution with declarative output threading + async support ──
   async function runOrchestration(approved = false) {
     setIsRunning(true);
     const outputs: Record<string, Record<string, unknown>> = { ...stepOutputs };
@@ -199,7 +285,7 @@ export function OrchestrationPanel({
       return;
     }
 
-    // DAG-aware sequential execution with declarative input resolution
+    // DAG-aware sequential execution with declarative input resolution + async polling
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "running" } : s));
@@ -220,6 +306,26 @@ export function OrchestrationPanel({
         if (result.details && typeof result.details === "object") {
           outputs[step.id] = result.details as Record<string, unknown>;
           setStepOutputs({ ...outputs });
+        }
+
+        // Handle async/pending response — enter polling mode
+        if (result.status === "pending") {
+          const details = result.details as Record<string, unknown> | undefined;
+          if (details?.async_job) {
+            setSteps(prev => prev.map((s, idx) =>
+              idx === i ? { ...s, status: "polling" as any, output: result.message || "Waiting for resource...", asyncJob: true } : s
+            ));
+            if (depId) saveProgress(depId, steps, outputs, "running");
+            toast({ title: `${step.name} started`, description: "Polling for completion (~10-15 min)..." });
+
+            // Block here until async completes
+            const success = await pollAsyncStep(i, step, outputs, depId, steps);
+            if (!success) {
+              setIsRunning(false);
+              return; // Stop DAG — rollback available
+            }
+            continue; // Async step completed, move to next
+          }
         }
 
         setSteps(prev => prev.map((s, idx) =>
@@ -352,6 +458,7 @@ export function OrchestrationPanel({
   const statusIcon = (status: string) => {
     switch (status) {
       case "running": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+      case "polling": return <Loader2 className="h-4 w-4 animate-spin text-amber-500" />;
       case "done": return <CheckCircle2 className="h-4 w-4 text-primary" />;
       case "error": return <XCircle className="h-4 w-4 text-destructive" />;
       case "rolled_back": return <RotateCcw className="h-4 w-4 text-muted-foreground" />;

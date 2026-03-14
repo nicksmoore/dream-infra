@@ -360,7 +360,7 @@ const corsHeaders = {
 // ───── Types ─────
 interface ExecuteRequest {
   intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
   approved?: boolean;
@@ -1822,9 +1822,46 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
       }
       const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ name: clusterName, version: spec.kubernetes_version || "1.29", roleArn, resourcesVpcConfig: { subnetIds, securityGroupIds: securityGroupIds || [], endpointPublicAccess: true, endpointPrivateAccess: true }, tags: { ManagedBy: "UIDI", Environment: spec.environment || "dev" } }), extraHeaders: { "Content-Type": "application/json" } });
       const body = await res.text();
-      if (!res.ok) { if (body.includes("ResourceInUseException") || body.includes("already exists")) return ok("eks", action, `Cluster ${clusterName} already exists — reusing`, { cluster_name: clusterName, status: "existing", region }); return err("eks", action, `CreateCluster failed: ${body.slice(0, 500)}`); }
+      if (!res.ok) {
+        if (body.includes("ResourceInUseException") || body.includes("already exists")) {
+          // Check if already ACTIVE
+          const descRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+          const descBody = await descRes.text();
+          if (descRes.ok) {
+            const descData = JSON.parse(descBody);
+            const liveStatus = descData.cluster?.status;
+            if (liveStatus === "ACTIVE") {
+              return ok("eks", action, `Cluster ${clusterName} already ACTIVE — reusing`, { cluster_name: clusterName, status: "ACTIVE", endpoint: descData.cluster?.endpoint, arn: descData.cluster?.arn, region, async_complete: true });
+            }
+            // Still creating — return pending so UI can poll
+            return { status: "pending" as const, intent: "eks", action, message: `Cluster ${clusterName} exists and is ${liveStatus}. Poll with eks/wait.`, details: { cluster_name: clusterName, status: liveStatus, region, async_job: true }, timestamp: new Date().toISOString() };
+          }
+          return ok("eks", action, `Cluster ${clusterName} already exists — reusing`, { cluster_name: clusterName, status: "existing", region });
+        }
+        return err("eks", action, `CreateCluster failed: ${body.slice(0, 500)}`);
+      }
       const data = JSON.parse(body);
-      return ok("eks", action, `EKS cluster ${clusterName} creation started (~10-15 min)${roleAutoProvisioned ? " (IAM role auto-provisioned)" : ""}`, { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region, role_arn: roleArn, role_auto_provisioned: roleAutoProvisioned });
+      // Return "pending" — EKS takes 10-15 min. UI must poll via eks/wait.
+      return { status: "pending" as const, intent: "eks", action, message: `EKS cluster ${clusterName} creation started (~10-15 min). Poll via eks/wait.${roleAutoProvisioned ? " (IAM role auto-provisioned)" : ""}`, details: { cluster_name: clusterName, status: data.cluster?.status || "CREATING", arn: data.cluster?.arn, region, role_arn: roleArn, role_auto_provisioned: roleAutoProvisioned, async_job: true }, timestamp: new Date().toISOString() };
+    }
+
+    // Async poll: check if a long-running EKS operation has completed
+    case "wait": {
+      const clusterName = spec.cluster_name as string;
+      if (!clusterName) return err("eks", action, "cluster_name required for wait.");
+      const res = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `DescribeCluster failed: ${body.slice(0, 500)}`);
+      const data = JSON.parse(body);
+      const clusterStatus = data.cluster?.status;
+      if (clusterStatus === "ACTIVE") {
+        return ok("eks", action, `Cluster ${clusterName} is ACTIVE`, { cluster_name: clusterName, status: "ACTIVE", endpoint: data.cluster?.endpoint, arn: data.cluster?.arn, version: data.cluster?.version, region, async_complete: true });
+      }
+      if (clusterStatus === "FAILED") {
+        return err("eks", action, `Cluster ${clusterName} FAILED: ${JSON.stringify(data.cluster?.health || {})}`, { cluster_name: clusterName, status: "FAILED", region, async_complete: true });
+      }
+      // Still in progress
+      return { status: "pending" as const, intent: "eks", action: "wait", message: `Cluster ${clusterName} is ${clusterStatus}. Still provisioning...`, details: { cluster_name: clusterName, status: clusterStatus, region, async_job: true }, timestamp: new Date().toISOString() };
     }
 
     case "discover":
@@ -1846,11 +1883,36 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
 
     case "add_nodegroup": {
       const clusterName = spec.cluster_name as string;
-      if (!clusterName || !spec.node_role_arn || !(spec.subnet_ids as string[])?.length) return err("eks", action, "cluster_name, node_role_arn, subnet_ids required.");
-      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ nodegroupName: spec.nodegroup_name || `${clusterName}-nodes`, nodeRole: spec.node_role_arn, subnets: spec.subnet_ids, instanceTypes: spec.instance_types || ["t3.medium"], scalingConfig: { desiredSize: spec.desired_size || 2, minSize: spec.min_size || 1, maxSize: spec.max_size || 3 }, tags: { ManagedBy: "UIDI" } }), extraHeaders: { "Content-Type": "application/json" } });
+      const subnetIds = spec.subnet_ids as string[];
+      if (!clusterName || !subnetIds?.length) return err("eks", action, "cluster_name, subnet_ids required.");
+
+      // Auto-resolve node role ARN if not provided
+      let nodeRoleArn = spec.node_role_arn as string;
+      if (!nodeRoleArn) {
+        try {
+          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "nodegroup");
+          nodeRoleArn = resolved.arn;
+          console.log(`EKS add_nodegroup: node role ${resolved.created ? "auto-created" : "discovered"}: ${nodeRoleArn}`);
+        } catch (e) {
+          return err("eks", action, `IAM Node Role Resolver failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // Ensure cluster is ACTIVE before adding nodegroup
+      const checkRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const checkBody = await checkRes.text();
+      if (checkRes.ok) {
+        const checkData = JSON.parse(checkBody);
+        if (checkData.cluster?.status !== "ACTIVE") {
+          return { status: "pending" as const, intent: "eks", action, message: `Cluster ${clusterName} is ${checkData.cluster?.status} — waiting for ACTIVE before adding nodegroup.`, details: { cluster_name: clusterName, status: checkData.cluster?.status, region, async_job: true, wait_for: "cluster_active" }, timestamp: new Date().toISOString() };
+        }
+      }
+
+      const res = await awsSignedRequest({ service: "eks", region, method: "POST", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, body: JSON.stringify({ nodegroupName: spec.nodegroup_name || `${clusterName}-nodes`, nodeRole: nodeRoleArn, subnets: subnetIds, instanceTypes: spec.instance_types || ["t3.medium"], scalingConfig: { desiredSize: spec.desired_size || 2, minSize: spec.min_size || 1, maxSize: spec.max_size || 3 }, tags: { ManagedBy: "UIDI" } }), extraHeaders: { "Content-Type": "application/json" } });
       const body = await res.text();
       if (!res.ok) return err("eks", action, `CreateNodegroup failed: ${body.slice(0, 500)}`);
-      return ok("eks", action, `Node group creation started`, JSON.parse(body).nodegroup || {});
+      const ngData = JSON.parse(body).nodegroup || {};
+      return ok("eks", action, `Node group creation started`, { ...ngData, nodegroup_name: ngData.nodegroupName || spec.nodegroup_name || `${clusterName}-nodes`, cluster_name: clusterName, region });
     }
 
     case "destroy": {
