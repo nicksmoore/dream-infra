@@ -1562,113 +1562,82 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
       if (!vpcId) return err("network", action, "vpc_id required for destroy");
       const destroyed: string[] = [];
 
+      // Retry helper for DependencyViolation — ENIs from deleted EKS clusters take time to clean up
+      async function retryEc2Delete(actionName: string, params: Record<string, string>, label: string, maxRetries = 5): Promise<boolean> {
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          const p = new URLSearchParams({ Action: actionName, Version: "2016-11-15", ...params });
+          const r = await ec2Request("POST", region, p.toString(), AWS_KEY, AWS_SECRET);
+          const b = await r.text();
+          if (r.ok || r.status === 200) {
+            destroyed.push(label);
+            return true;
+          }
+          if (b.includes("DependencyViolation") || b.includes("in use")) {
+            console.log(`${label}: DependencyViolation, retry ${attempt + 1}/${maxRetries} in 10s...`);
+            await new Promise(resolve => setTimeout(resolve, 10_000));
+            continue;
+          }
+          if (b.includes("InvalidParameterValue") || b.includes("NotFound")) {
+            console.log(`${label}: already gone`);
+            return true;
+          }
+          console.log(`${label}: failed (${r.status}): ${b.slice(0, 200)}`);
+          return false;
+        }
+        console.log(`${label}: giving up after ${maxRetries} retries`);
+        return false;
+      }
+
       try {
-        // 1. Delete subnets
-        let dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSubnets", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        // 0. First, clean up ENIs — these block everything else
+        let dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkInterfaces", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         let dBody = await dRes.text();
-        console.log(`Destroy ${vpcId}: DescribeSubnets status=${dRes.status}, matches=${[...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].length}, body=${dBody.slice(0, 500)}`);
-        const subnetIds = [...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].map(m => m[1]);
-        for (const sid of subnetIds) {
-          const r = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSubnet", Version: "2016-11-15", SubnetId: sid }).toString(), AWS_KEY, AWS_SECRET);
-          const rBody = await r.text();
-          console.log(`DeleteSubnet ${sid}: status=${r.status} ${r.status !== 200 ? rBody.slice(0, 200) : 'OK'}`);
-          destroyed.push(`subnet:${sid}`);
-        }
-
-        // 2. Delete VPC peering connections (requester side)
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcPeeringConnections", Version: "2016-11-15", "Filter.1.Name": "requester-vpc-info.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        const pcxIds = new Set([...dBody.matchAll(/<vpcPeeringConnectionId>(pcx-[a-f0-9]+)<\/vpcPeeringConnectionId>/g)].map(m => m[1]));
-        // Also check accepter side
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcPeeringConnections", Version: "2016-11-15", "Filter.1.Name": "accepter-vpc-info.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        for (const m of dBody.matchAll(/<vpcPeeringConnectionId>(pcx-[a-f0-9]+)<\/vpcPeeringConnectionId>/g)) pcxIds.add(m[1]);
-        for (const pcx of pcxIds) {
-          const r = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpcPeeringConnection", Version: "2016-11-15", VpcPeeringConnectionId: pcx }).toString(), AWS_KEY, AWS_SECRET);
-          await r.text();
-          destroyed.push(`peering:${pcx}`);
-        }
-
-        // 3. Delete non-default NACLs (try-delete, skip default)
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkAcls", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId, "Filter.2.Name": "default", "Filter.2.Value.1": "false" }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        for (const naclId of [...new Set([...dBody.matchAll(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/g)].map(m => m[1]))]) {
-          const delNacl = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkAcl", Version: "2016-11-15", NetworkAclId: naclId }).toString(), AWS_KEY, AWS_SECRET);
-          const delNaclBody = await delNacl.text();
-          if (delNacl.ok || delNacl.status === 200) {
-            destroyed.push(`nacl:${naclId}`);
-            console.log(`Deleted NACL ${naclId}`);
-          } else {
-            console.log(`Skip NACL ${naclId}: ${delNaclBody.slice(0, 150)}`);
-          }
-        }
-
-        // 4. Delete non-main route tables (try-delete, skip failures for main RT)
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeRouteTables", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        const allRtIds = [...new Set([...dBody.matchAll(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/g)].map(m => m[1]))];
-        for (const rtId of allRtIds) {
-          const delRt = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteRouteTable", Version: "2016-11-15", RouteTableId: rtId }).toString(), AWS_KEY, AWS_SECRET);
-          const delRtBody = await delRt.text();
-          if (delRt.ok || delRt.status === 200) {
-            destroyed.push(`rtb:${rtId}`);
-          } else {
-            console.log(`Skip RT ${rtId} (likely main): ${delRtBody.slice(0, 150)}`);
-          }
-        }
-
-        // 5. Delete non-default security groups (try-delete, skip default SG)
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSecurityGroups", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        const allSgIds = [...new Set([...dBody.matchAll(/<groupId>(sg-[a-f0-9]+)<\/groupId>/g)].map(m => m[1]))];
-        for (const sgId of allSgIds) {
-          const delSg = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteSecurityGroup", Version: "2016-11-15", GroupId: sgId }).toString(), AWS_KEY, AWS_SECRET);
-          const delSgBody = await delSg.text();
-          if (delSg.ok || delSg.status === 200) {
-            destroyed.push(`sg:${sgId}`);
-          } else {
-            console.log(`Skip SG ${sgId} (likely default): ${delSgBody.slice(0, 150)}`);
-          }
-        }
-
-        // 5. Detach & delete internet gateways
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeInternetGateways", Version: "2016-11-15", "Filter.1.Name": "attachment.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        console.log(`Destroy ${vpcId}: DescribeIGWs status=${dRes.status}, body=${dBody.slice(0, 500)}`);
-        const igwIds = [...dBody.matchAll(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/g)].map(m => m[1]);
-        for (const gid of igwIds) {
-          const detachRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
-          const detachBody = await detachRes.text();
-          console.log(`DetachIGW ${gid}: status=${detachRes.status} ${detachRes.status !== 200 ? detachBody.slice(0, 200) : 'OK'}`);
-          const delIgwRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET);
-          const delIgwBody = await delIgwRes.text();
-          console.log(`DeleteIGW ${gid}: status=${delIgwRes.status} ${delIgwRes.status !== 200 ? delIgwBody.slice(0, 200) : 'OK'}`);
-          destroyed.push(`igw:${gid}`);
-        }
-
-        // 6. Delete network interfaces (ENIs)
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkInterfaces", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
-        dBody = await dRes.text();
-        console.log(`Destroy ${vpcId}: DescribeENIs body=${dBody.slice(0, 800)}`);
+        console.log(`Destroy ${vpcId}: DescribeENIs found ${[...dBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].length} ENIs`);
         const eniIds = [...dBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
         for (const eniId of eniIds) {
           const attachMatch = dBody.match(new RegExp(`<networkInterfaceId>${eniId}</networkInterfaceId>[\\s\\S]*?<attachmentId>(eni-attach-[a-f0-9]+)</attachmentId>`));
           if (attachMatch) {
-            await ec2Request("POST", region, new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachMatch[1], Force: "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+            const detR = await ec2Request("POST", region, new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachMatch[1], Force: "true" }).toString(), AWS_KEY, AWS_SECRET);
+            await detR.text();
+            console.log(`Detached ENI ${eniId}`);
           }
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkInterface", Version: "2016-11-15", NetworkInterfaceId: eniId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          destroyed.push(`eni:${eniId}`);
+          const delR = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkInterface", Version: "2016-11-15", NetworkInterfaceId: eniId }).toString(), AWS_KEY, AWS_SECRET);
+          const delRBody = await delR.text();
+          if (delR.ok) {
+            destroyed.push(`eni:${eniId}`);
+          } else {
+            console.log(`ENI ${eniId} delete: ${delRBody.slice(0, 150)}`);
+          }
         }
 
-        // 7. Delete NAT gateways
+        // If there were ENIs, wait a moment for AWS to settle
+        if (eniIds.length > 0) {
+          console.log(`Waiting 5s for ENI cleanup to propagate...`);
+          await new Promise(r => setTimeout(r, 5000));
+        }
+
+        // 1. Delete VPC peering connections first (both sides)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcPeeringConnections", Version: "2016-11-15", "Filter.1.Name": "requester-vpc-info.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const pcxIds = new Set([...dBody.matchAll(/<vpcPeeringConnectionId>(pcx-[a-f0-9]+)<\/vpcPeeringConnectionId>/g)].map(m => m[1]));
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcPeeringConnections", Version: "2016-11-15", "Filter.1.Name": "accepter-vpc-info.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        for (const m of dBody.matchAll(/<vpcPeeringConnectionId>(pcx-[a-f0-9]+)<\/vpcPeeringConnectionId>/g)) pcxIds.add(m[1]);
+        for (const pcx of pcxIds) {
+          await retryEc2Delete("DeleteVpcPeeringConnection", { VpcPeeringConnectionId: pcx }, `peering:${pcx}`, 1);
+        }
+
+        // 2. Delete NAT gateways (these take time)
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNatGateways", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        for (const natId of [...dBody.matchAll(/<natGatewayId>(nat-[a-f0-9]+)<\/natGatewayId>/g)].map(m => m[1])) {
+        const natIds = [...dBody.matchAll(/<natGatewayId>(nat-[a-f0-9]+)<\/natGatewayId>/g)].map(m => m[1]);
+        for (const natId of natIds) {
           await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNatGateway", Version: "2016-11-15", NatGatewayId: natId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
           destroyed.push(`nat:${natId}`);
         }
+        if (natIds.length > 0) await new Promise(r => setTimeout(r, 5000));
 
-        // 8. Also check for VPC endpoints
+        // 3. Delete VPC endpoints
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeVpcEndpoints", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
         for (const vpceId of [...dBody.matchAll(/<vpcEndpointId>(vpce-[a-f0-9]+)<\/vpcEndpointId>/g)].map(m => m[1])) {
@@ -1676,14 +1645,93 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           destroyed.push(`vpce:${vpceId}`);
         }
 
-        // 9. Delete the VPC
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpc", Version: "2016-11-15", VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        // 4. Detach & delete internet gateways
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeInternetGateways", Version: "2016-11-15", "Filter.1.Name": "attachment.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        console.log(`Destroy ${vpcId}: DeleteVpc status=${dRes.status}, raw=${dBody.slice(0, 600)}`);
-        if (!dRes.ok) return err("network", action, `DeleteVpc failed after cleaning ${destroyed.length} deps [${destroyed.join(", ")}]: ${dBody.slice(0, 400)}`);
+        const igwIds = [...dBody.matchAll(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/g)].map(m => m[1]);
+        for (const gid of igwIds) {
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`igw:${gid}`);
+        }
+
+        // 5. Delete non-default security groups (with retries for DependencyViolation)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSecurityGroups", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const allSgIds = [...new Set([...dBody.matchAll(/<groupId>(sg-[a-f0-9]+)<\/groupId>/g)].map(m => m[1]))];
+        // Identify default SG to skip
+        const defaultSgMatch = dBody.match(/<groupName>default<\/groupName>[\s\S]*?<groupId>(sg-[a-f0-9]+)<\/groupId>/);
+        const defaultSgId = defaultSgMatch?.[1];
+        for (const sgId of allSgIds) {
+          if (sgId === defaultSgId) continue;
+          await retryEc2Delete("DeleteSecurityGroup", { GroupId: sgId }, `sg:${sgId}`, 4);
+        }
+
+        // 6. Delete subnets (with retries for DependencyViolation from lingering ENIs)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeSubnets", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const subnetIds = [...dBody.matchAll(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/g)].map(m => m[1]);
+        for (const sid of subnetIds) {
+          await retryEc2Delete("DeleteSubnet", { SubnetId: sid }, `subnet:${sid}`, 4);
+        }
+
+        // 7. Delete non-default NACLs
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkAcls", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId, "Filter.2.Name": "default", "Filter.2.Value.1": "false" }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        for (const naclId of [...new Set([...dBody.matchAll(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/g)].map(m => m[1]))]) {
+          await retryEc2Delete("DeleteNetworkAcl", { NetworkAclId: naclId }, `nacl:${naclId}`, 1);
+        }
+
+        // 8. Delete non-main route tables
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeRouteTables", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const allRtIds = [...new Set([...dBody.matchAll(/<routeTableId>(rtb-[a-f0-9]+)<\/routeTableId>/g)].map(m => m[1]))];
+        for (const rtId of allRtIds) {
+          // Disassociate subnets from RT before deleting
+          const rtAssocs = [...dBody.matchAll(new RegExp(`<routeTableId>${rtId}</routeTableId>[\\s\\S]*?<routeTableAssociationId>(rtbassoc-[a-f0-9]+)</routeTableAssociationId>`, "g"))].map(m => m[1]);
+          for (const assocId of rtAssocs) {
+            await ec2Request("POST", region, new URLSearchParams({ Action: "DisassociateRouteTable", Version: "2016-11-15", AssociationId: assocId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text()).catch(() => {});
+          }
+          await retryEc2Delete("DeleteRouteTable", { RouteTableId: rtId }, `rtb:${rtId}`, 1);
+        }
+
+        // 9. Final ENI sweep (EKS may release more during our cleanup)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkInterfaces", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        const remainingEnis = [...dBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
+        for (const eniId of remainingEnis) {
+          const attachMatch2 = dBody.match(new RegExp(`<networkInterfaceId>${eniId}</networkInterfaceId>[\\s\\S]*?<attachmentId>(eni-attach-[a-f0-9]+)</attachmentId>`));
+          if (attachMatch2) {
+            await ec2Request("POST", region, new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachMatch2[1], Force: "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkInterface", Version: "2016-11-15", NetworkInterfaceId: eniId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`eni:${eniId}`);
+        }
+
+        // 10. Delete the VPC (retry a few times in case ENIs are still settling)
+        let vpcDeleted = false;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpc", Version: "2016-11-15", VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
+          dBody = await dRes.text();
+          if (dRes.ok) {
+            vpcDeleted = true;
+            break;
+          }
+          if (dBody.includes("DependencyViolation")) {
+            console.log(`DeleteVpc ${vpcId}: DependencyViolation, retry ${attempt + 1}/4 in 15s...`);
+            await new Promise(r => setTimeout(r, 15_000));
+            continue;
+          }
+          break;
+        }
+
+        if (!vpcDeleted) {
+          return err("network", action, `DeleteVpc failed after cleaning ${destroyed.length} deps [${destroyed.slice(-5).join(", ")}]: ${dBody.slice(0, 400)}`, { vpc_id: vpcId, destroyed });
+        }
         return ok("network", action, `VPC ${vpcId} and ${destroyed.length} dependencies destroyed`, { vpc_id: vpcId, region, destroyed });
       } catch (e) {
-        return err("network", action, `Destroy failed after cleaning [${destroyed.join(", ")}]: ${e instanceof Error ? e.message : String(e)}`);
+        return err("network", action, `Destroy failed after cleaning [${destroyed.slice(-5).join(", ")}]: ${e instanceof Error ? e.message : String(e)}`, { vpc_id: vpcId, destroyed });
       }
     }
 
