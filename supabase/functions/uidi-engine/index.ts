@@ -1595,7 +1595,30 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           destroyed.push(`igw:${gid}`);
         }
 
-        // 6. Delete the VPC
+        // 6. Delete network interfaces (ENIs)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkInterfaces", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        console.log(`Destroy ${vpcId}: DescribeENIs body=${dBody.slice(0, 800)}`);
+        const eniIds = [...dBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
+        for (const eniId of eniIds) {
+          // Detach first if attached
+          const attachMatch = dBody.match(new RegExp(`<networkInterfaceId>${eniId}</networkInterfaceId>[\\s\\S]*?<attachmentId>(eni-attach-[a-f0-9]+)</attachmentId>`));
+          if (attachMatch) {
+            await ec2Request("POST", region, new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachMatch[1], Force: "true" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          }
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkInterface", Version: "2016-11-15", NetworkInterfaceId: eniId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`eni:${eniId}`);
+        }
+
+        // 7. Delete NAT gateways
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNatGateways", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        dBody = await dRes.text();
+        for (const natId of [...dBody.matchAll(/<natGatewayId>(nat-[a-f0-9]+)<\/natGatewayId>/g)].map(m => m[1])) {
+          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNatGateway", Version: "2016-11-15", NatGatewayId: natId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+          destroyed.push(`nat:${natId}`);
+        }
+
+        // 8. Delete the VPC
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteVpc", Version: "2016-11-15", VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
         if (!dRes.ok) return err("network", action, `DeleteVpc failed after cleaning ${destroyed.length} deps [${destroyed.join(", ")}]: ${extractEc2Error(dBody)}`);
