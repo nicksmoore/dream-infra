@@ -22,7 +22,7 @@ export class DagOrchestrator {
   private s3: S3Client;
   private cf: CloudFrontClient;
   private r53: Route53Client;
-  private eks: EKSClient;
+  
 
   constructor(private region: string, private credentials: any) {
     this.ec2 = new EC2Client({ region, credentials });
