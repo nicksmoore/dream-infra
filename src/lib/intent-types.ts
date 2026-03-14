@@ -398,6 +398,9 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
 
   // ── Detect resources ──
   const resources: string[] = [];
+  if (/cross.?region|vpc.?peer|peering/i.test(lower)) {
+    resources.push("vpc", "subnets", "vpc-peering", "eks");
+  }
   if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) {
     resources.push("dynamodb", "route53", "lambda", "cloudfront");
   }
