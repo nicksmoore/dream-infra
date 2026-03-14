@@ -237,7 +237,7 @@ export function OrchestrationPanel({
         });
 
         if (result.status === "error") throw new Error(result.error || result.message);
-        if (step.id === "network") networkResult = result;
+        
 
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
         toast({ title: `${step.name} complete`, description: result.message });
