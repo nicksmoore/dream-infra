@@ -2354,8 +2354,13 @@ function resolveReferences(input: any, state: ExecutionState): any {
   for (const [key, value] of Object.entries(input)) {
     if (typeof value === "string") {
       result[key] = value.replace(/ref\(([^.]+)\.([^)]+)\)/g, (_match, opId, property) => {
-        const val = state[opId]?.[property];
-        return val !== undefined ? val : _match;
+        // Support nested property access like ref(opId.Attributes.QueueArn)
+        const parts = property.split(".");
+        let val: any = state[opId];
+        for (const p of parts) {
+          val = val?.[p];
+        }
+        return val !== undefined ? String(val) : _match;
       });
     } else if (typeof value === "object") {
       result[key] = resolveReferences(value, state);
