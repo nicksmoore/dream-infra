@@ -2341,27 +2341,21 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
   }
 }
 
-// ───── Project Naawi: Execution Runtime (Stateless) ─────
+// ───── Project Naawi: Execution Runtime (Raw API, Stateless) ─────
 
 interface ExecutionState {
   [opId: string]: Record<string, any>;
 }
 
-// Client + Command loading now uses dynamic imports via getClient() and getCommand()
-
 function resolveReferences(input: any, state: ExecutionState): any {
   if (typeof input !== "object" || input === null) return input;
-  
-  if (Array.isArray(input)) {
-    return input.map(item => resolveReferences(item, state));
-  }
-
+  if (Array.isArray(input)) return input.map(item => resolveReferences(item, state));
   const result: any = {};
   for (const [key, value] of Object.entries(input)) {
     if (typeof value === "string") {
-      result[key] = value.replace(/ref\(([^.]+)\.([^)]+)\)/g, (match, opId, property) => {
+      result[key] = value.replace(/ref\(([^.]+)\.([^)]+)\)/g, (_match, opId, property) => {
         const val = state[opId]?.[property];
-        return val !== undefined ? val : match;
+        return val !== undefined ? val : _match;
       });
     } else if (typeof value === "object") {
       result[key] = resolveReferences(value, state);
@@ -2372,45 +2366,60 @@ function resolveReferences(input: any, state: ExecutionState): any {
   return result;
 }
 
+interface DiscoveryReport {
+  operationId: string;
+  status: "MATCH" | "NOT_FOUND" | "ERROR";
+  liveState?: any;
+  suggestedAction: string;
+}
+
 async function handleDiscovery(ops: SdkOperation[], credentials: any, region: string): Promise<DiscoveryReport[]> {
   const reports: DiscoveryReport[] = [];
 
   for (const op of ops) {
     const { service, discoveryContext, id } = op;
-    const { identifiers } = discoveryContext || { identifiers: [] };
-    
-    let liveState: any = null;
+    const identifiers = discoveryContext?.identifiers || [];
     let status: DiscoveryReport["status"] = "NOT_FOUND";
+    let liveState: any = null;
 
     try {
-      if (SDK_MODULE_MAP[service] && identifiers.length > 0) {
+      if (SERVICE_CONFIG[service] && identifiers.length > 0) {
         const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
-        const client = await getClient(service, globalServices.includes(service) ? "us-east-1" : region, credentials);
-        
+        const effectiveRegion = globalServices.includes(service) ? "us-east-1" : region;
+
         if (service === "S3") {
-          const HeadBucketCmd = await getCommand("S3", "HeadBucketCommand");
           for (const name of identifiers) {
             try {
-              const head = await client.send(new HeadBucketCmd({ Bucket: name }));
-              liveState = { BucketName: name, ...head };
+              await executeAwsCommand("S3", "HeadBucket", { Bucket: name }, effectiveRegion, credentials);
+              liveState = { BucketName: name };
               status = "MATCH";
               break;
-            } catch (e: any) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
+            } catch (e: any) {
+              if (!e.message?.includes("404") && !e.message?.includes("NotFound")) throw e;
+            }
           }
         } else if (service === "EC2") {
-          const DescribeCmd = await getCommand("EC2", "DescribeInstancesCommand");
           for (const resId of identifiers) {
             try {
-              const desc = await client.send(new DescribeCmd({ InstanceIds: [resId] }));
-              const instance = desc.Reservations?.[0]?.Instances?.[0];
-              if (instance) { liveState = instance; status = "MATCH"; break; }
-            } catch (e: any) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
+              const desc = await executeAwsCommand("EC2", "DescribeInstances", { InstanceId: [resId] }, effectiveRegion, credentials);
+              if (desc) { liveState = desc; status = "MATCH"; break; }
+            } catch (e: any) {
+              if (!e.message?.includes("InvalidInstanceID")) throw e;
+            }
+          }
+        } else if (service === "EKS") {
+          for (const name of identifiers) {
+            try {
+              const desc = await executeAwsCommand("EKS", "DescribeCluster", { name }, effectiveRegion, credentials);
+              if (desc?.cluster) { liveState = desc.cluster; status = "MATCH"; break; }
+            } catch { /* not found */ }
           }
         }
+        // For other services, default to NOT_FOUND (will create)
       }
-
       reports.push({ operationId: id, status, liveState, suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE" });
     } catch (e) {
+      console.error(`Discovery error for ${id}:`, e);
       reports.push({ operationId: id, status: "ERROR", suggestedAction: "NONE" });
     }
   }
@@ -2424,27 +2433,27 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
 
   for (const op of ops) {
     const resolvedInput = resolveReferences(op.input, state);
-    
+
     if (JSON.stringify(resolvedInput).includes("ref(")) {
       return err("naawi", "execute", `Circuit Breaker: Unresolved dependency in ${op.id}.`);
     }
 
     try {
-      if (!SDK_MODULE_MAP[op.service]) {
-        throw new Error(`Naawi Error: Unsupported service - ${op.service}`);
+      if (!SERVICE_CONFIG[op.service]) {
+        throw new Error(`Unsupported service: ${op.service}. Supported: ${Object.keys(SERVICE_CONFIG).join(", ")}`);
       }
 
       const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
-      const client = await getClient(op.service, globalServices.includes(op.service) ? "us-east-1" : region, credentials);
-      const CommandClass = await getCommand(op.service, op.command);
-      const commandInstance = new CommandClass(resolvedInput);
-      const result = await client.send(commandInstance);
+      const effectiveRegion = op.region || (globalServices.includes(op.service) ? "us-east-1" : region);
+
+      console.log(`[Naawi] Executing ${op.id}: ${op.service}.${op.command}`);
+      const result = await executeAwsCommand(op.service, op.command, resolvedInput, effectiveRegion, credentials);
 
       state[op.id] = result || {};
       history.push({ opId: op.id, status: "SUCCESS", result });
 
     } catch (e: any) {
-      console.error(`Execution failed at ${op.id}:`, e);
+      console.error(`Execution failed at ${op.id}:`, e.message);
       history.push({ opId: op.id, status: "FAILED", error: e.message });
       return err("naawi", "execute", `Execution Halted at ${op.id}: ${e.message}`, { history, state_at_failure: state });
     }
