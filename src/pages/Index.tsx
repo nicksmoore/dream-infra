@@ -20,6 +20,7 @@ import {
   ParsedIntent,
   Deployment,
   Ec2Config,
+  WorkloadType,
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
