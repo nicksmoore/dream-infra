@@ -54,6 +54,14 @@ export default {
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",
+        nexus: {
+          glow: "hsl(var(--nexus-glow))",
+          magenta: "hsl(var(--nexus-magenta))",
+          cyan: "hsl(var(--nexus-cyan))",
+          gold: "hsl(var(--nexus-gold))",
+          surface: "hsl(var(--nexus-surface))",
+          "surface-elevated": "hsl(var(--nexus-surface-elevated))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
