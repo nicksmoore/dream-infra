@@ -264,6 +264,7 @@ export function OrchestrationPanel({
   };
 
   const hasNaawi = naawiOperations.length > 0;
+  const hasSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
 
   return (
     <Card className="bg-card border-primary/20">
