@@ -65,7 +65,7 @@ serve(async (req) => {
                 properties: {
                   archetype: { 
                     type: "string", 
-                    enum: ["EDGE_STATIC_SPA", "SERVICE_MESH", "EVENT_PIPELINE", "THREE_TIER", "UNKNOWN"] 
+                    enum: ["EDGE_STATIC_SPA", "SERVICE_MESH", "EVENT_PIPELINE", "INTERNAL_API", "THREE_TIER", "UNKNOWN"] 
                   },
                   variables: { 
                     type: "object",
