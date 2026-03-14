@@ -278,30 +278,48 @@ export function OrchestrationPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Naawi Plan / Risk Alert */}
+        {/* Plan / Risk / Cost */}
         {planResult && (
           <div className="space-y-3 p-3 rounded-lg bg-muted/30 border border-border">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">Discovery Plan</span>
+                <GitCompareArrows className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Diff & Execution Plan</span>
               </div>
-              <Badge variant={planResult.risk_level === "HIGH" ? "destructive" : "secondary"}>
-                Risk: {planResult.risk_level}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={planResult.risk_level === "HIGH" ? "destructive" : "secondary"}>
+                  Risk: {planResult.risk_level || "LOW"}
+                </Badge>
+                {typeof planResult.estimated_monthly_cost_usd === "number" && (
+                  <Badge variant="outline" className="gap-1">
+                    <DollarSign className="h-3 w-3" /> ~${planResult.estimated_monthly_cost_usd.toFixed(2)}/mo
+                  </Badge>
+                )}
+              </div>
             </div>
-            
+
+            {planResult.operations?.length ? (
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Planned SDK Calls</p>
+                {planResult.operations.map((op, i) => (
+                  <div key={`${op.id}-${i}`} className="text-xs flex items-start gap-2">
+                    <Badge variant="outline" className="h-5 text-[10px]">{i + 1}</Badge>
+                    <span className="font-mono">{op.service}:{op.command}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div className="space-y-2">
-              {planResult.discovery?.map((report: any, i: number) => (
+              {planResult.discovery?.map((report, i) => (
                 <div key={i} className="text-xs flex items-start gap-2">
                   {report.status === "MATCH" ? (
                     <CheckCircle2 className="h-3 w-3 text-primary mt-0.5" />
                   ) : (
-                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5" />
+                    <AlertTriangle className="h-3 w-3 text-muted-foreground mt-0.5" />
                   )}
                   <span>
-                    <span className="font-medium">{report.operationId}</span>: 
-                    {report.status === "MATCH" ? " Existing resource found (Safe)" : " Resource missing (Will Create)"}
+                    <span className="font-medium">{report.operationId}</span>: {report.status === "MATCH" ? "No change (adopt existing)" : "Will create/update"}
                   </span>
                 </div>
               ))}
