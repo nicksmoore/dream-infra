@@ -22,7 +22,7 @@ export interface DiscoveryReport {
 }
 
 // ===== Core Intent Types =====
-export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier" | "edge-cache";
+export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier" | "edge-cache" | "cross-region-peered";
 export type CostSensitivity = "cheapest" | "balanced" | "production";
 export type Environment = "dev" | "staging" | "prod";
 export type OsType = "amazon-linux-2023" | "ubuntu" | "debian" | "rhel" | "suse" | "windows-2022" | "windows-2019";
