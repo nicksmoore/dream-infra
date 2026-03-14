@@ -296,11 +296,56 @@ export function OrchestrationPanel({
       return;
     }
 
-    // Step-by-step logic (SRE-Supreme or standard)
+    // Step-by-step logic with output threading (cross-region DAG)
+    const stepOutputs: Record<string, any> = {};
+
     for (let i = 0; i < steps.length; i++) {
       setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "running" } : s));
       const step = steps[i];
       const spec = { ...step.spec };
+
+      // ── Output Threading: inject prior step outputs into downstream specs ──
+      if (step.id === "eks-cluster" || step.id === "eks") {
+        // Thread subnet IDs from the EKS VPC (or fallback network step)
+        const vpcOutput = stepOutputs["eks-vpc"] || stepOutputs["network"];
+        if (vpcOutput) {
+          const subnetIds = vpcOutput.subnet_ids || vpcOutput.subnets?.map((s: any) => s.SubnetId || s.subnet_id) || [];
+          if (subnetIds.length > 0) {
+            spec.subnet_ids = subnetIds;
+          }
+          if (vpcOutput.security_group_id) {
+            spec.security_group_ids = [vpcOutput.security_group_id];
+          }
+        }
+      }
+
+      if (step.id === "eks-nodegroup") {
+        // Thread cluster name + subnets + auto-resolve node role
+        const eksOutput = stepOutputs["eks-cluster"] || stepOutputs["eks"];
+        const vpcOutput = stepOutputs["eks-vpc"] || stepOutputs["network"];
+        if (eksOutput?.cluster_name) spec.cluster_name = eksOutput.cluster_name;
+        if (vpcOutput) {
+          const subnetIds = vpcOutput.subnet_ids || vpcOutput.subnets?.map((s: any) => s.SubnetId || s.subnet_id) || [];
+          if (subnetIds.length > 0) spec.subnet_ids = subnetIds;
+        }
+      }
+
+      if (step.id === "vpc-peering") {
+        // Thread VPC IDs from the two VPC steps
+        const dataVpc = stepOutputs["data-vpc"];
+        const eksVpc = stepOutputs["eks-vpc"];
+        if (dataVpc?.vpc_id) spec.accepter_vpc_id = dataVpc.vpc_id;
+        if (eksVpc?.vpc_id) spec.requester_vpc_id = eksVpc.vpc_id;
+      }
+
+      if (step.id === "peering-routes") {
+        const peeringOutput = stepOutputs["vpc-peering"];
+        if (peeringOutput?.peering_connection_id) spec.peering_connection_id = peeringOutput.peering_connection_id;
+        const dataVpc = stepOutputs["data-vpc"];
+        const eksVpc = stepOutputs["eks-vpc"];
+        if (dataVpc?.route_table_id) spec.accepter_route_table_id = dataVpc.route_table_id;
+        if (eksVpc?.route_table_id) spec.requester_route_table_id = eksVpc.route_table_id;
+      }
 
       try {
         const result = await executeIntent({
@@ -311,6 +356,10 @@ export function OrchestrationPanel({
 
         if (result.status === "error") throw new Error(result.error || result.message);
         
+        // Store output for downstream threading
+        if (result.details && typeof result.details === "object") {
+          stepOutputs[step.id] = result.details;
+        }
 
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "done", output: result.details ? JSON.stringify(result.details, null, 2) : result.message, result } : s));
         if (i === steps.length - 1) setDeploymentResult(result.details);
