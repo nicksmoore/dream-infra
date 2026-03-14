@@ -29,7 +29,7 @@ export class DagOrchestrator {
     this.s3 = new S3Client({ region, credentials });
     this.cf = new CloudFrontClient({ region: "us-east-1", credentials }); // CF is global
     this.r53 = new Route53Client({ region: "us-east-1", credentials }); // R53 is global
-    this.eks = new EKSClient({ region, credentials });
+    
   }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
