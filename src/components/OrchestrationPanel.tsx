@@ -458,6 +458,7 @@ export function OrchestrationPanel({
   const statusIcon = (status: string) => {
     switch (status) {
       case "running": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+      case "polling": return <Loader2 className="h-4 w-4 animate-spin text-amber-500" />;
       case "done": return <CheckCircle2 className="h-4 w-4 text-primary" />;
       case "error": return <XCircle className="h-4 w-4 text-destructive" />;
       case "rolled_back": return <RotateCcw className="h-4 w-4 text-muted-foreground" />;
