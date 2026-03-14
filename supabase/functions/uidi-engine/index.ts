@@ -2155,13 +2155,71 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
     case "destroy": {
       const clusterName = spec.cluster_name as string;
       if (!clusterName) return err("eks", action, "cluster_name required.");
+      const destroySteps: string[] = [];
+
+      // 1. List and delete all nodegroups
       const ngRes = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
       const ngBody = await ngRes.text();
-      if (ngRes.ok) { for (const ng of (JSON.parse(ngBody).nodegroups || [])) { await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${clusterName}/node-groups/${ng}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET }).then(r => r.text()); } }
-      const res = await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${clusterName}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+      const nodegroups = ngRes.ok ? (JSON.parse(ngBody).nodegroups || []) as string[] : [];
+
+      if (nodegroups.length > 0) {
+        for (const ng of nodegroups) {
+          console.log(`EKS destroy: deleting nodegroup ${ng}...`);
+          const delNg = await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${clusterName}/node-groups/${encodeURIComponent(ng)}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+          const delNgBody = await delNg.text();
+          if (!delNg.ok && !delNgBody.includes("ResourceNotFoundException")) {
+            console.log(`EKS destroy: nodegroup ${ng} delete response: ${delNgBody.slice(0, 300)}`);
+          }
+          destroySteps.push(`DeleteNodegroup: ${ng}`);
+        }
+
+        // 2. Poll until all nodegroups are gone (max 10 min)
+        const ngMaxPolls = 40;
+        const ngPollDelay = 15_000;
+        for (let poll = 0; poll < ngMaxPolls; poll++) {
+          await new Promise(r => setTimeout(r, ngPollDelay));
+          const checkNg = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${clusterName}/node-groups`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+          const checkBody = await checkNg.text();
+          if (!checkNg.ok) break; // cluster may already be gone
+          const remaining = (JSON.parse(checkBody).nodegroups || []) as string[];
+          console.log(`EKS destroy: nodegroup poll ${poll + 1}/${ngMaxPolls}, remaining: ${remaining.length}`);
+          if (remaining.length === 0) {
+            destroySteps.push(`All nodegroups deleted (poll ${poll + 1})`);
+            break;
+          }
+          if (poll === ngMaxPolls - 1) {
+            destroySteps.push(`Nodegroup cleanup timed out — ${remaining.length} still deleting`);
+          }
+        }
+      }
+
+      // 3. Delete the cluster
+      console.log(`EKS destroy: deleting cluster ${clusterName}...`);
+      const res = await awsSignedRequest({ service: "eks", region, method: "DELETE", path: `/clusters/${encodeURIComponent(clusterName)}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
       const body = await res.text();
-      if (!res.ok && !body.includes("ResourceNotFoundException")) return err("eks", action, `DeleteCluster failed: ${body.slice(0, 500)}`);
-      return ok("eks", action, `EKS cluster ${clusterName} deletion initiated`, { cluster_name: clusterName, region });
+      if (!res.ok && !body.includes("ResourceNotFoundException")) return err("eks", action, `DeleteCluster failed: ${body.slice(0, 500)}`, { steps: destroySteps });
+      destroySteps.push(`DeleteCluster: ${clusterName}`);
+
+      // 4. Wait for cluster to be fully gone (max 10 min) so VPC ENIs get cleaned up
+      const clMaxPolls = 40;
+      const clPollDelay = 15_000;
+      for (let poll = 0; poll < clMaxPolls; poll++) {
+        await new Promise(r => setTimeout(r, clPollDelay));
+        const checkCl = await awsSignedRequest({ service: "eks", region, method: "GET", path: `/clusters/${encodeURIComponent(clusterName)}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+        const checkBody = await checkCl.text();
+        if (!checkCl.ok) {
+          // 404 = gone
+          destroySteps.push(`Cluster confirmed deleted (poll ${poll + 1})`);
+          break;
+        }
+        const clStatus = JSON.parse(checkBody)?.cluster?.status;
+        console.log(`EKS destroy: cluster poll ${poll + 1}/${clMaxPolls}, status: ${clStatus}`);
+        if (poll === clMaxPolls - 1) {
+          destroySteps.push(`Cluster deletion timed out — status: ${clStatus}`);
+        }
+      }
+
+      return ok("eks", action, `EKS cluster ${clusterName} fully destroyed`, { cluster_name: clusterName, region, steps: destroySteps });
     }
 
     default:
