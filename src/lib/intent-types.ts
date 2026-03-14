@@ -430,7 +430,8 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
   if (!result.resources.length) result.resources = ["ec2"];
 
   // Workload / Pattern Detection
-  if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) result.workloadType = "global-spa";
+  if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) result.workloadType = "edge-cache";
+  else if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) result.workloadType = "global-spa";
   else if (/microservice|service.?mesh|app.?mesh|mesh/i.test(lower)) result.workloadType = "service-mesh";
   else if (/queue|pipeline|event.?driven|sqs|event.?bridge/i.test(lower)) result.workloadType = "event-pipeline";
   else if (/internal.?api|internal.?tool|bff|api.?gateway/i.test(lower)) result.workloadType = "internal-api";

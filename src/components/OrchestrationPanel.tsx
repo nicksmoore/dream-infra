@@ -33,7 +33,7 @@ interface OrchestrationPanelProps {
   onComplete?: () => void;
 }
 
-const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"] as const;
+const SRE_PATTERNS = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier", "edge-cache"] as const;
 
 type PlanResult = {
   discovery?: Array<{ operationId: string; status: string; suggestedAction?: string }>;
