@@ -365,10 +365,16 @@ export class DagOrchestrator {
   // ─── Pattern 4: Internal Tooling API ───
   private async compileInternalApi(spec: any): Promise<SdkOperation[]> {
     const ops: SdkOperation[] = [];
-    const baseName = spec.name || "internal-api";
-    const subnetIds = (Array.isArray(spec.subnetIds) && spec.subnetIds.length >= 2)
-      ? spec.subnetIds.slice(0, 2)
-      : ["subnet-auto-a", "subnet-auto-b"];
+    const baseName = this.normalizeName(String(spec.name || "internal-api"), "internal-api", 36);
+    const subnetIds = this.asSubnetIds(spec.subnetIds).slice(0, 2);
+    const lambdaRoleArn = this.asRoleArn(spec.lambdaRoleArn || spec.roleArn);
+    const lambdaZipBase64 = typeof spec.lambdaZipBase64 === "string" && spec.lambdaZipBase64.length > 0
+      ? spec.lambdaZipBase64
+      : undefined;
+    const rdsProxyRoleArn = this.asRoleArn(spec.rdsProxyRoleArn);
+    const rdsSecretArn = typeof spec.rdsSecretArn === "string" && spec.rdsSecretArn.startsWith("arn:aws:secretsmanager:")
+      ? spec.rdsSecretArn
+      : undefined;
 
     ops.push({
       id: "api-gateway",
@@ -376,80 +382,87 @@ export class DagOrchestrator {
       command: "CreateApi",
       input: {
         Name: `${baseName}-http-api`,
-        ProtocolType: "HTTP"
+        ProtocolType: "HTTP",
       },
-      riskLevel: "LOW"
+      riskLevel: "LOW",
     });
 
-    ops.push({
-      id: "authorizer-lambda",
-      service: "Lambda",
-      command: "CreateFunction",
-      input: {
-        FunctionName: `${baseName}-authorizer`,
-        Runtime: "nodejs18.x",
-        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
-        Handler: "index.handler",
-        Code: { ZipFile: btoa("/* Lambda Authorizer */") }
-      },
-      riskLevel: "LOW"
-    });
-
-    ops.push({
-      id: "rds-subnet-group",
-      service: "RDS",
-      command: "CreateDBSubnetGroup",
-      input: {
-        DBSubnetGroupName: `${baseName}-subnet-group`,
-        DBSubnetGroupDescription: "IDI Internal API subnet group",
-        SubnetIds: subnetIds
-      },
-      riskLevel: "LOW"
-    });
-
-    ops.push({
-      id: "rds-cluster",
-      service: "RDS",
-      command: "CreateDBCluster",
-      input: {
-        DBClusterIdentifier: `${baseName}-aurora`,
-        Engine: "aurora-postgresql",
-        EngineMode: "provisioned",
-        DBSubnetGroupName: `${baseName}-subnet-group`,
-        ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 2.0 }
-      },
-      dependency: "rds-subnet-group",
-      riskLevel: "HIGH"
-    });
-
-    ops.push({
-      id: "rds-proxy",
-      service: "RDS",
-      command: "CreateDBProxy",
-      input: {
-        DBProxyName: `${baseName}-proxy`,
-        EngineFamily: "POSTGRESQL",
-        RoleArn: spec._defaultRdsProxyRole || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`,
-        Auth: [{ AuthScheme: "SECRETS", IAMAuth: "REQUIRED" }],
-        VpcSubnetIds: subnetIds,
-      },
-      dependency: "rds-cluster",
-      riskLevel: "LOW"
-    });
-
-    // Latency Guard for internal dashboards/tools
-    if (/dashboard|internal tool|internal api|bff/i.test(String(spec.intentText || baseName))) {
+    if (lambdaRoleArn && lambdaZipBase64) {
       ops.push({
-        id: "provisioned-concurrency",
+        id: "authorizer-lambda",
         service: "Lambda",
-        command: "PutFunctionConcurrency",
+        command: "CreateFunction",
         input: {
           FunctionName: `${baseName}-authorizer`,
-          ReservedConcurrentExecutions: 1
+          Runtime: "nodejs18.x",
+          Role: lambdaRoleArn,
+          Handler: "index.handler",
+          Code: { ZipFile: lambdaZipBase64 },
         },
-        dependency: "authorizer-lambda",
-        riskLevel: "LOW"
+        riskLevel: "LOW",
       });
+
+      if (/dashboard|internal tool|internal api|bff/i.test(String(spec.intentText || baseName))) {
+        ops.push({
+          id: "provisioned-concurrency",
+          service: "Lambda",
+          command: "PutFunctionConcurrency",
+          input: {
+            FunctionName: `${baseName}-authorizer`,
+            ReservedConcurrentExecutions: 1,
+          },
+          dependency: "authorizer-lambda",
+          riskLevel: "LOW",
+        });
+      }
+    }
+
+    if (subnetIds.length >= 2) {
+      ops.push({
+        id: "rds-subnet-group",
+        service: "RDS",
+        command: "CreateDBSubnetGroup",
+        input: {
+          DBSubnetGroupName: `${baseName}-subnet-group`,
+          DBSubnetGroupDescription: "UIDI Internal API subnet group",
+          SubnetIds: subnetIds,
+        },
+        riskLevel: "LOW",
+      });
+
+      ops.push({
+        id: "rds-cluster",
+        service: "RDS",
+        command: "CreateDBCluster",
+        input: {
+          DBClusterIdentifier: `${baseName}-aurora`,
+          Engine: "aurora-postgresql",
+          EngineMode: "provisioned",
+          DBSubnetGroupName: `${baseName}-subnet-group`,
+          MasterUsername: String(spec.dbMasterUsername || "appadmin"),
+          ManageMasterUserPassword: true,
+          ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 2.0 },
+        },
+        dependency: "rds-subnet-group",
+        riskLevel: "HIGH",
+      });
+
+      if (rdsProxyRoleArn && rdsSecretArn) {
+        ops.push({
+          id: "rds-proxy",
+          service: "RDS",
+          command: "CreateDBProxy",
+          input: {
+            DBProxyName: `${baseName}-proxy`,
+            EngineFamily: "POSTGRESQL",
+            RoleArn: rdsProxyRoleArn,
+            Auth: [{ AuthScheme: "SECRETS", IAMAuth: "REQUIRED", SecretArn: rdsSecretArn }],
+            VpcSubnetIds: subnetIds,
+          },
+          dependency: "rds-cluster",
+          riskLevel: "LOW",
+        });
+      }
     }
 
     return ops;
