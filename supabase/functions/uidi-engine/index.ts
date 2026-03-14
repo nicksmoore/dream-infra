@@ -849,20 +849,30 @@ async function awsSignedRequest(opts: {
   secretAccessKey: string;
   body?: string;
   extraHeaders?: Record<string, string>;
+  hostOverride?: string;
 }): Promise<Response> {
-  const host = `${opts.service}.${opts.region}.amazonaws.com`;
+  const host = opts.hostOverride || `${opts.service}.${opts.region}.amazonaws.com`;
+
+  // Split path from query string for proper SigV4 canonical request
+  const qIdx = opts.path.indexOf("?");
+  const canonicalUri = qIdx >= 0 ? opts.path.slice(0, qIdx) : opts.path;
+  const queryString = qIdx >= 0 ? opts.path.slice(qIdx + 1) : "";
+  // Sort query params for canonical query string
+  const sortedQS = queryString ? queryString.split("&").sort().join("&") : "";
+
   const url = `https://${host}${opts.path}`;
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const dateStamp = amzDate.slice(0, 8);
 
+  const bodyHash = await sha256Hex(opts.body || "");
+
   const headers: Record<string, string> = {
     Host: host,
     "X-Amz-Date": amzDate,
+    "x-amz-content-sha256": bodyHash,
     ...(opts.extraHeaders || {}),
   };
-
-  const bodyHash = await sha256Hex(opts.body || "");
 
   // Canonical request
   const signedHeaderKeys = Object.keys(headers).map(k => k.toLowerCase()).sort();
@@ -871,8 +881,8 @@ async function awsSignedRequest(opts: {
 
   const canonicalRequest = [
     opts.method,
-    opts.path,
-    "", // query string
+    canonicalUri,
+    sortedQS,
     canonicalHeaders,
     signedHeadersStr,
     bodyHash,
