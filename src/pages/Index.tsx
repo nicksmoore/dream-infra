@@ -94,7 +94,11 @@ export default function Index() {
       if (error) throw new Error(error.message);
 
       const intentData = data?.intent;
-      const mappedWorkload = normalizeWorkload(intentData?.archetype);
+      
+      // Cross-region override: if the raw input mentions peering/cross-region, 
+      // force that workload type regardless of what the AI parser returns
+      const isCrossRegion = /cross.?region|vpc.?peer|peering/i.test(input);
+      const mappedWorkload = isCrossRegion ? "cross-region-peered" as WorkloadType : normalizeWorkload(intentData?.archetype);
 
       if (mappedWorkload) {
         const mappedIntent: ParsedIntent = {
