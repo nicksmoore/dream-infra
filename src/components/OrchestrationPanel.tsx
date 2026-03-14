@@ -91,6 +91,8 @@ export function OrchestrationPanel({
   const [isPlanning, setIsPlanning] = useState(false);
   const [planResult, setPlanResult] = useState<PlanResult | null>(null);
   const [deploymentResult, setDeploymentResult] = useState<any>(null);
+  const [showForceNuke, setShowForceNuke] = useState(false);
+  const [isForceNuking, setIsForceNuking] = useState(false);
 
   const {
     restoredState,
