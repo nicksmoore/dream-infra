@@ -58,6 +58,7 @@ const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
   "internal-api": ["api-gateway", "lambda", "rds-proxy", "rds"],
   "three-tier": ["asg", "alb", "rds", "elasticache", "vpc", "subnets"],
   "edge-cache": ["dynamodb", "route53", "lambda", "cloudfront"],
+  "cross-region-peered": ["vpc", "subnets", "vpc-peering", "eks"],
 };
 
 const normalizeWorkload = (value?: string): WorkloadType | null => {
