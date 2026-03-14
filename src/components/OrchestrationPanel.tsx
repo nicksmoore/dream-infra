@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, RefreshCw, AlertTriangle, Eye, ShieldAlert } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows } from "lucide-react";
 
 interface OrchestrationStep {
   id: string;
