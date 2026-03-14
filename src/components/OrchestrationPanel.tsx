@@ -83,8 +83,8 @@ export function OrchestrationPanel({
       const result: OrchestrationStep[] = [];
 
       // ── Project Naawi: Granular SDK Operations (Highest Priority) ──
-      if (naawiOperations && naawiOperations.length > 0) {
-        naawiOperations.forEach(op => {
+      if (stableOps && stableOps.length > 0) {
+        stableOps.forEach(op => {
           result.push({
             id: op.id,
             name: `${op.service}.${op.command}`,
