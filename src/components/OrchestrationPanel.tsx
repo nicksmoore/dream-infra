@@ -645,6 +645,43 @@ export function OrchestrationPanel({
           </div>
         )}
 
+        {/* Rolling Deployment Status */}
+        {steps.length > 0 && (isRunning || isRollingBack || completedCount > 0 || errorCount > 0) && (
+          <div className="space-y-2 p-3 rounded-lg bg-muted/30 border border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {allDone ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                ) : hasFailedSteps && !isRunning ? (
+                  <XCircle className="h-4 w-4 text-destructive" />
+                ) : (
+                  <Timer className="h-4 w-4 text-primary animate-pulse" />
+                )}
+                <span className="text-sm font-semibold">
+                  {isRollingBack ? "Rolling Back" : allDone ? "Deployment Complete" : hasFailedSteps && !isRunning ? "Deployment Failed" : "Deploying"}
+                </span>
+              </div>
+              <span className="text-sm font-mono font-bold text-primary">{progressPct}%</span>
+            </div>
+            <Progress value={progressPct} className="h-2" />
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>{completedCount}/{steps.length} steps complete{errorCount > 0 ? ` · ${errorCount} failed` : ""}</span>
+              <div className="flex items-center gap-3">
+                {(isRunning || isRollingBack) && remainingSeconds > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    ~{formatTime(remainingSeconds)} remaining
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <Timer className="h-3 w-3" />
+                  Total est: {formatTime(totalEstimatedSeconds)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Steps */}
         <div className="space-y-3">
           {steps.map((step, i) => (
@@ -656,17 +693,25 @@ export function OrchestrationPanel({
                 )}
               </div>
               <div className="flex-1 pb-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {getStepIcon(step)}
                   <span className="text-sm font-semibold">{step.name}</span>
-                  <Badge variant={step.status === "done" ? "default" : step.status === "error" ? "destructive" : step.status === "rolled_back" ? "secondary" : "outline"} className="text-[10px] h-4">
-                    {step.status}
+                  <Badge variant={step.status === "done" ? "default" : step.status === "error" ? "destructive" : step.status === "polling" ? "secondary" : step.status === "rolled_back" ? "secondary" : "outline"} className="text-[10px] h-4">
+                    {step.status === "polling" ? "provisioning" : step.status}
                   </Badge>
+                  <span className="text-[10px] text-muted-foreground/50 font-mono ml-auto">
+                    ~{formatTime(getStepEstimate(step))}
+                  </span>
                 </div>
                 <p className="text-[10px] text-muted-foreground">{step.description}</p>
                 {step.dependsOn.length > 0 && (
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                     depends on: {step.dependsOn.join(", ")}
+                  </p>
+                )}
+                {step.output && (step.status === "polling" || step.status === "error") && (
+                  <p className="text-[10px] font-mono mt-1 text-muted-foreground bg-muted/50 rounded px-2 py-1 truncate max-w-full">
+                    {step.output.slice(0, 200)}
                   </p>
                 )}
               </div>
