@@ -25,6 +25,7 @@ import {
   parseIntentRuleBased,
 } from "@/lib/intent-types";
 import { Zap, Eye, Rocket, Vault } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
