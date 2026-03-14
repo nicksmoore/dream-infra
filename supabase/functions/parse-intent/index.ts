@@ -32,30 +32,24 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are the Naawi IDI Compiler. Your objective is to translate natural language infrastructure intent into a deterministic array of AWS SDK v3 operations. You bypass all intermediary DSLs (Terraform, YAML, HCL) and target the native AWS Service Clients directly.
+            content: `You are the Naawi Archetype Resolver. Your sole objective is to classify natural language infrastructure intent into a high-level Deployment Archetype.
 
-### PRE-ROUTING ARCHETYPES:
-Before generating primitives, you MUST classify the intent into one of these hard-locked archetypes:
-1. **EDGE_STATIC_SPA**: triggered by "globally available", "secure frontend", "static site", "SPA". 
-   - HARD LOCK: S3 (REST origin) + CloudFront + ACM + Lambda@Edge.
-   - HARD BLOCK: EC2, ECS, EKS. Never use servers for this archetype.
-2. **SERVICE_MESH**: triggered by "microservices", "service mesh", "kubernetes", "EKS".
-3. **EVENT_PIPELINE**: triggered by "data pipeline", "sqs to lambda", "async processing".
+### THE HARD GATE (Classification Rules):
+1. **Identify Archetype**: You MUST select exactly one from the list below.
+2. **Deterministic Variables**: Extract only the necessary parameters (e.g., domainName, bucketName, clusterName).
+3. **No Primitives**: You are strictly forbidden from generating individual AWS SDK operations (S3::CreateBucket, etc.). The engine handles expansion.
+4. **Hard Block**: If the archetype is EDGE_STATIC_SPA, you MUST NOT include any networking or compute variables (VPC, Subnets, EC2).
 
-### THE SRE MOAT (Mandatory Requirements):
-1. **Origin Shielding**: For S3+CloudFront, always use CloudFront Origin Access Control (OAC). S3 buckets MUST be private with a Deny-all-except-OAC policy.
-2. **Edge Security**: All CloudFront distributions MUST have a Lambda@Edge function (viewer-response) for HSTS/CSP headers.
-3. **Drift/Hotfix**: Include a 'CreateInvalidation' call with a CallerReference based on the deployment hash to ensure propagation.
-4. **Idempotency**: Use 'sha256(intent.id + callIndex)' for all ClientToken fields.
+### SUPPORTED ARCHETYPES:
+- **EDGE_STATIC_SPA**: Triggered by "frontend", "static site", "React/Angular/Vue", "globally available secure UI".
+  - *Required Vars*: domainName, bucketName.
+- **SERVICE_MESH**: Triggered by "microservices", "kubernetes", "EKS", "cluster".
+  - *Required Vars*: clusterName, region.
+- **EVENT_PIPELINE**: Triggered by "data processing", "sqs", "lambda pipeline".
+  - *Required Vars*: name, region.
 
-### DEPENDENCY & SYNCHRONIZATION:
-- Parallel Group 1: ACM Certificate, Lambda@Edge Function, S3 Bucket, CloudFront OAC.
-- Sync Point 2: CloudFront Distribution (MUST wait for parallel group 1 ARNs).
-- Final Group 3: Route 53 A-Record (Alias to CF), S3 Bucket Policy (OAC Deny), CloudFront Invalidation.
-
-### SDK SPECIFICS:
-- S3 Origin in CloudFront: Use the REST endpoint ({bucket}.s3.{region}.amazonaws.com), NOT the website endpoint. OAC signing fails on website endpoints.
-- Lambda@Edge: Must be in us-east-1. CloudFront requires a versioned ARN (not $LATEST).`,
+### AMBIGUITY & HALT:
+If the user's intent matches multiple archetypes or is missing critical variables, you MUST set "confidence" to "LOW" and provide a "disambiguationPrompt". Do not guess.`,
           },
           { role: "user", content: message },
         ],
@@ -63,44 +57,33 @@ Before generating primitives, you MUST classify the intent into one of these har
           {
             type: "function",
             function: {
-              name: "compile_infrastructure_intent",
-              description: "Compile a natural language infrastructure request into a deterministic sequence of AWS SDK v3 operations.",
+              name: "resolve_deployment_archetype",
+              description: "Classify the intent into a deployment archetype and extract variables.",
               parameters: {
                 type: "object",
                 properties: {
-                  operations: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id: { type: "string", description: "Unique, traceable ID for this operation (e.g., 'create_vpc_01')." },
-                        service: { type: "string", description: "AWS Service name (e.g., 'S3', 'EC2', 'RDS')." },
-                        command: { type: "string", description: "SDK Command name (e.g., 'CreateBucketCommand')." },
-                        discoveryContext: {
-                          type: "object",
-                          properties: {
-                            identifiers: { type: "array", items: { type: "string" }, description: "ARNs, IDs, or Names to check if the resource already exists." },
-                            tags: { type: "object", additionalProperties: { type: "string" } }
-                          }
-                        },
-                        input: { 
-                          type: "object", 
-                          description: "The exact SDK input payload. Use 'ref(op_id.Property)' for symbolic links to previous operations." 
-                        },
-                        riskLevel: { type: "string", enum: ["LOW", "HIGH"] },
-                        dependsOn: { type: "array", items: { type: "string" }, description: "Array of operation IDs that must complete first." }
-                      },
-                      required: ["id", "service", "command", "input", "riskLevel"]
-                    }
+                  archetype: { 
+                    type: "string", 
+                    enum: ["EDGE_STATIC_SPA", "SERVICE_MESH", "EVENT_PIPELINE", "THREE_TIER", "UNKNOWN"] 
+                  },
+                  variables: { 
+                    type: "object",
+                    additionalProperties: { type: "string" },
+                    description: "Extracted parameters like domainName, bucketName, etc."
+                  },
+                  confidence: { type: "string", enum: ["HIGH", "LOW"] },
+                  disambiguationPrompt: { 
+                    type: "string", 
+                    description: "Question to ask the user if confidence is LOW or archetype is UNKNOWN." 
                   }
                 },
-                required: ["operations"],
+                required: ["archetype", "confidence"],
                 additionalProperties: false,
               },
             },
           },
         ],
-        tool_choice: { type: "function", function: { name: "compile_infrastructure_intent" } },
+        tool_choice: { type: "function", function: { name: "resolve_deployment_archetype" } },
       }),
     });
 

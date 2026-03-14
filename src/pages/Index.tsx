@@ -56,31 +56,51 @@ export default function Index() {
         body: { message: input },
       });
       if (error) throw new Error(error.message);
-      if (data?.intent?.operations) {
-        setOperations(data.intent.operations);
-        // Map detected resources from operations for UI badges
-        const resources = Array.from(new Set((data.intent.operations || []).map((op: any) => op.service.toLowerCase())));
-        setDetectedResources(resources);
-        toast({ title: "Intent compiled", description: `Project Naawi: ${data.intent.operations.length} SDK operations generated.` });
-      } else if (data?.intent) {
-        const merged = { ...DEFAULT_INTENT, ...data.intent };
-        updateIntent(merged);
-        setDetectedResources(data.intent.resources || ["ec2"]);
-        toast({ title: "Intent parsed", description: "Configuration updated from your description." });
+
+      const intentData = data?.intent;
+      
+      if (intentData?.confidence === "LOW") {
+        toast({ 
+          title: "Disambiguation Required", 
+          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify if this is a frontend or backend deployment.",
+          variant: "destructive"
+        });
+        return;
       }
-    } catch {
+
+      if (intentData?.archetype) {
+        // Map Archetype to WorkloadType and update variables
+        const mappedIntent: ParsedIntent = {
+          ...DEFAULT_INTENT,
+          workloadType: intentData.archetype,
+          ...intentData.variables
+        };
+        updateIntent(mappedIntent);
+        
+        // Trigger deterministic expansion via badge update
+        setDetectedResources([intentData.archetype.toLowerCase()]);
+        toast({ 
+          title: "Archetype Confirmed", 
+          description: `Routing to deterministic ${intentData.archetype} template.` 
+        });
+      }
+    } catch (e) {
+      console.error("Parse error:", e);
       const parsed = parseIntentRuleBased(input);
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || ["ec2"]);
-      toast({ title: "Used rule-based parsing", description: "AI parsing unavailable, fell back to keyword matching." });
+      toast({ title: "Fell back to Rule-based", description: "Keyword matching used due to resolver timeout." });
     } finally {
       setIsParsing(false);
     }
   }, [updateIntent]);
 
   const isMultiResource = detectedResources.length > 1 ||
-    detectedResources.some(r => ["vpc", "eks", "subnets", "nacls", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds"].includes(r));
+    detectedResources.some(r => [
+      "vpc", "eks", "subnets", "nacls", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds",
+      "edge_static_spa", "service_mesh", "event_pipeline"
+    ].includes(r));
 
   return (
     <div className="min-h-screen bg-background">
