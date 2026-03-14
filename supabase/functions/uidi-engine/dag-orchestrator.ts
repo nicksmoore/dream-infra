@@ -231,6 +231,24 @@ export class DagOrchestrator {
       });
     }
 
+    // Upload a working dashboard index.html
+    const dashboardTitle = spec.dashboardTitle || spec.intentText || baseName;
+    const cfDomain = "ref(cf-dist.Distribution.DomainName)";
+    const dashboardHtml = this.buildDashboardHtml(dashboardTitle, cfDomain, bucketName);
+
+    ops.push({
+      id: "s3-index",
+      service: "S3",
+      command: "PutObject",
+      input: {
+        Bucket: bucketName,
+        Key: "index.html",
+        Body: dashboardHtml,
+        ContentType: "text/html",
+      },
+      dependency: "s3-bucket",
+    });
+
     ops.push({
       id: "cf-invalidation",
       service: "CloudFront",
@@ -242,7 +260,7 @@ export class DagOrchestrator {
           CallerReference: spec.buildHash || intentHash,
         },
       },
-      dependency: "cf-dist",
+      dependency: "s3-index",
     });
 
     return ops;
@@ -505,5 +523,68 @@ export class DagOrchestrator {
 
   private generateClientToken(spec: any, salt: string): string {
     return `${salt}-${Date.now()}`; 
+  }
+
+  private buildDashboardHtml(title: string, cfDomain: string, bucketName: string): string {
+    const ts = new Date().toISOString();
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${this.escHtml(title)} — Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0e17;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column}
+header{background:linear-gradient(135deg,#1a1f2e 0%,#0f172a 100%);border-bottom:1px solid #1e293b;padding:1.5rem 2rem;display:flex;align-items:center;gap:1rem}
+header h1{font-size:1.25rem;font-weight:600;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.badge{background:#1e293b;border:1px solid #334155;border-radius:6px;padding:.25rem .75rem;font-size:.7rem;color:#94a3b8;letter-spacing:.05em;text-transform:uppercase}
+main{flex:1;padding:2rem;max-width:1200px;margin:0 auto;width:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-bottom:2rem}
+.card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:1.5rem;transition:border-color .2s}
+.card:hover{border-color:#334155}
+.card h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.5rem}
+.card .val{font-size:1.75rem;font-weight:700;color:#f1f5f9}
+.card .sub{font-size:.8rem;color:#22d3ee;margin-top:.25rem}
+.status{display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;padding:.35rem .75rem;border-radius:999px;font-weight:500}
+.status.ok{background:#064e3b;color:#6ee7b7}
+.status.progress{background:#1e3a5f;color:#7dd3fc}
+.meta{margin-top:2rem;padding:1.25rem;background:#111827;border:1px solid #1e293b;border-radius:12px}
+.meta h3{font-size:.85rem;font-weight:600;color:#94a3b8;margin-bottom:.75rem}
+.meta-row{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #1e293b;font-size:.8rem}
+.meta-row:last-child{border:none}
+.meta-row .label{color:#64748b}
+.meta-row .value{color:#cbd5e1;font-family:'SF Mono',monospace;font-size:.75rem}
+footer{text-align:center;padding:1.5rem;color:#475569;font-size:.75rem;border-top:1px solid #1e293b}
+</style>
+</head>
+<body>
+<header>
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+<h1>${this.escHtml(title)}</h1>
+<span class="badge">UIDI Engine</span>
+<span class="status ok">● Live</span>
+</header>
+<main>
+<div class="grid">
+<div class="card"><h3>Distribution</h3><div class="val"><span class="status ok">● Active</span></div><div class="sub">CloudFront CDN</div></div>
+<div class="card"><h3>Origin</h3><div class="val">S3</div><div class="sub">${this.escHtml(bucketName)}</div></div>
+<div class="card"><h3>Edge Locations</h3><div class="val">450+</div><div class="sub">Global PoPs</div></div>
+<div class="card"><h3>Protocol</h3><div class="val">HTTPS</div><div class="sub">TLS 1.3 · redirect-to-https</div></div>
+</div>
+<div class="meta">
+<h3>Deployment Metadata</h3>
+<div class="meta-row"><span class="label">Deployed At</span><span class="value">${ts}</span></div>
+<div class="meta-row"><span class="label">Region</span><span class="value">us-east-1 (Global Edge)</span></div>
+<div class="meta-row"><span class="label">Engine</span><span class="value">UIDI SRE-Supreme v2</span></div>
+<div class="meta-row"><span class="label">Pattern</span><span class="value">EDGE_STATIC_SPA (Global Dashboard)</span></div>
+</div>
+</main>
+<footer>Provisioned by UIDI Engine · Project Naawi Runtime</footer>
+</body>
+</html>`;
+  }
+
+  private escHtml(s: string): string {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 }
