@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { GitBranch, ChevronDown } from "lucide-react";
+import { GitBranch, ChevronDown, Copy, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -25,6 +26,24 @@ interface DeploymentDiagramProps {
 }
 
 const PATTERN_DIAGRAMS: Record<string, string> = {
+  "cross-region-peered": `graph TD
+    A["eu-central-1: CreateVpc (data-vpc 10.1.0.0/16)"] --> B["eu-central-1: CreateSubnet (private)"]
+    D["us-east-1: CreateVpc (eks-vpc 10.0.0.0/16)"] --> E["us-east-1: CreateSubnets x3"]
+    A --> C["us-east-1: CreateVpcPeeringConnection"]
+    D --> C
+    C --> F{"Poll: Peering Status"}
+    F -->|pending-acceptance| G["eu-central-1: AcceptVpcPeeringConnection"]
+    G --> H{"Poll: Status = active"}
+    H -->|active| I["us-east-1: CreateRoute pcx to 10.1.0.0/16"]
+    H -->|active| J["eu-central-1: CreateRoute pcx to 10.0.0.0/16"]
+    E --> K["us-east-1: CreateEksCluster"]
+    I --> K
+    K --> L{"Poll: Cluster ACTIVE (~10m)"}
+    L -->|ACTIVE| M["us-east-1: CreateNodeGroup"]
+    M --> N["Validate: Cross-Region Connectivity"]
+    N --> O["Trivy: Scan VPC + EKS Config"]
+    O --> P["Deploy Complete"]`,
+
   "global-spa": `graph TD
     A[S3 Bucket] --> B[CloudFront OAC]
     A --> C[Upload index.html]
@@ -116,6 +135,7 @@ const PATTERN_DIAGRAMS: Record<string, string> = {
 export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const diagramDef = PATTERN_DIAGRAMS[workloadType];
 
@@ -139,6 +159,24 @@ export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProp
   const completedCount = steps.filter(s => s.status === "done").length;
   const totalCount = steps.length;
 
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(diagramDef);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = diagramDef;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
     <Collapsible defaultOpen>
       <CollapsibleTrigger className="flex items-center justify-between w-full p-2.5 rounded-lg border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors text-left">
@@ -152,7 +190,16 @@ export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProp
         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-180" />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-2 p-3 rounded-lg border border-border/50 bg-card">
+        <div className="mt-2 p-3 rounded-lg border border-border/50 bg-card relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 h-7 w-7 z-10"
+            onClick={handleCopy}
+            title="Copy Mermaid source"
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+          </Button>
           <div
             ref={containerRef}
             className="w-full overflow-x-auto [&_svg]:mx-auto [&_svg]:max-w-full"
