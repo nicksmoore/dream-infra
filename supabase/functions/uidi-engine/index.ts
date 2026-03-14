@@ -1583,9 +1583,15 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
         // 5. Detach & delete internet gateways
         dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeInternetGateways", Version: "2016-11-15", "Filter.1.Name": "attachment.vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        for (const gid of [...dBody.matchAll(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/g)].map(m => m[1])) {
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
+        console.log(`Destroy ${vpcId}: DescribeIGWs status=${dRes.status}, body=${dBody.slice(0, 500)}`);
+        const igwIds = [...dBody.matchAll(/<internetGatewayId>(igw-[a-f0-9]+)<\/internetGatewayId>/g)].map(m => m[1]);
+        for (const gid of igwIds) {
+          const detachRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DetachInternetGateway", Version: "2016-11-15", InternetGatewayId: gid, VpcId: vpcId }).toString(), AWS_KEY, AWS_SECRET);
+          const detachBody = await detachRes.text();
+          console.log(`DetachIGW ${gid}: status=${detachRes.status} ${detachRes.status !== 200 ? detachBody.slice(0, 200) : 'OK'}`);
+          const delRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteInternetGateway", Version: "2016-11-15", InternetGatewayId: gid }).toString(), AWS_KEY, AWS_SECRET);
+          const delBody = await delRes.text();
+          console.log(`DeleteIGW ${gid}: status=${delRes.status} ${delRes.status !== 200 ? delBody.slice(0, 200) : 'OK'}`);
           destroyed.push(`igw:${gid}`);
         }
 
