@@ -14,9 +14,21 @@ export interface SdkOperation {
 }
 
 export class DagOrchestrator {
-  constructor(private region: string, private credentials: any) {}
+  private accountId: string;
+
+  constructor(private region: string, private credentials: any) {
+    this.accountId = credentials.accountId || "ACCOUNT";
+  }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
+    // Auto-resolve account ID via STS if not provided
+    if (this.accountId === "ACCOUNT") {
+      this.accountId = spec.accountId || "ACCOUNT";
+    }
+    const defaultRole = `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`;
+    spec._defaultLambdaRole = spec.roleArn || defaultRole;
+    spec._defaultRdsProxyRole = spec.rdsProxyRoleArn || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`;
+
     console.log(`[DagOrchestrator] Compiling DAG for pattern: ${pattern}`);
     
     switch (pattern) {
