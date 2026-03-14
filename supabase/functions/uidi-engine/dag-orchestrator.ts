@@ -153,6 +153,7 @@ export class DagOrchestrator {
           CallerReference: intentHash,
           Comment: `${baseName} distribution`,
           Enabled: true,
+          DefaultRootObject: "index.html",
           Origins: {
             Quantity: 1,
             Items: [{
@@ -169,6 +170,15 @@ export class DagOrchestrator {
             MinTTL: 0,
             DefaultTTL: 86400,
             MaxTTL: 31536000,
+          },
+          CustomErrorResponses: {
+            Quantity: 1,
+            Items: [{
+              ErrorCode: 403,
+              ResponsePagePath: "/index.html",
+              ResponseCode: 200,
+              ErrorCachingMinTTL: 10,
+            }],
           },
           ViewerCertificate: enableCustomDomain
             ? {
@@ -376,6 +386,20 @@ export class DagOrchestrator {
           Handler: "index.handler",
         },
       });
+
+      // Auto-wire SQS → Lambda event source mapping
+      ops.push({
+        id: "lambda-esm",
+        service: "Lambda",
+        command: "CreateEventSourceMapping",
+        input: {
+          EventSourceArn: "ref(sqs-dlq-attrs.Attributes.QueueArn)",
+          FunctionName: `${baseName}-processor`,
+          BatchSize: 10,
+          Enabled: true,
+        },
+        dependency: "lambda-fn",
+      });
     }
 
     return ops;
@@ -490,29 +514,159 @@ export class DagOrchestrator {
   // ─── Pattern 5: Enterprise 3-Tier ───
   private async compileThreeTier(spec: any): Promise<SdkOperation[]> {
     const ops: SdkOperation[] = [];
+    const baseName = this.normalizeName(String(spec.name || "three-tier"), "three-tier", 36);
     const vpcCidr = "10.0.0.0/16";
 
     ops.push({
       id: "vpc",
       service: "EC2",
       command: "CreateVpc",
-      input: { CidrBlock: vpcCidr, TagSpecification: [{ ResourceType: "vpc", Tags: [{ Key: "Name", Value: spec.name }] }] }
+      input: { CidrBlock: vpcCidr, TagSpecification: [{ ResourceType: "vpc", Tags: [{ Key: "Name", Value: baseName }] }] }
     });
 
-    const azs = ["us-east-1a", "us-east-1b"];
+    // Internet Gateway for public access
+    ops.push({
+      id: "igw",
+      service: "EC2",
+      command: "CreateInternetGateway",
+      input: { TagSpecification: [{ ResourceType: "internet-gateway", Tags: [{ Key: "Name", Value: `${baseName}-igw` }] }] },
+    });
+
+    ops.push({
+      id: "igw-attach",
+      service: "EC2",
+      command: "AttachInternetGateway",
+      input: {
+        InternetGatewayId: "ref(igw.InternetGatewayId)",
+        VpcId: "ref(vpc.VpcId)",
+      },
+      dependency: "igw",
+    });
+
+    // Web-tier security group (HTTP/HTTPS)
+    ops.push({
+      id: "sg-web",
+      service: "EC2",
+      command: "CreateSecurityGroup",
+      input: {
+        GroupName: `${baseName}-web-sg`,
+        Description: "Web tier - HTTP/HTTPS ingress",
+        VpcId: "ref(vpc.VpcId)",
+      },
+      dependency: "vpc",
+    });
+
+    ops.push({
+      id: "sg-web-ingress-http",
+      service: "EC2",
+      command: "AuthorizeSecurityGroupIngress",
+      input: {
+        GroupId: "ref(sg-web.GroupId)",
+        IpProtocol: "tcp",
+        FromPort: 80,
+        ToPort: 80,
+        CidrIp: "0.0.0.0/0",
+      },
+      dependency: "sg-web",
+    });
+
+    ops.push({
+      id: "sg-web-ingress-https",
+      service: "EC2",
+      command: "AuthorizeSecurityGroupIngress",
+      input: {
+        GroupId: "ref(sg-web.GroupId)",
+        IpProtocol: "tcp",
+        FromPort: 443,
+        ToPort: 443,
+        CidrIp: "0.0.0.0/0",
+      },
+      dependency: "sg-web",
+    });
+
+    // App-tier security group (only from web tier)
+    ops.push({
+      id: "sg-app",
+      service: "EC2",
+      command: "CreateSecurityGroup",
+      input: {
+        GroupName: `${baseName}-app-sg`,
+        Description: "App tier - ingress from web tier only",
+        VpcId: "ref(vpc.VpcId)",
+      },
+      dependency: "vpc",
+    });
+
+    ops.push({
+      id: "sg-app-ingress",
+      service: "EC2",
+      command: "AuthorizeSecurityGroupIngress",
+      input: {
+        GroupId: "ref(sg-app.GroupId)",
+        IpProtocol: "tcp",
+        FromPort: 8080,
+        ToPort: 8080,
+        SourceSecurityGroupId: "ref(sg-web.GroupId)",
+      },
+      dependency: "sg-app",
+    });
+
+    // DB-tier security group (only from app tier)
+    ops.push({
+      id: "sg-db",
+      service: "EC2",
+      command: "CreateSecurityGroup",
+      input: {
+        GroupName: `${baseName}-db-sg`,
+        Description: "DB tier - ingress from app tier only",
+        VpcId: "ref(vpc.VpcId)",
+      },
+      dependency: "vpc",
+    });
+
+    ops.push({
+      id: "sg-db-ingress",
+      service: "EC2",
+      command: "AuthorizeSecurityGroupIngress",
+      input: {
+        GroupId: "ref(sg-db.GroupId)",
+        IpProtocol: "tcp",
+        FromPort: 5432,
+        ToPort: 5432,
+        SourceSecurityGroupId: "ref(sg-app.GroupId)",
+      },
+      dependency: "sg-db",
+    });
+
+    // Subnets across AZs
+    const azs = [`${this.region}a`, `${this.region}b`];
     azs.forEach((az, i) => {
-      const cidr = `10.0.${i}.0/24`;
-      const id = `subnet-${i}`;
+      // Public subnet (web tier)
       ops.push({
-        id: id,
+        id: `subnet-pub-${i}`,
         service: "EC2",
         command: "CreateSubnet",
         input: {
           VpcId: "ref(vpc.VpcId)",
-          CidrBlock: cidr,
-          AvailabilityZone: az
+          CidrBlock: `10.0.${i}.0/24`,
+          AvailabilityZone: az,
+          TagSpecification: [{ ResourceType: "subnet", Tags: [{ Key: "Name", Value: `${baseName}-pub-${az}` }, { Key: "Tier", Value: "web" }] }],
         },
-        dependency: "vpc"
+        dependency: "vpc",
+      });
+
+      // Private subnet (app + db tier)
+      ops.push({
+        id: `subnet-priv-${i}`,
+        service: "EC2",
+        command: "CreateSubnet",
+        input: {
+          VpcId: "ref(vpc.VpcId)",
+          CidrBlock: `10.0.${10 + i}.0/24`,
+          AvailabilityZone: az,
+          TagSpecification: [{ ResourceType: "subnet", Tags: [{ Key: "Name", Value: `${baseName}-priv-${az}` }, { Key: "Tier", Value: "app" }] }],
+        },
+        dependency: "vpc",
       });
     });
 
