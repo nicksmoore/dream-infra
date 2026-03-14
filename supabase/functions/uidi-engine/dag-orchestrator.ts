@@ -98,7 +98,7 @@ export class DagOrchestrator {
       input: {
         FunctionName: `${bucketName}-security-headers`,
         Runtime: "nodejs18.x",
-        Role: "arn:aws:iam::ACCOUNT:role/EdgeLambdaRole",
+        Role: spec._defaultLambdaRole || `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`,
         Handler: "index.handler",
         Code: { ZipFile: btoa("/* Security Headers Logic */") }
       },
