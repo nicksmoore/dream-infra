@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,8 @@ function estimateLocalStepCost(step: OrchestrationStep): number {
   return 15;
 }
 
+const EMPTY_OPS: any[] = [];
+
 export function OrchestrationPanel({
   resources,
   region,
@@ -64,9 +66,10 @@ export function OrchestrationPanel({
   workloadType = "general",
   instanceType = "t3.medium",
   os = "amazon-linux-2023",
-  naawiOperations = [],
+  naawiOperations,
   onComplete,
 }: OrchestrationPanelProps) {
+  const stableOps = useMemo(() => naawiOperations ?? EMPTY_OPS, [naawiOperations]);
   const [steps, setSteps] = useState<OrchestrationStep[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
@@ -80,8 +83,8 @@ export function OrchestrationPanel({
       const result: OrchestrationStep[] = [];
 
       // ── Project Naawi: Granular SDK Operations (Highest Priority) ──
-      if (naawiOperations && naawiOperations.length > 0) {
-        naawiOperations.forEach(op => {
+      if (stableOps && stableOps.length > 0) {
+        stableOps.forEach(op => {
           result.push({
             id: op.id,
             name: `${op.service}.${op.command}`,
@@ -155,13 +158,13 @@ export function OrchestrationPanel({
 
     setSteps(buildSteps());
     setPlanResult(null); // Reset plan when input changes
-  }, [naawiOperations, resources, region, environment, workloadType, instanceType, os]);
+  }, [stableOps, resources, region, environment, workloadType, instanceType, os]);
 
   async function runPlan() {
     setIsPlanning(true);
     try {
-      if (naawiOperations.length > 0) {
-        const result = await naawiPlan({ operations: naawiOperations, region });
+      if (stableOps.length > 0) {
+        const result = await naawiPlan({ operations: stableOps, region });
         if (result.status !== "success") throw new Error(result.error || "Plan failed");
         setPlanResult(result.details as PlanResult);
         toast({ title: "Naawi Plan Ready", description: "Review diff + estimated cost before execution." });
@@ -208,10 +211,10 @@ export function OrchestrationPanel({
   async function runOrchestration(approved = false) {
     setIsRunning(true);
 
-    if (naawiOperations.length > 0) {
+    if (stableOps.length > 0) {
       try {
         setSteps(prev => prev.map(s => ({ ...s, status: "running" })));
-        const result = await naawiExecute({ operations: naawiOperations, region }, approved);
+        const result = await naawiExecute({ operations: stableOps, region }, approved);
         
         if (result.status === "error") throw new Error(result.error || result.message);
 
@@ -269,7 +272,7 @@ export function OrchestrationPanel({
     }
   };
 
-  const hasNaawi = naawiOperations.length > 0;
+  const hasNaawi = stableOps.length > 0;
   const hasSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
 
   return (
