@@ -35,6 +35,36 @@ const DEFAULT_INTENT: ParsedIntent = {
   os: "amazon-linux-2023",
 };
 
+const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
+  EDGE_STATIC_SPA: "global-spa",
+  SERVICE_MESH: "service-mesh",
+  EVENT_PIPELINE: "event-pipeline",
+  INTERNAL_API: "internal-api",
+  THREE_TIER: "three-tier",
+};
+
+const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
+  general: ["ec2"],
+  compute: ["ec2"],
+  memory: ["ec2"],
+  storage: ["ec2", "ebs"],
+  accelerated: ["ec2"],
+  hpc: ["ec2"],
+  "global-spa": ["s3", "cloudfront", "route53", "lambda"],
+  "service-mesh": ["eks", "app-mesh", "alb"],
+  "event-pipeline": ["sqs", "lambda", "dynamodb", "eventbridge"],
+  "internal-api": ["api-gateway", "lambda", "rds-proxy", "rds"],
+  "three-tier": ["asg", "alb", "rds", "elasticache", "vpc", "subnets"],
+};
+
+const normalizeWorkload = (value?: string): WorkloadType | null => {
+  if (!value) return null;
+  if (value in ARCHETYPE_TO_WORKLOAD) return ARCHETYPE_TO_WORKLOAD[value];
+  const normalized = value.toLowerCase().replace(/_/g, "-");
+  if (normalized in WORKLOAD_TO_RESOURCES) return normalized as WorkloadType;
+  return null;
+};
+
 export default function Index() {
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
