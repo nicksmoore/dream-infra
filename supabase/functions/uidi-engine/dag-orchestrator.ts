@@ -306,7 +306,7 @@ export class DagOrchestrator {
         FunctionName: `${baseName}-processor`,
         Runtime: "nodejs18.x",
         Role: spec.roleArn,
-        Code: { ZipFile: new TextEncoder().encode("/* Processor Logic */") },
+        Code: { ZipFile: btoa("/* Processor Logic */") },
         Handler: "index.handler"
       }
     });
