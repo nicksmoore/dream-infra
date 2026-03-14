@@ -151,6 +151,7 @@ export class DagOrchestrator {
       input: {
         DistributionConfig: {
           CallerReference: intentHash,
+          Comment: `${baseName} distribution`,
           Enabled: true,
           Origins: {
             Quantity: 1,
