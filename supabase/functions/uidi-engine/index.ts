@@ -1,23 +1,53 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 
-// AWS SDK v3 Imports (Deno npm specifiers)
-import { EC2Client, DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand } from "npm:@aws-sdk/client-ec2";
-import { S3Client, CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand } from "npm:@aws-sdk/client-s3";
-import { CloudFrontClient, CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand } from "npm:@aws-sdk/client-cloudfront";
-import { Route53Client, ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand } from "npm:@aws-sdk/client-route-53";
-import { LambdaClient, CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand, PublishVersionCommand } from "npm:@aws-sdk/client-lambda";
-import { ACMClient, RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand } from "npm:@aws-sdk/client-acm";
-import { EKSClient, CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand } from "npm:@aws-sdk/client-eks";
-import { AppMeshClient, CreateMeshCommand, CreateVirtualNodeCommand } from "npm:@aws-sdk/client-app-mesh";
-import { ElasticLoadBalancingV2Client, CreateLoadBalancerCommand, CreateTargetGroupCommand, DescribeLoadBalancersCommand } from "npm:@aws-sdk/client-elastic-load-balancing-v2";
-import { SQSClient, CreateQueueCommand, GetQueueAttributesCommand, SetQueueAttributesCommand } from "npm:@aws-sdk/client-sqs";
-import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from "npm:@aws-sdk/client-dynamodb";
-import { EventBridgeClient, PutRuleCommand, PutTargetsCommand } from "npm:@aws-sdk/client-eventbridge";
-import { ApiGatewayV2Client, CreateApiCommand, GetApiCommand } from "npm:@aws-sdk/client-apigatewayv2";
-import { RDSClient, CreateDBClusterCommand, CreateDBProxyCommand, CreateDBInstanceCommand, DescribeDBClustersCommand } from "npm:@aws-sdk/client-rds";
-import { AutoScalingClient, CreateAutoScalingGroupCommand, DescribeAutoScalingGroupsCommand } from "npm:@aws-sdk/client-auto-scaling";
-import { ElastiCacheClient, CreateReplicationGroupCommand, DescribeReplicationGroupsCommand } from "npm:@aws-sdk/client-elasticache";
+// ───── Dynamic AWS SDK Loader (prevents bundle timeout) ─────
+// SDK modules are loaded on-demand at runtime, not at bundle time.
+
+const SDK_MODULE_MAP: Record<string, string> = {
+  EC2: "npm:@aws-sdk/client-ec2",
+  S3: "npm:@aws-sdk/client-s3",
+  CloudFront: "npm:@aws-sdk/client-cloudfront",
+  Route53: "npm:@aws-sdk/client-route-53",
+  Lambda: "npm:@aws-sdk/client-lambda",
+  ACM: "npm:@aws-sdk/client-acm",
+  EKS: "npm:@aws-sdk/client-eks",
+  AppMesh: "npm:@aws-sdk/client-app-mesh",
+  ELBv2: "npm:@aws-sdk/client-elastic-load-balancing-v2",
+  SQS: "npm:@aws-sdk/client-sqs",
+  DynamoDB: "npm:@aws-sdk/client-dynamodb",
+  EventBridge: "npm:@aws-sdk/client-eventbridge",
+  ApiGatewayV2: "npm:@aws-sdk/client-apigatewayv2",
+  RDS: "npm:@aws-sdk/client-rds",
+  AutoScaling: "npm:@aws-sdk/client-auto-scaling",
+  ElastiCache: "npm:@aws-sdk/client-elasticache",
+};
+
+const _sdkCache: Record<string, any> = {};
+
+async function loadSdkModule(service: string): Promise<any> {
+  if (_sdkCache[service]) return _sdkCache[service];
+  const specifier = SDK_MODULE_MAP[service];
+  if (!specifier) throw new Error(`Unknown SDK service: ${service}`);
+  const mod = await import(specifier);
+  _sdkCache[service] = mod;
+  return mod;
+}
+
+async function getClient(service: string, region: string, credentials: any): Promise<any> {
+  const mod = await loadSdkModule(service);
+  // All AWS SDK v3 clients follow the pattern: <Service>Client
+  const clientName = Object.keys(mod).find(k => k.endsWith("Client") && k !== "Client");
+  if (!clientName) throw new Error(`No Client export found in ${service} SDK`);
+  return new mod[clientName]({ region, credentials });
+}
+
+async function getCommand(service: string, commandName: string): Promise<any> {
+  const mod = await loadSdkModule(service);
+  const CommandClass = mod[commandName];
+  if (!CommandClass) throw new Error(`Command ${commandName} not found in ${service} SDK`);
+  return CommandClass;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -2022,43 +2052,7 @@ interface ExecutionState {
   [opId: string]: Record<string, any>;
 }
 
-// Client Registry for Project Naawi
-const CLIENT_MAP: Record<string, any> = {
-  S3: S3Client,
-  EC2: EC2Client,
-  CloudFront: CloudFrontClient,
-  Route53: Route53Client,
-  Lambda: LambdaClient,
-  ACM: ACMClient,
-  EKS: EKSClient,
-  AppMesh: AppMeshClient,
-  ELBv2: ElasticLoadBalancingV2Client,
-  SQS: SQSClient,
-  DynamoDB: DynamoDBClient,
-  EventBridge: EventBridgeClient,
-  ApiGatewayV2: ApiGatewayV2Client,
-  RDS: RDSClient,
-  AutoScaling: AutoScalingClient,
-  ElastiCache: ElastiCacheClient,
-};
-
-// Command Registry for Project Naawi
-const COMMAND_MAP: Record<string, any> = {
-  // S3
-  CreateBucketCommand, PutBucketWebsiteCommand, HeadBucketCommand, GetBucketWebsiteCommand, PutBucketPolicyCommand,
-  // EC2
-  DescribeInstancesCommand, RunInstancesCommand, CreateVpcCommand, CreateSubnetCommand,
-  // CloudFront
-  CreateDistributionCommand, CreateInvalidationCommand, GetDistributionCommand, CreateOriginAccessControlCommand,
-  // Route53
-  ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, GetHostedZoneCommand,
-  // Lambda
-  CreateFunctionCommand, CreateEventSourceMappingCommand, PutFunctionConcurrencyCommand, GetFunctionCommand, AddPermissionCommand, PublishVersionCommand,
-  // ACM
-  RequestCertificateCommand, DescribeCertificateCommand, ListCertificatesCommand,
-  // EKS
-  CreateClusterCommand, DescribeClusterCommand, CreateNodegroupCommand,
-};
+// Client + Command loading now uses dynamic imports via getClient() and getCommand()
 
 function resolveReferences(input: any, state: ExecutionState): any {
   if (typeof input !== "object" || input === null) return input;
@@ -2094,38 +2088,33 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
     let status: DiscoveryReport["status"] = "NOT_FOUND";
 
     try {
-      const ClientClass = CLIENT_MAP[service];
-      if (ClientClass) {
-        const client = new ClientClass({ region: (service === "CloudFront" || service === "Route53" || service === "ACM" || service === "Lambda") ? "us-east-1" : region, credentials });
+      if (SDK_MODULE_MAP[service] && identifiers.length > 0) {
+        const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
+        const client = await getClient(service, globalServices.includes(service) ? "us-east-1" : region, credentials);
         
         if (service === "S3") {
+          const HeadBucketCmd = await getCommand("S3", "HeadBucketCommand");
           for (const name of identifiers) {
             try {
-              const head = await client.send(new HeadBucketCommand({ Bucket: name }));
+              const head = await client.send(new HeadBucketCmd({ Bucket: name }));
               liveState = { BucketName: name, ...head };
               status = "MATCH";
               break;
-            } catch (e) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
+            } catch (e: any) { if (e.name !== "NotFound" && e.$metadata?.httpStatusCode !== 404) throw e; }
           }
         } else if (service === "EC2") {
-          for (const id of identifiers) {
+          const DescribeCmd = await getCommand("EC2", "DescribeInstancesCommand");
+          for (const resId of identifiers) {
             try {
-              const desc = await client.send(new DescribeInstancesCommand({ InstanceIds: [id] }));
+              const desc = await client.send(new DescribeCmd({ InstanceIds: [resId] }));
               const instance = desc.Reservations?.[0]?.Instances?.[0];
               if (instance) { liveState = instance; status = "MATCH"; break; }
-            } catch (e) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
+            } catch (e: any) { if (e.name !== "InvalidInstanceID.NotFound") throw e; }
           }
-        } else if (service === "Route53") {
-          // Discovery for Hosted Zones etc.
         }
       }
 
-      reports.push({
-        operationId: id,
-        status,
-        liveState,
-        suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE",
-      });
+      reports.push({ operationId: id, status, liveState, suggestedAction: status === "NOT_FOUND" ? "CREATE" : "NONE" });
     } catch (e) {
       reports.push({ operationId: id, status: "ERROR", suggestedAction: "NONE" });
     }
@@ -2146,24 +2135,20 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
     }
 
     try {
-      const ClientClass = CLIENT_MAP[op.service];
-      const CommandClass = COMMAND_MAP[op.command];
-
-      if (!ClientClass || !CommandClass) {
-        throw new Error(`Naawi Error: Unsupported service/command - ${op.service}.${op.command}`);
+      if (!SDK_MODULE_MAP[op.service]) {
+        throw new Error(`Naawi Error: Unsupported service - ${op.service}`);
       }
 
-      const client = new ClientClass({ 
-        region: (op.service === "CloudFront" || op.service === "Route53" || op.service === "ACM" || op.service === "Lambda") ? "us-east-1" : region, 
-        credentials 
-      });
+      const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
+      const client = await getClient(op.service, globalServices.includes(op.service) ? "us-east-1" : region, credentials);
+      const CommandClass = await getCommand(op.service, op.command);
       const commandInstance = new CommandClass(resolvedInput);
       const result = await client.send(commandInstance);
 
       state[op.id] = result || {};
       history.push({ opId: op.id, status: "SUCCESS", result });
 
-    } catch (e) {
+    } catch (e: any) {
       console.error(`Execution failed at ${op.id}:`, e);
       history.push({ opId: op.id, status: "FAILED", error: e.message });
       return err("naawi", "execute", `Execution Halted at ${op.id}: ${e.message}`, { history, state_at_failure: state });
