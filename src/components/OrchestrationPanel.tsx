@@ -510,8 +510,12 @@ export function OrchestrationPanel({
 
     setIsRollingBack(false);
     setStepOutputs({});
+    if (failures > 0) {
+      setShowForceNuke(true);
+    }
     toast({
       title: failures === 0 ? "Stack destroyed" : `Teardown finished with ${failures} failure(s)`,
+      description: failures > 0 ? "Use Force Nuke to clean up stuck resources." : undefined,
       variant: failures === 0 ? "default" : "destructive",
     });
   }, [steps, stepOutputs]);
