@@ -28,7 +28,7 @@ const corsHeaders = {
 // ───── Types ─────
 interface ExecuteRequest {
   intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
-  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke";
+  action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
   approved?: boolean;
