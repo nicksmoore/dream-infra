@@ -337,6 +337,50 @@ export function OrchestrationPanel({
         toast({ title: `${step.name} complete`, description: result.message });
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : "Failed";
+
+        // EKS deploy timeout recovery: the edge function may have timed out after
+        // firing CreateCluster. Check if the cluster exists and switch to polling.
+        if (step.intent === "eks" && step.action === "deploy" && step.spec.cluster_name) {
+          try {
+            console.log(`EKS deploy error — checking if cluster was created before timeout...`);
+            const checkResult = await executeIntent({
+              intent: "eks",
+              action: "wait",
+              spec: { cluster_name: step.spec.cluster_name, region: step.spec.region || "us-east-1" },
+            });
+            const checkDetails = checkResult.details as Record<string, unknown> | undefined;
+
+            if (checkResult.status === "pending" && checkDetails?.async_job) {
+              // Cluster IS creating — switch to polling mode instead of error
+              outputs[step.id] = checkDetails;
+              setStepOutputs({ ...outputs });
+              setSteps(prev => prev.map((s, idx) =>
+                idx === i ? { ...s, status: "polling" as any, output: `Recovered from timeout — ${checkResult.message}`, asyncJob: true } : s
+              ));
+              if (depId) saveProgress(depId, steps, outputs, "running");
+              toast({ title: `${step.name} recovered`, description: "Edge function timed out but cluster is provisioning. Polling..." });
+
+              const success = await pollAsyncStep(i, step, outputs, depId, steps);
+              if (!success) { setIsRunning(false); return; }
+              continue;
+            }
+
+            if (checkResult.status === "success" && checkDetails?.async_complete) {
+              // Cluster is already ACTIVE
+              outputs[step.id] = checkDetails;
+              setStepOutputs({ ...outputs });
+              setSteps(prev => prev.map((s, idx) =>
+                idx === i ? { ...s, status: "done", output: `Recovered — cluster ACTIVE`, asyncJob: false } : s
+              ));
+              if (depId) saveProgress(depId, steps, outputs, "running");
+              toast({ title: `${step.name} is ACTIVE`, description: "Recovered from timeout." });
+              continue;
+            }
+          } catch {
+            // Recovery check also failed — fall through to normal error handling
+          }
+        }
+
         setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: "error", output: errMsg } : s));
 
         if (depId) {
