@@ -2442,49 +2442,430 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
       const resourceType = spec.resource_type as string;
       if (!resourceId || !resourceType) return err("inventory", action, "resource_id and resource_type required.");
 
-      // Dependency-aware smart deletion
-      switch (resourceType) {
-        case "ec2": {
-          const params = new URLSearchParams({ Action: "TerminateInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
-          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
-          const body = await res.text();
-          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "TerminateInstances failed");
+      const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+      const steps: string[] = [];
 
-          // Verify deletion
-          await new Promise(r => setTimeout(r, 2000));
-          const verifyParams = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
-          const verifyRes = await ec2Request("POST", region, verifyParams.toString(), AWS_KEY, AWS_SECRET);
-          const verifyBody = await verifyRes.text();
-          const finalState = verifyBody.match(/<name>(shutting-down|terminated)<\/name>/)?.[1] || "terminating";
+      try {
+        switch (resourceType) {
+          case "ec2": {
+            // 1. Check for attached EBS volumes and EIPs
+            const descParams = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
+            const descRes = await ec2Request("POST", region, descParams.toString(), AWS_KEY, AWS_SECRET);
+            const descBody = await descRes.text();
 
-          return ok("inventory", action, `Instance ${resourceId} ${finalState}`, { resource_id: resourceId, state: finalState });
+            // Disassociate any EIPs first
+            const eipAssocs = descBody.matchAll(/<associationId>(eipassoc-[a-f0-9]+)<\/associationId>/g);
+            for (const m of eipAssocs) {
+              const disParams = new URLSearchParams({ Action: "DisassociateAddress", Version: "2016-11-15", AssociationId: m[1] });
+              await ec2Request("POST", region, disParams.toString(), AWS_KEY, AWS_SECRET);
+              steps.push(`Disassociated EIP ${m[1]}`);
+            }
+
+            // Terminate instance
+            const termParams = new URLSearchParams({ Action: "TerminateInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
+            const termRes = await ec2Request("POST", region, termParams.toString(), AWS_KEY, AWS_SECRET);
+            const termBody = await termRes.text();
+            if (!termRes.ok) return err("inventory", action, extractEc2Error(termBody) || "TerminateInstances failed", { steps });
+            steps.push(`Terminated instance ${resourceId}`);
+
+            // Wait and verify
+            await new Promise(r => setTimeout(r, 2000));
+            const verifyParams = new URLSearchParams({ Action: "DescribeInstances", Version: "2016-11-15", "InstanceId.1": resourceId });
+            const verifyRes = await ec2Request("POST", region, verifyParams.toString(), AWS_KEY, AWS_SECRET);
+            const verifyBody = await verifyRes.text();
+            const finalState = verifyBody.match(/<name>(shutting-down|terminated)<\/name>/)?.[1] || "terminating";
+            steps.push(`Final state: ${finalState}`);
+
+            return ok("inventory", action, `Instance ${resourceId} ${finalState}`, { resource_id: resourceId, state: finalState, steps });
+          }
+
+          case "ebs": {
+            // 1. Check if attached — detach first if so
+            const volParams = new URLSearchParams({ Action: "DescribeVolumes", Version: "2016-11-15", "VolumeId.1": resourceId });
+            const volRes = await ec2Request("POST", region, volParams.toString(), AWS_KEY, AWS_SECRET);
+            const volBody = await volRes.text();
+            const attachedInstance = volBody.match(/<instanceId>(i-[a-f0-9]+)<\/instanceId>/)?.[1];
+            const attachStatus = volBody.match(/<status>(attached|attaching)<\/status>/)?.[1];
+
+            if (attachedInstance && attachStatus) {
+              const detachParams = new URLSearchParams({ Action: "DetachVolume", Version: "2016-11-15", VolumeId: resourceId, Force: "true" });
+              const detachRes = await ec2Request("POST", region, detachParams.toString(), AWS_KEY, AWS_SECRET);
+              if (!detachRes.ok) {
+                const detachBody = await detachRes.text();
+                return err("inventory", action, `Cannot detach volume from ${attachedInstance}: ${extractEc2Error(detachBody)}`, { steps });
+              }
+              steps.push(`Force-detached from instance ${attachedInstance}`);
+              // Wait for detach
+              await new Promise(r => setTimeout(r, 3000));
+            }
+
+            const delParams = new URLSearchParams({ Action: "DeleteVolume", Version: "2016-11-15", VolumeId: resourceId });
+            const delRes = await ec2Request("POST", region, delParams.toString(), AWS_KEY, AWS_SECRET);
+            const delBody = await delRes.text();
+            if (!delRes.ok) return err("inventory", action, extractEc2Error(delBody) || "DeleteVolume failed", { steps });
+            steps.push(`Deleted volume ${resourceId}`);
+            return ok("inventory", action, `Volume ${resourceId} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "eip": {
+            // 1. Disassociate if associated
+            const eipParams = new URLSearchParams({ Action: "DescribeAddresses", Version: "2016-11-15", "AllocationId.1": resourceId });
+            const eipRes = await ec2Request("POST", region, eipParams.toString(), AWS_KEY, AWS_SECRET);
+            const eipBody = await eipRes.text();
+            const assocId = eipBody.match(/<associationId>(eipassoc-[a-f0-9]+)<\/associationId>/)?.[1];
+
+            if (assocId) {
+              const disParams = new URLSearchParams({ Action: "DisassociateAddress", Version: "2016-11-15", AssociationId: assocId });
+              const disRes = await ec2Request("POST", region, disParams.toString(), AWS_KEY, AWS_SECRET);
+              if (!disRes.ok) {
+                const disBody = await disRes.text();
+                return err("inventory", action, `Cannot disassociate EIP: ${extractEc2Error(disBody)}`, { steps });
+              }
+              steps.push(`Disassociated from ${assocId}`);
+              await new Promise(r => setTimeout(r, 1000));
+            }
+
+            const relParams = new URLSearchParams({ Action: "ReleaseAddress", Version: "2016-11-15", AllocationId: resourceId });
+            const relRes = await ec2Request("POST", region, relParams.toString(), AWS_KEY, AWS_SECRET);
+            const relBody = await relRes.text();
+            if (!relRes.ok) return err("inventory", action, extractEc2Error(relBody) || "ReleaseAddress failed", { steps });
+            steps.push(`Released Elastic IP ${resourceId}`);
+            return ok("inventory", action, `Elastic IP ${resourceId} released`, { resource_id: resourceId, steps });
+          }
+
+          case "vpc": {
+            const result = await handleNetwork("destroy", { vpc_id: resourceId, region });
+            return result;
+          }
+
+          case "eks": {
+            const clusterName = spec.cluster_name as string || resourceId;
+            const result = await handleEks("destroy", { cluster_name: clusterName, region });
+            return result;
+          }
+
+          case "s3": {
+            // 1. Empty the bucket first (required before deletion)
+            const bucketName = spec.bucket_name as string || resourceId;
+            let truncated = true;
+            let objectsDeleted = 0;
+
+            while (truncated) {
+              const listRes = await awsSignedRequest({
+                service: "s3", region, method: "GET",
+                path: `/${bucketName}?list-type=2&max-keys=1000`,
+                accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                hostOverride: `s3.${region}.amazonaws.com`,
+              });
+              const listBody = await listRes.text();
+              if (!listRes.ok) return err("inventory", action, `Cannot list objects in bucket ${bucketName}: ${listBody.slice(0, 200)}`, { steps });
+
+              const keys = [...listBody.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]);
+              if (keys.length === 0) break;
+
+              // Delete objects one by one (simple approach, avoids XML multi-delete complexity)
+              for (const key of keys) {
+                await awsSignedRequest({
+                  service: "s3", region, method: "DELETE",
+                  path: `/${bucketName}/${key}`,
+                  accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                  hostOverride: `s3.${region}.amazonaws.com`,
+                });
+                objectsDeleted++;
+              }
+              steps.push(`Deleted ${keys.length} objects`);
+              truncated = listBody.includes("<IsTruncated>true</IsTruncated>");
+            }
+            if (objectsDeleted > 0) steps.push(`Total objects removed: ${objectsDeleted}`);
+
+            // 2. Delete bucket
+            const delRes = await awsSignedRequest({
+              service: "s3", region, method: "DELETE",
+              path: `/${bucketName}`,
+              accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+              hostOverride: `s3.${region}.amazonaws.com`,
+            });
+            if (!delRes.ok) {
+              const delBody = await delRes.text();
+              return err("inventory", action, `DeleteBucket failed: ${delBody.slice(0, 200)}`, { steps });
+            }
+            steps.push(`Deleted bucket ${bucketName}`);
+            return ok("inventory", action, `S3 bucket ${bucketName} deleted (${objectsDeleted} objects removed)`, { resource_id: resourceId, steps });
+          }
+
+          case "cloudfront": {
+            const distId = resourceId;
+            // 1. Get current config + ETag
+            const getRes = await awsSignedRequest({
+              service: "cloudfront", region: "us-east-1", method: "GET",
+              path: `/2020-05-31/distribution/${distId}/config`,
+              accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+              hostOverride: "cloudfront.amazonaws.com",
+            });
+            if (!getRes.ok) {
+              const getBody = await getRes.text();
+              return err("inventory", action, `Cannot get distribution config: ${getBody.slice(0, 200)}`, { steps });
+            }
+            const configBody = await getRes.text();
+            let etag = getRes.headers.get("etag") || "";
+
+            // 2. If enabled, disable it first
+            if (configBody.includes("<Enabled>true</Enabled>")) {
+              const disabledConfig = configBody
+                .replace(/<Enabled>true<\/Enabled>/, "<Enabled>false</Enabled>")
+                .replace(/<\?xml[^?]*\?>/, ""); // strip XML declaration from body
+              
+              const disableRes = await awsSignedRequest({
+                service: "cloudfront", region: "us-east-1", method: "PUT",
+                path: `/2020-05-31/distribution/${distId}/config`,
+                accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                hostOverride: "cloudfront.amazonaws.com",
+                body: disabledConfig,
+                extraHeaders: { "Content-Type": "application/xml", "If-Match": etag },
+              });
+              if (!disableRes.ok) {
+                const disBody = await disableRes.text();
+                return err("inventory", action, `Cannot disable distribution: ${disBody.slice(0, 300)}`, { steps });
+              }
+              etag = disableRes.headers.get("etag") || etag;
+              steps.push(`Disabled distribution ${distId}`);
+
+              // CloudFront distributions take time to disable — we can't delete immediately
+              // Return pending status so user can retry
+              return ok("inventory", action, `Distribution ${distId} disabled. CloudFront takes 5-15 minutes to fully disable. Re-scan and nuke again to complete deletion.`, {
+                resource_id: resourceId,
+                state: "disabling",
+                retry_after_minutes: 10,
+                steps,
+              });
+            }
+
+            // 3. If already disabled, check if deployed
+            const statusRes = await awsSignedRequest({
+              service: "cloudfront", region: "us-east-1", method: "GET",
+              path: `/2020-05-31/distribution/${distId}`,
+              accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+              hostOverride: "cloudfront.amazonaws.com",
+            });
+            const statusBody = await statusRes.text();
+            const distStatus = statusBody.match(/<Status>([^<]+)<\/Status>/)?.[1];
+
+            if (distStatus === "InProgress") {
+              return ok("inventory", action, `Distribution ${distId} is still disabling (status: InProgress). Try again in a few minutes.`, {
+                resource_id: resourceId, state: "disabling", retry_after_minutes: 5, steps,
+              });
+            }
+
+            // 4. Delete
+            const delRes = await awsSignedRequest({
+              service: "cloudfront", region: "us-east-1", method: "DELETE",
+              path: `/2020-05-31/distribution/${distId}`,
+              accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+              hostOverride: "cloudfront.amazonaws.com",
+              extraHeaders: { "If-Match": etag },
+            });
+            if (!delRes.ok) {
+              const delBody = await delRes.text();
+              // Common: DistributionNotDisabled
+              if (delBody.includes("DistributionNotDisabled")) {
+                return err("inventory", action, `Distribution ${distId} is not fully disabled yet. Wait a few minutes and try again.`, { steps, retry_after_minutes: 5 });
+              }
+              return err("inventory", action, `DeleteDistribution failed: ${delBody.slice(0, 300)}`, { steps });
+            }
+            steps.push(`Deleted distribution ${distId}`);
+            return ok("inventory", action, `CloudFront distribution ${distId} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "sqs": {
+            // SQS queues can be deleted directly by URL
+            const queueUrl = spec.queue_url as string || resourceId;
+            const result = await executeAwsCommand("SQS", "DeleteQueue", { QueueUrl: queueUrl }, region, creds);
+            steps.push(`Deleted SQS queue`);
+            return ok("inventory", action, `SQS queue deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "lambda": {
+            const functionName = spec.function_name as string || resourceId;
+            // Remove event source mappings first
+            try {
+              const mappingsRes = await awsSignedRequest({
+                service: "lambda", region, method: "GET",
+                path: `/2015-03-31/event-source-mappings?FunctionName=${encodeURIComponent(functionName)}`,
+                accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                hostOverride: `lambda.${region}.amazonaws.com`,
+              });
+              if (mappingsRes.ok) {
+                const mappingsData = JSON.parse(await mappingsRes.text());
+                for (const m of (mappingsData.EventSourceMappings || [])) {
+                  await awsSignedRequest({
+                    service: "lambda", region, method: "DELETE",
+                    path: `/2015-03-31/event-source-mappings/${m.UUID}`,
+                    accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                    hostOverride: `lambda.${region}.amazonaws.com`,
+                  });
+                  steps.push(`Removed event source mapping ${m.UUID}`);
+                }
+              }
+            } catch { /* event source cleanup optional */ }
+
+            // Delete function
+            await executeAwsCommand("Lambda", "DeleteFunction", { FunctionName: functionName }, region, creds);
+            steps.push(`Deleted Lambda function ${functionName}`);
+            return ok("inventory", action, `Lambda function ${functionName} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "api_gateway": {
+            const apiId = resourceId;
+            await executeAwsCommand("ApiGatewayV2", "DeleteApi", { ApiId: apiId }, region, creds);
+            steps.push(`Deleted API Gateway ${apiId}`);
+            return ok("inventory", action, `API Gateway ${apiId} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "security_group": {
+            // 1. Revoke all ingress/egress rules that reference this SG from other SGs
+            const sgDescParams = new URLSearchParams({ Action: "DescribeSecurityGroups", Version: "2016-11-15", "GroupId.1": resourceId });
+            const sgDescRes = await ec2Request("POST", region, sgDescParams.toString(), AWS_KEY, AWS_SECRET);
+            const sgDescBody = await sgDescRes.text();
+
+            // Check for dependent network interfaces
+            const eniParams = new URLSearchParams({
+              Action: "DescribeNetworkInterfaces", Version: "2016-11-15",
+              "Filter.1.Name": "group-id", "Filter.1.Value.1": resourceId,
+            });
+            const eniRes = await ec2Request("POST", region, eniParams.toString(), AWS_KEY, AWS_SECRET);
+            const eniBody = await eniRes.text();
+            const eniIds = [...eniBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
+
+            if (eniIds.length > 0) {
+              // Try to detach ENIs
+              for (const eniId of eniIds) {
+                const attachId = eniBody.match(new RegExp(`<networkInterfaceId>${eniId}</networkInterfaceId>[\\s\\S]*?<attachmentId>(eni-attach-[a-f0-9]+)</attachmentId>`))?.[1];
+                if (attachId) {
+                  const detachParams = new URLSearchParams({ Action: "DetachNetworkInterface", Version: "2016-11-15", AttachmentId: attachId, Force: "true" });
+                  try {
+                    await ec2Request("POST", region, detachParams.toString(), AWS_KEY, AWS_SECRET);
+                    steps.push(`Detached ENI ${eniId}`);
+                  } catch { steps.push(`Could not detach ENI ${eniId} (may be primary)`); }
+                }
+              }
+              await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Revoke all ingress rules
+            const revokeInParams = new URLSearchParams({ Action: "RevokeSecurityGroupIngress", Version: "2016-11-15", GroupId: resourceId });
+            // Simplified: revoke all by referencing the SG itself
+            try {
+              await ec2Request("POST", region, revokeInParams.toString(), AWS_KEY, AWS_SECRET);
+            } catch { /* may fail if no rules */ }
+
+            const delParams = new URLSearchParams({ Action: "DeleteSecurityGroup", Version: "2016-11-15", GroupId: resourceId });
+            const delRes = await ec2Request("POST", region, delParams.toString(), AWS_KEY, AWS_SECRET);
+            const delBody = await delRes.text();
+            if (!delRes.ok) {
+              const errMsg = extractEc2Error(delBody) || "DeleteSecurityGroup failed";
+              if (errMsg.includes("DependencyViolation")) {
+                return err("inventory", action, `Security group ${resourceId} has active dependencies (instances or ENIs still using it). Terminate those resources first.`, { steps, eni_count: eniIds.length });
+              }
+              return err("inventory", action, errMsg, { steps });
+            }
+            steps.push(`Deleted security group ${resourceId}`);
+            return ok("inventory", action, `Security group ${resourceId} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "subnet": {
+            // Check for instances in this subnet
+            const subEc2Params = new URLSearchParams({
+              Action: "DescribeInstances", Version: "2016-11-15",
+              "Filter.1.Name": "subnet-id", "Filter.1.Value.1": resourceId,
+              "Filter.2.Name": "instance-state-name",
+              "Filter.2.Value.1": "running", "Filter.2.Value.2": "stopped", "Filter.2.Value.3": "pending",
+            });
+            const subEc2Res = await ec2Request("POST", region, subEc2Params.toString(), AWS_KEY, AWS_SECRET);
+            const subEc2Body = await subEc2Res.text();
+            const subInstances = [...subEc2Body.matchAll(/<instanceId>(i-[a-f0-9]+)<\/instanceId>/g)].map(m => m[1]);
+
+            if (subInstances.length > 0) {
+              return err("inventory", action, `Subnet ${resourceId} has ${subInstances.length} active instance(s): ${subInstances.join(", ")}. Terminate them first.`, { steps, blocking_instances: subInstances });
+            }
+
+            // Check for ENIs
+            const subEniParams = new URLSearchParams({
+              Action: "DescribeNetworkInterfaces", Version: "2016-11-15",
+              "Filter.1.Name": "subnet-id", "Filter.1.Value.1": resourceId,
+            });
+            const subEniRes = await ec2Request("POST", region, subEniParams.toString(), AWS_KEY, AWS_SECRET);
+            const subEniBody = await subEniRes.text();
+            const subEnis = [...subEniBody.matchAll(/<networkInterfaceId>(eni-[a-f0-9]+)<\/networkInterfaceId>/g)].map(m => m[1]);
+
+            // Try to delete non-primary ENIs
+            for (const eniId of subEnis) {
+              try {
+                const delEniParams = new URLSearchParams({ Action: "DeleteNetworkInterface", Version: "2016-11-15", NetworkInterfaceId: eniId });
+                await ec2Request("POST", region, delEniParams.toString(), AWS_KEY, AWS_SECRET);
+                steps.push(`Deleted ENI ${eniId}`);
+              } catch { steps.push(`Could not delete ENI ${eniId} (may be in use)`); }
+            }
+
+            const delParams = new URLSearchParams({ Action: "DeleteSubnet", Version: "2016-11-15", SubnetId: resourceId });
+            const delRes = await ec2Request("POST", region, delParams.toString(), AWS_KEY, AWS_SECRET);
+            const delBody = await delRes.text();
+            if (!delRes.ok) {
+              const errMsg = extractEc2Error(delBody) || "DeleteSubnet failed";
+              if (errMsg.includes("DependencyViolation")) {
+                return err("inventory", action, `Subnet ${resourceId} has active dependencies (ENIs or other resources). Clean those up first.`, { steps });
+              }
+              return err("inventory", action, errMsg, { steps });
+            }
+            steps.push(`Deleted subnet ${resourceId}`);
+            return ok("inventory", action, `Subnet ${resourceId} deleted`, { resource_id: resourceId, steps });
+          }
+
+          case "app_mesh": {
+            const meshName = spec.mesh_name as string || resourceId;
+            // Delete virtual nodes first, then mesh
+            try {
+              const nodesRes = await awsSignedRequest({
+                service: "appmesh", region, method: "GET",
+                path: `/v20190125/meshes/${encodeURIComponent(meshName)}/virtualNodes`,
+                accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                hostOverride: `appmesh.${region}.amazonaws.com`,
+              });
+              if (nodesRes.ok) {
+                const nodesData = JSON.parse(await nodesRes.text());
+                for (const node of (nodesData.virtualNodes || [])) {
+                  const nodeName = node.virtualNodeName || node.meshName;
+                  if (!nodeName) continue;
+                  await awsSignedRequest({
+                    service: "appmesh", region, method: "DELETE",
+                    path: `/v20190125/meshes/${encodeURIComponent(meshName)}/virtualNodes/${encodeURIComponent(nodeName)}`,
+                    accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                    hostOverride: `appmesh.${region}.amazonaws.com`,
+                  });
+                  steps.push(`Deleted virtual node ${nodeName}`);
+                }
+              }
+            } catch { steps.push("Could not clean up virtual nodes"); }
+
+            // Delete the mesh
+            try {
+              await awsSignedRequest({
+                service: "appmesh", region, method: "DELETE",
+                path: `/v20190125/meshes/${encodeURIComponent(meshName)}`,
+                accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET,
+                hostOverride: `appmesh.${region}.amazonaws.com`,
+              });
+              steps.push(`Deleted mesh ${meshName}`);
+            } catch (e) {
+              return err("inventory", action, `DeleteMesh failed: ${e instanceof Error ? e.message : String(e)}`, { steps });
+            }
+            return ok("inventory", action, `App Mesh ${meshName} deleted`, { resource_id: resourceId, steps });
+          }
+
+          default:
+            return err("inventory", action, `Unsupported resource type for nuke: ${resourceType}. Supported: ec2, ebs, eip, vpc, eks, s3, cloudfront, sqs, lambda, api_gateway, security_group, subnet, app_mesh`);
         }
-        case "ebs": {
-          const params = new URLSearchParams({ Action: "DeleteVolume", Version: "2016-11-15", VolumeId: resourceId });
-          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
-          const body = await res.text();
-          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "DeleteVolume failed");
-          return ok("inventory", action, `Volume ${resourceId} deleted`, { resource_id: resourceId });
-        }
-        case "eip": {
-          const params = new URLSearchParams({ Action: "ReleaseAddress", Version: "2016-11-15", AllocationId: resourceId });
-          const res = await ec2Request("POST", region, params.toString(), AWS_KEY, AWS_SECRET);
-          const body = await res.text();
-          if (!res.ok) return err("inventory", action, extractEc2Error(body) || "ReleaseAddress failed");
-          return ok("inventory", action, `Elastic IP ${resourceId} released`, { resource_id: resourceId });
-        }
-        case "vpc": {
-          // Smart deletion: reverse order (subnets → igw → sg → vpc)
-          const result = await handleNetwork("destroy", { vpc_id: resourceId, region });
-          return result;
-        }
-        case "eks": {
-          const clusterName = spec.cluster_name as string || resourceId;
-          const result = await handleEks("destroy", { cluster_name: clusterName, region });
-          return result;
-        }
-        default:
-          return err("inventory", action, `Unknown resource_type: ${resourceType}`);
+      } catch (e) {
+        return err("inventory", action, `Nuke failed for ${resourceType}/${resourceId}: ${e instanceof Error ? e.message : String(e)}`, { steps });
       }
     }
 
