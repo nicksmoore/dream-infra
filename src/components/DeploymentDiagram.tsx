@@ -92,6 +92,25 @@ const PATTERN_DIAGRAMS: Record<string, string> = {
     K --> L
     L --> M[Trivy: Scan VPC Config]
     M --> N[Deploy Complete]`,
+
+  "edge-cache": `graph TD
+    A[DynamoDB Global Table] --> B[Replica: us-east-1]
+    A --> C[Replica: eu-west-1]
+    A --> D[Replica: ap-northeast-1]
+    B --> E[Zig Lambda us-east-1]
+    C --> F[Zig Lambda eu-west-1]
+    D --> G[Zig Lambda ap-northeast-1]
+    E --> H[CloudFront Edge]
+    F --> H
+    G --> H
+    H --> I[Route 53 ARC]
+    I --> J{Health Check OK?}
+    J -->|Yes| K[Active Region]
+    J -->|No| L[Failover Region]
+    K --> M[Validate: Global Latency]
+    L --> M
+    M --> N[Trivy: Scan Config]
+    N --> O[Deploy Complete]`,
 };
 
 export function DeploymentDiagram({ workloadType, steps }: DeploymentDiagramProps) {

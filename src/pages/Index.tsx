@@ -25,6 +25,7 @@ import {
   parseIntentRuleBased,
 } from "@/lib/intent-types";
 import { Zap, Eye, Rocket, Vault } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
@@ -41,6 +42,7 @@ const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
   EVENT_PIPELINE: "event-pipeline",
   INTERNAL_API: "internal-api",
   THREE_TIER: "three-tier",
+  EDGE_CACHE: "edge-cache",
 };
 
 const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
@@ -55,6 +57,7 @@ const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
   "event-pipeline": ["sqs", "lambda", "dynamodb", "eventbridge"],
   "internal-api": ["api-gateway", "lambda", "rds-proxy", "rds"],
   "three-tier": ["asg", "alb", "rds", "elasticache", "vpc", "subnets"],
+  "edge-cache": ["dynamodb", "route53", "lambda", "cloudfront"],
 };
 
 const normalizeWorkload = (value?: string): WorkloadType | null => {
@@ -160,7 +163,8 @@ export default function Index() {
               <p className="text-xs text-muted-foreground">Intent-Driven Infrastructure</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
             <McpConnectionStatus />
             <UserMenu />
           </div>
