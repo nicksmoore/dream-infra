@@ -1506,7 +1506,8 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
         await ec2Request("POST", region, new URLSearchParams({ Action: "AuthorizeSecurityGroupIngress", Version: "2016-11-15", GroupId: sgId, "IpPermissions.1.IpProtocol": "tcp", "IpPermissions.1.FromPort": "443", "IpPermissions.1.ToPort": "443", "IpPermissions.1.IpRanges.1.CidrIp": "0.0.0.0/0" }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
       }
 
-      return ok("network", action, `VPC stack created: ${vpcId} with ${subnets.length} subnets, IGW, route table, NACL, and security group`, { vpc_id: vpcId, igw_id: igwId, route_table_id: rtbId, nacl_id: naclId, security_group_id: sgId, subnets, region, vpc_cidr: vpcCidr });
+      const subnetIds = subnets.map(s => s.id);
+      return ok("network", action, `VPC stack created: ${vpcId} with ${subnets.length} subnets, IGW, route table, NACL, and security group`, { vpc_id: vpcId, igw_id: igwId, route_table_id: rtbId, nacl_id: naclId, security_group_id: sgId, subnets, subnet_ids: subnetIds, region, vpc_cidr: vpcCidr });
     }
 
     case "discover": {
