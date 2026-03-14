@@ -393,7 +393,7 @@ export class DagOrchestrator {
       input: {
         DBProxyName: `${baseName}-proxy`,
         EngineFamily: "POSTGRESQL",
-        RoleArn: spec.rdsProxyRoleArn || "arn:aws:iam::ACCOUNT:role/RDSProxyRole",
+        RoleArn: spec._defaultRdsProxyRole || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`,
         Auth: [{ AuthScheme: "SECRETS", IAMAuth: "REQUIRED" }],
         VpcSubnetIds: subnetIds,
       },
