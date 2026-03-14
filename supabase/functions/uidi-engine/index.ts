@@ -1,52 +1,337 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 
-// ───── Dynamic AWS SDK Loader (prevents bundle timeout) ─────
-// SDK modules are loaded on-demand at runtime, not at bundle time.
+// ───── Raw AWS API Executor (zero SDK dependencies) ─────
+// All AWS calls use SigV4-signed HTTP requests via awsSignedRequest().
 
-const SDK_MODULE_MAP: Record<string, string> = {
-  EC2: "npm:@aws-sdk/client-ec2",
-  S3: "npm:@aws-sdk/client-s3",
-  CloudFront: "npm:@aws-sdk/client-cloudfront",
-  Route53: "npm:@aws-sdk/client-route-53",
-  Lambda: "npm:@aws-sdk/client-lambda",
-  ACM: "npm:@aws-sdk/client-acm",
-  EKS: "npm:@aws-sdk/client-eks",
-  AppMesh: "npm:@aws-sdk/client-app-mesh",
-  ELBv2: "npm:@aws-sdk/client-elastic-load-balancing-v2",
-  SQS: "npm:@aws-sdk/client-sqs",
-  DynamoDB: "npm:@aws-sdk/client-dynamodb",
-  EventBridge: "npm:@aws-sdk/client-eventbridge",
-  ApiGatewayV2: "npm:@aws-sdk/client-apigatewayv2",
-  RDS: "npm:@aws-sdk/client-rds",
-  AutoScaling: "npm:@aws-sdk/client-auto-scaling",
-  ElastiCache: "npm:@aws-sdk/client-elasticache",
+interface ServiceConfig {
+  signingService: string;
+  host: (region: string) => string;
+  apiStyle: "json-target" | "rest-json" | "s3" | "rest-xml" | "query";
+  targetPrefix?: string;
+  apiVersion?: string;
+  jsonVersion?: string;
+}
+
+const SERVICE_CONFIG: Record<string, ServiceConfig> = {
+  S3:            { signingService: "s3",   host: r => `s3.${r}.amazonaws.com`, apiStyle: "s3" },
+  CloudFront:    { signingService: "cloudfront", host: () => "cloudfront.amazonaws.com", apiStyle: "rest-xml" },
+  Route53:       { signingService: "route53", host: () => "route53.amazonaws.com", apiStyle: "rest-xml" },
+  Lambda:        { signingService: "lambda", host: r => `lambda.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  ACM:           { signingService: "acm", host: r => `acm.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "CertificateManager", jsonVersion: "1.1" },
+  EKS:           { signingService: "eks", host: r => `eks.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  AppMesh:       { signingService: "appmesh", host: r => `appmesh.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  SQS:           { signingService: "sqs", host: r => `sqs.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AmazonSQS", jsonVersion: "1.0" },
+  DynamoDB:      { signingService: "dynamodb", host: r => `dynamodb.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "DynamoDB_20120810", jsonVersion: "1.0" },
+  EventBridge:   { signingService: "events", host: r => `events.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AWSEvents", jsonVersion: "1.1" },
+  ApiGatewayV2:  { signingService: "apigateway", host: r => `apigateway.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  RDS:           { signingService: "rds", host: r => `rds.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2014-10-31" },
+  EC2:           { signingService: "ec2", host: r => `ec2.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2016-11-15" },
+  AutoScaling:   { signingService: "autoscaling", host: r => `autoscaling.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2011-01-01" },
+  ELBv2:         { signingService: "elasticloadbalancing", host: r => `elasticloadbalancing.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2015-12-01" },
+  ElastiCache:   { signingService: "elasticache", host: r => `elasticache.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2015-02-02" },
+  IAM:           { signingService: "iam", host: () => "iam.amazonaws.com", apiStyle: "query", apiVersion: "2010-05-08" },
+  STS:           { signingService: "sts", host: r => `sts.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2011-06-15" },
+  SNS:           { signingService: "sns", host: r => `sns.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2010-03-31" },
+  CloudWatch:    { signingService: "monitoring", host: r => `monitoring.${r}.amazonaws.com`, apiStyle: "query", apiVersion: "2010-08-01" },
+  CloudWatchLogs:{ signingService: "logs", host: r => `logs.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "Logs_20140328", jsonVersion: "1.1" },
+  KMS:           { signingService: "kms", host: r => `kms.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "TrentService", jsonVersion: "1.1" },
+  SecretsManager:{ signingService: "secretsmanager", host: r => `secretsmanager.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "secretsmanager", jsonVersion: "1.1" },
+  SSM:           { signingService: "ssm", host: r => `ssm.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AmazonSSM", jsonVersion: "1.1" },
 };
 
-const _sdkCache: Record<string, any> = {};
+// REST command routing for path-based APIs
+const REST_ROUTES: Record<string, Record<string, { method: string; path: (i: any) => string }>> = {
+  Lambda: {
+    CreateFunction:          { method: "POST", path: () => "/2015-03-31/functions" },
+    PublishVersion:          { method: "POST", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}/versions` },
+    PutFunctionConcurrency:  { method: "PUT",  path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}/concurrency` },
+    GetFunction:             { method: "GET",  path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}` },
+    DeleteFunction:          { method: "DELETE", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}` },
+  },
+  EKS: {
+    CreateCluster:   { method: "POST", path: () => "/clusters" },
+    DescribeCluster: { method: "GET",  path: i => `/clusters/${encodeURIComponent(i.name)}` },
+    DeleteCluster:   { method: "DELETE", path: i => `/clusters/${encodeURIComponent(i.name)}` },
+    CreateNodegroup: { method: "POST", path: i => `/clusters/${encodeURIComponent(i.clusterName)}/node-groups` },
+  },
+  AppMesh: {
+    CreateMesh:        { method: "PUT", path: () => "/v20190125/meshes" },
+    CreateVirtualNode: { method: "PUT", path: i => `/v20190125/meshes/${encodeURIComponent(i.meshName)}/virtualNodes` },
+    DescribeMesh:      { method: "GET", path: i => `/v20190125/meshes/${encodeURIComponent(i.meshName)}` },
+  },
+  ApiGatewayV2: {
+    CreateApi:  { method: "POST", path: () => "/v2/apis" },
+    DeleteApi:  { method: "DELETE", path: i => `/v2/apis/${i.ApiId}` },
+    GetApis:    { method: "GET",  path: () => "/v2/apis" },
+  },
+};
 
-async function loadSdkModule(service: string): Promise<any> {
-  if (_sdkCache[service]) return _sdkCache[service];
-  const specifier = SDK_MODULE_MAP[service];
-  if (!specifier) throw new Error(`Unknown SDK service: ${service}`);
-  const mod = await import(specifier);
-  _sdkCache[service] = mod;
-  return mod;
+// S3 command routing
+const S3_ROUTES: Record<string, { method: string; path: (i: any) => string; queryString?: string }> = {
+  CreateBucket:     { method: "PUT",  path: i => `/${i.Bucket}` },
+  PutBucketPolicy:  { method: "PUT",  path: i => `/${i.Bucket}`, queryString: "policy" },
+  HeadBucket:       { method: "HEAD", path: i => `/${i.Bucket}` },
+  DeleteBucket:     { method: "DELETE", path: i => `/${i.Bucket}` },
+  PutObject:        { method: "PUT",  path: i => `/${i.Bucket}/${i.Key}` },
+};
+
+// CloudFront XML request builder
+function buildCloudFrontRequest(command: string, input: any): { method: string; path: string; body?: string } {
+  const xmlns = "http://cloudfront.amazonaws.com/doc/2020-05-31/";
+  switch (command) {
+    case "CreateOriginAccessControl":
+      return { method: "POST", path: "/2020-05-31/origin-access-control", body: jsonToXml("OriginAccessControlConfig", input.OriginAccessControlConfig, xmlns) };
+    case "CreateDistribution":
+      return { method: "POST", path: "/2020-05-31/distribution", body: jsonToXml("DistributionConfig", input.DistributionConfig, xmlns) };
+    case "CreateInvalidation":
+      return { method: "POST", path: `/2020-05-31/distribution/${input.DistributionId}/invalidation`, body: jsonToXml("InvalidationBatch", input.InvalidationBatch, xmlns) };
+    case "GetDistribution":
+      return { method: "GET", path: `/2020-05-31/distribution/${input.Id}` };
+    default:
+      throw new Error(`No CloudFront mapping for ${command}`);
+  }
 }
 
-async function getClient(service: string, region: string, credentials: any): Promise<any> {
-  const mod = await loadSdkModule(service);
-  // All AWS SDK v3 clients follow the pattern: <Service>Client
-  const clientName = Object.keys(mod).find(k => k.endsWith("Client") && k !== "Client");
-  if (!clientName) throw new Error(`No Client export found in ${service} SDK`);
-  return new mod[clientName]({ region, credentials });
+// Route53 XML request builder
+function buildRoute53Request(command: string, input: any): { method: string; path: string; body?: string } {
+  const xmlns = "https://route53.amazonaws.com/doc/2013-04-01/";
+  switch (command) {
+    case "ChangeResourceRecordSets":
+      return { method: "POST", path: `/2013-04-01/hostedzone/${input.HostedZoneId}/rrset`, body: jsonToXml("ChangeResourceRecordSetsRequest", { ChangeBatch: input.ChangeBatch }, xmlns) };
+    case "ListHostedZones":
+      return { method: "GET", path: "/2013-04-01/hostedzone" };
+    default:
+      throw new Error(`No Route53 mapping for ${command}`);
+  }
 }
 
-async function getCommand(service: string, commandName: string): Promise<any> {
-  const mod = await loadSdkModule(service);
-  const CommandClass = mod[commandName];
-  if (!CommandClass) throw new Error(`Command ${commandName} not found in ${service} SDK`);
-  return CommandClass;
+// JSON → XML converter for AWS REST-XML APIs
+function jsonToXml(rootName: string, obj: any, xmlns?: string): string {
+  const ns = xmlns ? ` xmlns="${xmlns}"` : "";
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<${rootName}${ns}>${objToXml(obj)}</${rootName}>`;
+}
+
+function objToXml(obj: any): string {
+  if (obj === null || obj === undefined) return "";
+  if (typeof obj !== "object") return escapeXml(String(obj));
+  if (Array.isArray(obj)) {
+    return obj.map(item => {
+      if (typeof item === "object" && item !== null) {
+        return Object.entries(item).map(([k, v]) => `<${k}>${objToXml(v)}</${k}>`).join("");
+      }
+      return escapeXml(String(item));
+    }).join("");
+  }
+  let xml = "";
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) {
+      xml += `<${key}>`;
+      value.forEach(item => {
+        const tag = key === "Items" ? guessItemTag(item) : key === "Changes" ? "Change" : "member";
+        xml += `<${tag}>${typeof item === "object" ? objToXml(item) : escapeXml(String(item))}</${tag}>`;
+      });
+      xml += `</${key}>`;
+    } else if (typeof value === "object") {
+      xml += `<${key}>${objToXml(value)}</${key}>`;
+    } else if (typeof value === "boolean") {
+      xml += `<${key}>${value ? "true" : "false"}</${key}>`;
+    } else {
+      xml += `<${key}>${escapeXml(String(value))}</${key}>`;
+    }
+  }
+  return xml;
+}
+
+function guessItemTag(item: any): string {
+  if (typeof item !== "object") return "member";
+  if (item.EventType) return "LambdaFunctionAssociation";
+  if (item.Id && item.DomainName) return "Origin";
+  if (item.Action && item.ResourceRecordSet) return "Change";
+  return "member";
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Flatten nested objects to AWS Query API format
+function flattenToQueryParams(obj: any, params: URLSearchParams, prefix = ""): void {
+  if (obj === null || obj === undefined) return;
+  if (Array.isArray(obj)) {
+    obj.forEach((item, i) => flattenToQueryParams(item, params, `${prefix}.${i + 1}`));
+    return;
+  }
+  if (typeof obj === "object") {
+    for (const [key, value] of Object.entries(obj)) {
+      flattenToQueryParams(value, params, prefix ? `${prefix}.${key}` : key);
+    }
+    return;
+  }
+  params.set(prefix, String(obj));
+}
+
+// Parse XML responses into usable objects
+function parseSimpleXmlResponse(xml: string): Record<string, any> {
+  const result: Record<string, any> = {};
+  const patterns: Record<string, RegExp> = {
+    VpcId: /<vpcId>([^<]+)<\/vpcId>/i,
+    SubnetId: /<subnetId>([^<]+)<\/subnetId>/i,
+    Id: /<Id>([^<]+)<\/Id>/,
+    DomainName: /<DomainName>([^<]+)<\/DomainName>/,
+    ARN: /<ARN>([^<]+)<\/ARN>/,
+    QueueUrl: /<QueueUrl>([^<]+)<\/QueueUrl>/,
+    BucketName: /<Name>([^<]+)<\/Name>/,
+    FunctionArn: /<FunctionArn>([^<]+)<\/FunctionArn>/,
+    FunctionName: /<FunctionName>([^<]+)<\/FunctionName>/,
+    CertificateArn: /<CertificateArn>([^<]+)<\/CertificateArn>/,
+    Status: /<Status>([^<]+)<\/Status>/,
+    OriginAccessControlId: /<Id>([^<]+)<\/Id>/,
+  };
+  for (const [key, regex] of Object.entries(patterns)) {
+    const match = xml.match(regex);
+    if (match) result[key] = match[1];
+  }
+  // Nest for common response shapes
+  if (result.Id) {
+    result.Distribution = { Id: result.Id, DomainName: result.DomainName, ARN: result.ARN };
+    result.OriginAccessControl = { Id: result.Id };
+  }
+  if (result.CertificateArn) {
+    result.Certificate = { CertificateArn: result.CertificateArn, Status: result.Status };
+  }
+  return result;
+}
+
+// Waiter implementation (polls until condition met)
+async function handleWaiter(
+  service: string, command: string, input: any,
+  region: string, credentials: { accessKeyId: string; secretAccessKey: string }
+): Promise<any> {
+  const maxAttempts = 40;
+  const delayMs = 15000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      if (command === "WaitUntilCertificateValidated") {
+        const result = await executeAwsCommand("ACM", "DescribeCertificate", { CertificateArn: input.CertificateArn }, region, credentials);
+        if (result?.Certificate?.Status === "ISSUED") return result;
+      } else if (command === "WaitUntilClusterActive") {
+        const result = await executeAwsCommand("EKS", "DescribeCluster", { name: input.name }, region, credentials);
+        if (result?.cluster?.status === "ACTIVE") return result;
+      } else {
+        // Generic waiter: just return after first successful call
+        return {};
+      }
+    } catch { /* continue polling */ }
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  throw new Error(`Waiter ${command} timed out after ${maxAttempts} attempts`);
+}
+
+// Core dispatcher: routes service+command → raw signed AWS API call
+async function executeAwsCommand(
+  service: string, command: string, input: Record<string, any>,
+  region: string, credentials: { accessKeyId: string; secretAccessKey: string }
+): Promise<any> {
+  const config = SERVICE_CONFIG[service];
+  if (!config) throw new Error(`Unsupported AWS service: ${service}. Supported: ${Object.keys(SERVICE_CONFIG).join(", ")}`);
+
+  // Handle waiters
+  if (command.startsWith("WaitUntil")) {
+    return handleWaiter(service, command, input, region, credentials);
+  }
+
+  const actionName = command.replace(/Command$/, "");
+  const host = config.host(region);
+  let method: string;
+  let path: string;
+  let body: string | undefined;
+  let extraHeaders: Record<string, string> = {};
+  let queryString = "";
+
+  switch (config.apiStyle) {
+    case "json-target": {
+      method = "POST";
+      path = "/";
+      body = JSON.stringify(input);
+      extraHeaders = {
+        "X-Amz-Target": `${config.targetPrefix}.${actionName}`,
+        "Content-Type": `application/x-amz-json-${config.jsonVersion || "1.1"}`,
+      };
+      break;
+    }
+    case "query": {
+      method = "POST";
+      path = "/";
+      const params = new URLSearchParams();
+      params.set("Action", actionName);
+      params.set("Version", config.apiVersion!);
+      flattenToQueryParams(input, params);
+      body = params.toString();
+      extraHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+      break;
+    }
+    case "rest-json": {
+      const route = REST_ROUTES[service]?.[actionName];
+      if (!route) throw new Error(`No REST mapping for ${service}.${actionName}. Add it to REST_ROUTES.`);
+      method = route.method;
+      path = route.path(input);
+      body = (method !== "GET" && method !== "HEAD" && method !== "DELETE") ? JSON.stringify(input) : undefined;
+      if (body) extraHeaders = { "Content-Type": "application/json" };
+      break;
+    }
+    case "s3": {
+      const route = S3_ROUTES[actionName];
+      if (!route) throw new Error(`No S3 mapping for ${actionName}. Add it to S3_ROUTES.`);
+      method = route.method;
+      path = route.path(input);
+      if (route.queryString) queryString = route.queryString;
+      if (actionName === "PutBucketPolicy") {
+        body = typeof input.Policy === "string" ? input.Policy : JSON.stringify(input.Policy);
+      }
+      break;
+    }
+    case "rest-xml": {
+      let req: { method: string; path: string; body?: string };
+      if (service === "CloudFront") {
+        req = buildCloudFrontRequest(actionName, input);
+      } else if (service === "Route53") {
+        req = buildRoute53Request(actionName, input);
+      } else {
+        throw new Error(`No XML handler for ${service}.${actionName}`);
+      }
+      method = req.method;
+      path = req.path;
+      body = req.body;
+      if (body) extraHeaders = { "Content-Type": "application/xml" };
+      break;
+    }
+    default:
+      throw new Error(`Unknown API style for ${service}`);
+  }
+
+  const fullPath = queryString ? `${path}?${queryString}` : path;
+
+  const res = await awsSignedRequest({
+    service: config.signingService,
+    region,
+    method,
+    path: fullPath,
+    accessKeyId: credentials.accessKeyId,
+    secretAccessKey: credentials.secretAccessKey,
+    body,
+    extraHeaders,
+    hostOverride: host,
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`${service}.${actionName} failed (${res.status}): ${text.slice(0, 800)}`);
+  }
+
+  if (!text || text.trim().length === 0) return {};
+  try { return JSON.parse(text); } catch { return parseSimpleXmlResponse(text); }
 }
 
 const corsHeaders = {
