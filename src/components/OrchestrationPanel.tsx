@@ -215,6 +215,13 @@ export function OrchestrationPanel({
 
           if (result.status === "error") {
             clearInterval(pollIntervalRef.current);
+
+            // Persist granular failure payload for expandable debug view
+            if (details && typeof details === "object") {
+              outputs[step.id] = { ...outputs[step.id], ...details };
+              setStepOutputs({ ...outputs });
+            }
+
             setSteps(prev => prev.map((s, idx) =>
               idx === stepIndex ? { ...s, status: "error", output: result.error || "Async operation failed" } : s
             ));
