@@ -231,6 +231,24 @@ export class DagOrchestrator {
       });
     }
 
+    // Upload a working dashboard index.html
+    const dashboardTitle = spec.dashboardTitle || spec.intentText || baseName;
+    const cfDomain = "ref(cf-dist.Distribution.DomainName)";
+    const dashboardHtml = this.buildDashboardHtml(dashboardTitle, cfDomain, bucketName);
+
+    ops.push({
+      id: "s3-index",
+      service: "S3",
+      command: "PutObject",
+      input: {
+        Bucket: bucketName,
+        Key: "index.html",
+        Body: dashboardHtml,
+        ContentType: "text/html",
+      },
+      dependency: "s3-bucket",
+    });
+
     ops.push({
       id: "cf-invalidation",
       service: "CloudFront",
@@ -242,7 +260,7 @@ export class DagOrchestrator {
           CallerReference: spec.buildHash || intentHash,
         },
       },
-      dependency: "cf-dist",
+      dependency: "s3-index",
     });
 
     return ops;
