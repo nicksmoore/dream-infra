@@ -819,18 +819,29 @@ export function OrchestrationPanel({
         </div>
 
         {/* Rollback & Destroy */}
-        {(hasFailedSteps || allDone) && (
-          <div className="flex gap-2">
-            {hasFailedSteps && hasCompletedSteps && (
-              <Button onClick={runRollback} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
-                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-                Rollback Completed Steps
-              </Button>
-            )}
-            {allDone && (
-              <Button onClick={runStackDestroy} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
-                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
-                Tear Down Stack
+        {(hasFailedSteps || allDone || showForceNuke) && (
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              {hasFailedSteps && hasCompletedSteps && (
+                <Button onClick={runRollback} disabled={isRollingBack || isRunning || isForceNuking} variant="destructive" className="flex-1" size="sm">
+                  {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                  Rollback Completed Steps
+                </Button>
+              )}
+              {allDone && (
+                <Button onClick={runStackDestroy} disabled={isRollingBack || isRunning || isForceNuking} variant="destructive" className="flex-1" size="sm">
+                  {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Tear Down Stack
+                </Button>
+              )}
+            </div>
+            {showForceNuke && (
+              <Button onClick={runForceNuke} disabled={isForceNuking || isRunning} variant="destructive" size="sm" className="w-full border-2 border-destructive/50">
+                {isForceNuking ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Force Nuking (EKS→VPC)...</>
+                ) : (
+                  <><Trash2 className="h-4 w-4 mr-2" /> Force Nuke — Ordered Cleanup (EKS → VPCs)</>
+                )}
               </Button>
             )}
           </div>
