@@ -123,6 +123,12 @@ export default function Index() {
         });
         return;
       }
+
+      const parsed = parseIntentRuleBased(input);
+      const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
+      updateIntent(merged);
+      setDetectedResources(parsed.resources || WORKLOAD_TO_RESOURCES[merged.workloadType] || ["ec2"]);
+      toast({ title: "Rule-based routing", description: "Applied deterministic keyword mapping for this prompt." });
     } catch (e) {
       console.error("Parse error:", e);
       const parsed = parseIntentRuleBased(input);
