@@ -2,7 +2,7 @@ import { EC2Client, DescribeVpcsCommand, DescribeSubnetsCommand } from "npm:@aws
 import { S3Client, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
 import { CloudFrontClient, GetDistributionCommand } from "npm:@aws-sdk/client-cloudfront";
 import { Route53Client, ListHostedZonesByNameCommand } from "npm:@aws-sdk/client-route-53";
-import { DescribeClusterCommand, EKSClient } from "npm:@aws-sdk/client-eks";
+
 
 export interface SdkOperation {
   id: string;
