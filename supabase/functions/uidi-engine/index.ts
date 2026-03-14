@@ -2173,6 +2173,33 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
   return ok("naawi", "execute", "Project Naawi: Full Execution Sequence Successful", { history });
 }
 
+function estimateOperationMonthlyCost(op: SdkOperation): number {
+  const service = op.service;
+  const command = op.command;
+
+  if (service === "EKS" && command === "CreateCluster") return 72;
+  if (service === "CloudFront" && command === "CreateDistribution") return 18;
+  if (service === "S3" && command === "CreateBucket") return 2;
+  if (service === "Lambda" && command === "CreateFunction") return 6;
+  if (service === "SQS" && command === "CreateQueue") return 4;
+  if (service === "DynamoDB" && command === "CreateTable") return 25;
+  if (service === "EventBridge" && command === "PutRule") return 2;
+  if (service === "ApiGatewayV2" && command === "CreateApi") return 12;
+  if (service === "RDS" && (command === "CreateDBCluster" || command === "CreateDBInstance")) return 90;
+  if (service === "RDS" && command === "CreateDBProxy") return 15;
+  if (service === "AutoScaling" && command === "CreateAutoScalingGroup") return 45;
+  if (service === "ELBv2" && command === "CreateLoadBalancer") return 22;
+  if (service === "ElastiCache" && command === "CreateReplicationGroup") return 55;
+  if (service === "EC2" && (command === "RunInstances" || command === "CreateVpc" || command === "CreateSubnet")) return 20;
+
+  return 5;
+}
+
+function estimateOpsMonthlyCost(ops: SdkOperation[]): number {
+  const total = ops.reduce((sum, op) => sum + estimateOperationMonthlyCost(op), 0);
+  return Math.round(total * 100) / 100;
+}
+
 // ───── Project Naawi: Discovery & Execution Orchestrator ─────
 
 async function handleNaawi(action: string, spec: Record<string, unknown>, approved?: boolean): Promise<EngineResponse> {
