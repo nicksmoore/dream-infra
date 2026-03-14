@@ -57,6 +57,8 @@ function estimateLocalStepCost(step: OrchestrationStep): number {
   return 15;
 }
 
+const EMPTY_OPS: any[] = [];
+
 export function OrchestrationPanel({
   resources,
   region,
@@ -64,9 +66,10 @@ export function OrchestrationPanel({
   workloadType = "general",
   instanceType = "t3.medium",
   os = "amazon-linux-2023",
-  naawiOperations = [],
+  naawiOperations,
   onComplete,
 }: OrchestrationPanelProps) {
+  const stableOps = useMemo(() => naawiOperations ?? EMPTY_OPS, [naawiOperations]);
   const [steps, setSteps] = useState<OrchestrationStep[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
