@@ -89,31 +89,39 @@ export default function Index() {
       if (error) throw new Error(error.message);
 
       const intentData = data?.intent;
-      
-      if (intentData?.confidence === "LOW") {
-        toast({ 
-          title: "Disambiguation Required", 
-          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify if this is a frontend or backend deployment.",
-          variant: "destructive"
-        });
+      const mappedWorkload = normalizeWorkload(intentData?.archetype);
+
+      if (mappedWorkload) {
+        const mappedIntent: ParsedIntent = {
+          ...DEFAULT_INTENT,
+          ...intentData?.variables,
+          workloadType: mappedWorkload,
+        };
+
+        updateIntent(mappedIntent);
+        setDetectedResources(WORKLOAD_TO_RESOURCES[mappedWorkload]);
+
+        if (intentData?.confidence === "LOW") {
+          toast({
+            title: "Pattern inferred with defaults",
+            description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults. You can refine the parsed config below.",
+          });
+        } else {
+          toast({
+            title: "Archetype Confirmed",
+            description: `Routing to deterministic ${mappedWorkload} template.`,
+          });
+        }
         return;
       }
 
-      if (intentData?.archetype) {
-        // Map Archetype to WorkloadType and update variables
-        const mappedIntent: ParsedIntent = {
-          ...DEFAULT_INTENT,
-          workloadType: intentData.archetype,
-          ...intentData.variables
-        };
-        updateIntent(mappedIntent);
-        
-        // Trigger deterministic expansion via badge update
-        setDetectedResources([intentData.archetype.toLowerCase()]);
-        toast({ 
-          title: "Archetype Confirmed", 
-          description: `Routing to deterministic ${intentData.archetype} template.` 
+      if (intentData?.confidence === "LOW") {
+        toast({
+          title: "Disambiguation Required",
+          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify the target architecture pattern.",
+          variant: "destructive",
         });
+        return;
       }
     } catch (e) {
       console.error("Parse error:", e);
