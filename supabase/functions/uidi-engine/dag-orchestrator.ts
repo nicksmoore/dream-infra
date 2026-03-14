@@ -88,7 +88,7 @@ export class DagOrchestrator {
         Runtime: "nodejs18.x",
         Role: "arn:aws:iam::ACCOUNT:role/EdgeLambdaRole",
         Handler: "index.handler",
-        Code: { ZipFile: new TextEncoder().encode("/* Security Headers Logic */") }
+        Code: { ZipFile: btoa("/* Security Headers Logic */") }
       },
       region: "us-east-1"
     });
