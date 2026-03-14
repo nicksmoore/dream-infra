@@ -11,7 +11,7 @@ import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
-import { McpConnectionStatus } from "@/components/McpConnectionStatus";
+
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
 import { toast } from "@/hooks/use-toast";
