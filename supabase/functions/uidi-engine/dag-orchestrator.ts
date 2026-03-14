@@ -17,20 +17,53 @@ export class DagOrchestrator {
   private accountId: string;
 
   constructor(private region: string, private credentials: any) {
-    this.accountId = credentials.accountId || "ACCOUNT";
+    this.accountId = credentials.accountId || "";
+  }
+
+  private normalizeName(value: string, fallback: string, max = 48): string {
+    const normalized = (value || fallback)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    const safe = normalized || fallback;
+    return safe.slice(0, max).replace(/-$/g, "") || fallback;
+  }
+
+  private normalizeBucketName(value: string): string {
+    let v = (value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9.-]/g, "-")
+      .replace(/\.\.+/g, ".")
+      .replace(/-+/g, "-")
+      .replace(/\.-|\-\./g, "-")
+      .replace(/^[-.]+|[-.]+$/g, "");
+
+    if (!v) v = `uidi-${Date.now().toString(36)}`;
+    if (v.length < 3) v = `${v}-uidi`;
+    if (v.length > 63) v = v.slice(0, 63).replace(/[-.]+$/g, "");
+
+    if (!/^[a-z0-9]/.test(v)) v = `a${v}`;
+    if (!/[a-z0-9]$/.test(v)) v = `${v}0`;
+    return v;
+  }
+
+  private asRoleArn(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    return /^arn:aws[a-zA-Z-]*:iam::\d{12}:role\/.+/.test(value) ? value : undefined;
+  }
+
+  private asSubnetIds(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((v): v is string => typeof v === "string" && v.startsWith("subnet-"));
   }
 
   async generateDag(pattern: string, spec: any): Promise<SdkOperation[]> {
-    // Auto-resolve account ID via STS if not provided
-    if (this.accountId === "ACCOUNT") {
-      this.accountId = spec.accountId || "ACCOUNT";
-    }
-    const defaultRole = `arn:aws:iam::${this.accountId}:role/uidi-lambda-execution`;
-    spec._defaultLambdaRole = spec.roleArn || defaultRole;
-    spec._defaultRdsProxyRole = spec.rdsProxyRoleArn || `arn:aws:iam::${this.accountId}:role/uidi-rds-proxy`;
+    if (!this.accountId) this.accountId = spec.accountId || "";
 
     console.log(`[DagOrchestrator] Compiling DAG for pattern: ${pattern}`);
-    
+
     switch (pattern) {
       case "global-spa":
       case "EDGE_STATIC_SPA":
