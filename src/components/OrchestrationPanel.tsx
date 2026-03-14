@@ -272,7 +272,7 @@ export function OrchestrationPanel({
     }
   };
 
-  const hasNaawi = naawiOperations.length > 0;
+  const hasNaawi = stableOps.length > 0;
   const hasSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
 
   return (
