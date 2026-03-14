@@ -24,6 +24,7 @@ interface OrchestrationPanelProps {
   resources: string[];
   region: string;
   environment: string;
+  workloadType?: string;
   instanceType?: string;
   os?: string;
   onComplete?: () => void;
@@ -33,12 +34,29 @@ export function OrchestrationPanel({
   resources,
   region,
   environment,
+  workloadType = "general",
   instanceType = "t3.medium",
   os = "amazon-linux-2023",
   onComplete,
 }: OrchestrationPanelProps) {
   const buildSteps = (): OrchestrationStep[] => {
     const result: OrchestrationStep[] = [];
+
+    // SRE-Supreme Pattern Detection
+    const srePatterns = ["global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"];
+    if (srePatterns.includes(workloadType)) {
+      result.push({
+        id: "sre-pattern",
+        name: `SRE Supreme: ${workloadType.toUpperCase()}`,
+        description: `Deploying professional-grade ${workloadType} pattern with SRE Moat features.`,
+        icon: <ShieldCheck className="h-4 w-4 text-primary" />,
+        intent: "sre-supreme",
+        action: "deploy",
+        spec: { workload_type: workloadType, region, environment, name: `sre-${workloadType}-${environment}` },
+        status: "pending",
+      });
+      return result; // SRE patterns are self-orchestrating
+    }
 
     if (resources.some(r => ["vpc", "subnets", "nacls"].includes(r))) {
       result.push({
@@ -129,8 +147,8 @@ export function OrchestrationPanel({
 
       try {
         const result = await executeIntent({
-          intent: step.intent as "compute" | "network" | "eks",
-          action: step.action as "deploy",
+          intent: step.intent as any,
+          action: step.action as any,
           spec,
         });
 

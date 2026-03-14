@@ -193,6 +193,18 @@ export async function ansibleRun(spec: {
   return executeIntent({ intent: "ansible", action: "deploy", spec });
 }
 
+// ───── SRE-Supreme helpers ─────
+
+export async function sreSupremeDeploy(spec: {
+  workload_type: "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier";
+  name: string;
+  region?: string;
+  environment?: string;
+  [key: string]: any;
+}): Promise<EngineResponse> {
+  return executeIntent({ intent: "sre-supreme", action: "deploy", spec });
+}
+
 // ───── Reconciliation helpers ─────
 
 export interface ReconcileDesiredResources {

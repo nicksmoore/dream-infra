@@ -32,7 +32,7 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are an infrastructure intent parser. Extract structured intent from natural language infrastructure requests. Identify ALL resource types mentioned (vpc, subnets, nacls, eks, ec2). Use the tool provided to return the result.`,
+            content: `You are an infrastructure intent parser. Extract structured intent from natural language infrastructure requests. Identify ALL resource types mentioned (vpc, subnets, nacls, eks, ec2, s3, cloudfront, sqs, lambda, api-gateway, rds). Use the tool provided to return the result.`,
           },
           { role: "user", content: message },
         ],
@@ -47,13 +47,13 @@ serve(async (req) => {
                 properties: {
                   resources: {
                     type: "array",
-                    items: { type: "string", enum: ["vpc", "subnets", "nacls", "eks", "ec2"] },
-                    description: "AWS resource types mentioned in the request. Include 'ec2' if any server/instance is mentioned. Include 'subnets' if VPC is mentioned (subnets are always needed with VPC).",
+                    items: { type: "string", enum: ["vpc", "subnets", "nacls", "eks", "ec2", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds"] },
+                    description: "AWS resource types mentioned in the request.",
                   },
                   workloadType: {
                     type: "string",
-                    enum: ["general", "compute", "memory", "storage", "accelerated", "hpc"],
-                    description: "Type of workload: general purpose, compute intensive, memory intensive, storage optimized, GPU/accelerated, or HPC",
+                    enum: ["general", "compute", "memory", "storage", "accelerated", "hpc", "global-spa", "service-mesh", "event-pipeline", "internal-api", "three-tier"],
+                    description: "Type of workload or pattern: global-spa (S3/CloudFront), service-mesh (EKS/AppMesh), event-pipeline (SQS/Lambda/DynamoDB), internal-api (API Gateway/Aurora), three-tier (ASG/RDS), or standard workload types",
                   },
                   costSensitivity: {
                     type: "string",

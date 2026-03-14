@@ -71,7 +71,7 @@ export default function Index() {
   }, [updateIntent]);
 
   const isMultiResource = detectedResources.length > 1 ||
-    detectedResources.some(r => ["vpc", "eks", "subnets", "nacls"].includes(r));
+    detectedResources.some(r => ["vpc", "eks", "subnets", "nacls", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds"].includes(r));
 
   return (
     <div className="min-h-screen bg-background">
@@ -128,6 +128,7 @@ export default function Index() {
                 resources={detectedResources}
                 region={intent.region}
                 environment={intent.environment}
+                workloadType={intent.workloadType}
                 instanceType={config.instanceType}
                 os={config.os}
               />
