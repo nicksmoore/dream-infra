@@ -216,6 +216,7 @@ export function OrchestrationPanel({
         if (result.status === "error") throw new Error(result.error || result.message);
 
         setSteps(prev => prev.map(s => ({ ...s, status: "done", output: JSON.stringify(result.details, null, 2) })));
+        setDeploymentResult(result.details);
         toast({ title: "Deployment successful", description: result.message });
         onComplete?.();
       } catch (e) {
