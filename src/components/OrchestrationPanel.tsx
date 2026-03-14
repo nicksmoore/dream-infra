@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { executeIntent, reconcile, naawiPlan, naawiExecute } from "@/lib/uidi-engine";
 import type { EngineResponse, ReconcileReport } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
+import { DeploymentDiagram } from "@/components/DeploymentDiagram";
+import { ValidationPhase } from "@/components/ValidationPhase";
 import { Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box, ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows } from "lucide-react";
 
 interface OrchestrationStep {
