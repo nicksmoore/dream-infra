@@ -1549,17 +1549,18 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
           destroyed.push(`peering:${pcx}`);
         }
 
-        // 3. Delete non-default NACLs
-        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkAcls", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId }).toString(), AWS_KEY, AWS_SECRET);
+        // 3. Delete non-default NACLs (try-delete, skip default)
+        dRes = await ec2Request("POST", region, new URLSearchParams({ Action: "DescribeNetworkAcls", Version: "2016-11-15", "Filter.1.Name": "vpc-id", "Filter.1.Value.1": vpcId, "Filter.2.Name": "default", "Filter.2.Value.1": "false" }).toString(), AWS_KEY, AWS_SECRET);
         dBody = await dRes.text();
-        console.log(`Destroy ${vpcId}: DescribeNACLs body=${dBody.slice(0, 600)}`);
-        // Find non-default NACLs
-        for (const naclId of [...dBody.matchAll(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/g)].map(m => m[1])) {
-          // Check if default — default NACLs have <default>true</default> and can't be deleted
-          const naclSection = dBody.slice(dBody.indexOf(naclId));
-          if (naclSection.includes("<default>true</default>")) continue;
-          await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkAcl", Version: "2016-11-15", NetworkAclId: naclId }).toString(), AWS_KEY, AWS_SECRET).then(r => r.text());
-          destroyed.push(`nacl:${naclId}`);
+        for (const naclId of [...new Set([...dBody.matchAll(/<networkAclId>(acl-[a-f0-9]+)<\/networkAclId>/g)].map(m => m[1]))]) {
+          const delNacl = await ec2Request("POST", region, new URLSearchParams({ Action: "DeleteNetworkAcl", Version: "2016-11-15", NetworkAclId: naclId }).toString(), AWS_KEY, AWS_SECRET);
+          const delNaclBody = await delNacl.text();
+          if (delNacl.ok || delNacl.status === 200) {
+            destroyed.push(`nacl:${naclId}`);
+            console.log(`Deleted NACL ${naclId}`);
+          } else {
+            console.log(`Skip NACL ${naclId}: ${delNaclBody.slice(0, 150)}`);
+          }
         }
 
         // 4. Delete non-main route tables (try-delete, skip failures for main RT)
