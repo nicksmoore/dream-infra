@@ -517,6 +517,53 @@ export function OrchestrationPanel({
   const hasCompletedSteps = steps.some(s => s.status === "done");
   const allDone = steps.length > 0 && steps.every(s => s.status === "done");
 
+  // ── Deployment progress & ETA ──
+  const STEP_TIME_ESTIMATES: Record<string, number> = {
+    "network:deploy": 15,
+    "network:delete_peering": 5,
+    "network:destroy": 20,
+    "eks:deploy": 720,
+    "eks:wait": 0,
+    "eks:add_nodegroup": 180,
+    "eks:destroy": 300,
+    "compute:deploy": 30,
+    "compute:destroy": 15,
+    "sre-supreme:deploy": 60,
+    "naawi:execute": 45,
+  };
+
+  const getStepEstimate = (step: DagStep) =>
+    STEP_TIME_ESTIMATES[`${step.intent}:${step.action}`] ?? 30;
+
+  const totalEstimatedSeconds = useMemo(() =>
+    steps.reduce((sum, s) => sum + getStepEstimate(s), 0),
+    [steps]
+  );
+
+  const completedCount = steps.filter(s => s.status === "done" || s.status === "rolled_back").length;
+  const errorCount = steps.filter(s => s.status === "error").length;
+  const activeCount = steps.filter(s => s.status === "running" || s.status === "polling").length;
+  const progressPct = steps.length > 0
+    ? Math.round(((completedCount + errorCount) / steps.length) * 100)
+    : 0;
+
+  const elapsedSeconds = useMemo(() => {
+    const doneSteps = steps.filter(s => s.status === "done" || s.status === "error" || s.status === "rolled_back");
+    return doneSteps.reduce((sum, s) => sum + getStepEstimate(s), 0);
+  }, [steps]);
+
+  const remainingSeconds = useMemo(() => {
+    const pending = steps.filter(s => s.status === "pending" || s.status === "running" || s.status === "polling");
+    return pending.reduce((sum, s) => sum + getStepEstimate(s), 0);
+  }, [steps]);
+
+  const formatTime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  };
+
   if (isRestoring) {
     return (
       <Card className="bg-card border-primary/20">
