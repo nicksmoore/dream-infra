@@ -203,7 +203,6 @@ export function OrchestrationPanel({
 
   async function runOrchestration(approved = false) {
     setIsRunning(true);
-    let networkResult: EngineResponse | null = null;
 
     if (naawiOperations.length > 0) {
       try {
