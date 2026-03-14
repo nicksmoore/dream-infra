@@ -342,7 +342,7 @@ export class DagOrchestrator {
         Runtime: "nodejs18.x",
         Role: spec.roleArn || "arn:aws:iam::ACCOUNT:role/LambdaExecutionRole",
         Handler: "index.handler",
-        Code: { ZipFile: new TextEncoder().encode("/* Lambda Authorizer */") }
+        Code: { ZipFile: btoa("/* Lambda Authorizer */") }
       },
       riskLevel: "LOW"
     });
