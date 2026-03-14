@@ -719,6 +719,18 @@ export function OrchestrationPanel({
                     {step.output.slice(0, 200)}
                   </p>
                 )}
+
+                {/* Granular EKS debug (shows stage + raw error payloads like "No cluster found") */}
+                {step.intent === "eks" && (step.status === "polling" || step.status === "error") && stepOutputs[step.id] && (
+                  <details className="mt-2">
+                    <summary className="text-[10px] text-muted-foreground cursor-pointer select-none">
+                      View EKS details
+                    </summary>
+                    <pre className="mt-1 text-[10px] font-mono text-muted-foreground bg-muted/30 border border-border rounded p-2 overflow-auto max-h-40">
+{JSON.stringify(stepOutputs[step.id], null, 2)}
+                    </pre>
+                  </details>
+                )}
               </div>
             </div>
           ))}
