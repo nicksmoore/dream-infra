@@ -330,10 +330,10 @@ exports.handler = (event, context, callback) => {
               <div className="p-4 font-mono text-[10px] space-y-1">
                 <div className="text-muted-foreground">[2026-03-13 14:22:01] ENGINE: Initializing Project Naawi Runtime v1.4.2</div>
                 <div className="text-muted-foreground">[2026-03-13 14:22:02] ENGINE: Parsing intent for 'naawi-app' distribution</div>
-                <div className="text-primary">[2026-03-13 14:22:03] CALL [1] S3:CreateBucket -> SUCCESS (naawi-assets)</div>
-                <div className="text-primary">[2026-03-13 14:22:04] CALL [2] S3:PutBucketPolicy -> SUCCESS</div>
-                <div className="text-primary">[2026-03-13 14:22:05] CALL [3] Route53:GetHostedZone -> SUCCESS (Z12345)</div>
-                <div className="text-primary">[2026-03-13 14:22:07] CALL [4] ACM:RequestCertificate -> SUCCESS (arn:aws:acm:...)</div>
+                <div className="text-primary">{"[2026-03-13 14:22:03] CALL [1] S3:CreateBucket -> SUCCESS (naawi-assets)"}</div>
+                <div className="text-primary">{"[2026-03-13 14:22:04] CALL [2] S3:PutBucketPolicy -> SUCCESS"}</div>
+                <div className="text-primary">{"[2026-03-13 14:22:05] CALL [3] Route53:GetHostedZone -> SUCCESS (Z12345)"}</div>
+                <div className="text-primary">{"[2026-03-13 14:22:07] CALL [4] ACM:RequestCertificate -> SUCCESS (arn:aws:acm:...)"}</div>
                 <div className="text-blue-400">[2026-03-13 14:22:08] WAITER: ACM.CertificateValidated polling started...</div>
                 <div className="text-yellow-500">[2026-03-13 14:24:08] WAITER: ACM.CertificateValidated still PENDING (120s)</div>
                 <div className="text-yellow-500">[2026-03-13 14:26:08] WAITER: ACM.CertificateValidated still PENDING (240s)</div>

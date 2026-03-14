@@ -83,6 +83,13 @@
     --warning: 35 95% 55%;
     --info: 210 80% 55%;
 
+    --nexus-glow: 150 80% 50%;
+    --nexus-magenta: 320 80% 55%;
+    --nexus-cyan: 185 90% 55%;
+    --nexus-gold: 45 100% 55%;
+    --nexus-surface: 220 30% 10%;
+    --nexus-surface-elevated: 220 28% 14%;
+
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;

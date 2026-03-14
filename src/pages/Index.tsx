@@ -11,7 +11,7 @@ import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
-import { McpConnectionStatus } from "@/components/McpConnectionStatus";
+
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
 import { toast } from "@/hooks/use-toast";
@@ -20,10 +20,12 @@ import {
   ParsedIntent,
   Deployment,
   Ec2Config,
+  WorkloadType,
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
 import { Zap, Eye, Rocket, Vault } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 
 const DEFAULT_INTENT: ParsedIntent = {
@@ -32,6 +34,40 @@ const DEFAULT_INTENT: ParsedIntent = {
   environment: "dev",
   region: "us-east-1",
   os: "amazon-linux-2023",
+};
+
+const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
+  EDGE_STATIC_SPA: "global-spa",
+  SERVICE_MESH: "service-mesh",
+  EVENT_PIPELINE: "event-pipeline",
+  INTERNAL_API: "internal-api",
+  THREE_TIER: "three-tier",
+  EDGE_CACHE: "edge-cache",
+  CROSS_REGION_PEERED: "cross-region-peered",
+};
+
+const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
+  general: ["ec2"],
+  compute: ["ec2"],
+  memory: ["ec2"],
+  storage: ["ec2", "ebs"],
+  accelerated: ["ec2"],
+  hpc: ["ec2"],
+  "global-spa": ["s3", "cloudfront", "route53", "lambda"],
+  "service-mesh": ["eks", "app-mesh", "alb"],
+  "event-pipeline": ["sqs", "lambda", "dynamodb", "eventbridge"],
+  "internal-api": ["api-gateway", "lambda", "rds-proxy", "rds"],
+  "three-tier": ["asg", "alb", "rds", "elasticache", "vpc", "subnets"],
+  "edge-cache": ["dynamodb", "route53", "lambda", "cloudfront"],
+  "cross-region-peered": ["vpc", "subnets", "vpc-peering", "eks"],
+};
+
+const normalizeWorkload = (value?: string): WorkloadType | null => {
+  if (!value) return null;
+  if (value in ARCHETYPE_TO_WORKLOAD) return ARCHETYPE_TO_WORKLOAD[value];
+  const normalized = value.toLowerCase().replace(/_/g, "-");
+  if (normalized in WORKLOAD_TO_RESOURCES) return normalized as WorkloadType;
+  return null;
 };
 
 export default function Index() {
@@ -59,31 +95,49 @@ export default function Index() {
 
       const intentData = data?.intent;
       
+      // Cross-region override: if the raw input mentions peering/cross-region, 
+      // force that workload type regardless of what the AI parser returns
+      const isCrossRegion = /cross.?region|vpc.?peer|peering/i.test(input);
+      const mappedWorkload = isCrossRegion ? "cross-region-peered" as WorkloadType : normalizeWorkload(intentData?.archetype);
+
+      if (mappedWorkload) {
+        const mappedIntent: ParsedIntent = {
+          ...DEFAULT_INTENT,
+          ...intentData?.variables,
+          workloadType: mappedWorkload,
+        };
+
+        updateIntent(mappedIntent);
+        setDetectedResources(WORKLOAD_TO_RESOURCES[mappedWorkload]);
+
+        if (intentData?.confidence === "LOW") {
+          toast({
+            title: "Pattern inferred with defaults",
+            description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults. You can refine the parsed config below.",
+          });
+        } else {
+          toast({
+            title: "Archetype Confirmed",
+            description: `Routing to deterministic ${mappedWorkload} template.`,
+          });
+        }
+        return;
+      }
+
       if (intentData?.confidence === "LOW") {
-        toast({ 
-          title: "Disambiguation Required", 
-          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify if this is a frontend or backend deployment.",
-          variant: "destructive"
+        toast({
+          title: "Disambiguation Required",
+          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify the target architecture pattern.",
+          variant: "destructive",
         });
         return;
       }
 
-      if (intentData?.archetype) {
-        // Map Archetype to WorkloadType and update variables
-        const mappedIntent: ParsedIntent = {
-          ...DEFAULT_INTENT,
-          workloadType: intentData.archetype,
-          ...intentData.variables
-        };
-        updateIntent(mappedIntent);
-        
-        // Trigger deterministic expansion via badge update
-        setDetectedResources([intentData.archetype.toLowerCase()]);
-        toast({ 
-          title: "Archetype Confirmed", 
-          description: `Routing to deterministic ${intentData.archetype} template.` 
-        });
-      }
+      const parsed = parseIntentRuleBased(input);
+      const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
+      updateIntent(merged);
+      setDetectedResources(parsed.resources || WORKLOAD_TO_RESOURCES[merged.workloadType] || ["ec2"]);
+      toast({ title: "Rule-based routing", description: "Applied deterministic keyword mapping for this prompt." });
     } catch (e) {
       console.error("Parse error:", e);
       const parsed = parseIntentRuleBased(input);
@@ -115,8 +169,9 @@ export default function Index() {
               <p className="text-xs text-muted-foreground">Intent-Driven Infrastructure</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <McpConnectionStatus />
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            
             <UserMenu />
           </div>
         </div>

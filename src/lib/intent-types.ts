@@ -22,7 +22,7 @@ export interface DiscoveryReport {
 }
 
 // ===== Core Intent Types =====
-export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier";
+export type WorkloadType = "general" | "compute" | "memory" | "storage" | "accelerated" | "hpc" | "global-spa" | "service-mesh" | "event-pipeline" | "internal-api" | "three-tier" | "edge-cache" | "cross-region-peered";
 export type CostSensitivity = "cheapest" | "balanced" | "production";
 export type Environment = "dev" | "staging" | "prod";
 export type OsType = "amazon-linux-2023" | "ubuntu" | "debian" | "rhel" | "suse" | "windows-2022" | "windows-2019";
@@ -326,7 +326,7 @@ export const INSTANCE_TYPE_CATALOG: { family: string; category: string; types: s
 
 // Helper to get instance types filtered by workload
 export function getInstanceTypesForWorkload(workload: WorkloadType): { family: string; category: string; types: string[] }[] {
-  const categoryMap: Record<WorkloadType, string[]> = {
+  const categoryMap: Partial<Record<WorkloadType, string[]>> = {
     general: ["General Purpose", "Burstable"],
     compute: ["Compute Optimized"],
     memory: ["Memory Optimized", "High Memory"],
@@ -334,7 +334,7 @@ export function getInstanceTypesForWorkload(workload: WorkloadType): { family: s
     accelerated: ["GPU", "Inference", "Training"],
     hpc: ["HPC"],
   };
-  const keywords = categoryMap[workload];
+  const keywords = categoryMap[workload] || [];
   return INSTANCE_TYPE_CATALOG.filter(g => keywords.some(k => g.category.includes(k)));
 }
 
@@ -398,26 +398,44 @@ export function parseIntentRuleBased(input: string): Partial<ParsedIntent> {
 
   // ── Detect resources ──
   const resources: string[] = [];
+  if (/cross.?region|vpc.?peer|peering/i.test(lower)) {
+    resources.push("vpc", "subnets", "vpc-peering", "eks");
+  }
+  if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) {
+    resources.push("dynamodb", "route53", "lambda", "cloudfront");
+  }
+  if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) {
+    resources.push("s3", "cloudfront", "route53", "lambda");
+  }
+  if (/microservice|service.?mesh|app.?mesh|mesh|\beks\b|\bkubernetes\b|\bk8s\b/i.test(lower)) {
+    resources.push("eks", "app-mesh", "alb");
+  }
+  if (/queue|pipeline|event.?driven|\bsqs\b|event.?bridge/i.test(lower)) {
+    resources.push("sqs", "lambda", "dynamodb", "eventbridge");
+  }
+  if (/internal.?api|internal.?tool|bff|api.?gateway|postgres|aurora/i.test(lower)) {
+    resources.push("api-gateway", "lambda", "rds-proxy", "rds");
+  }
+  if (/3-tier|monolith|legacy|\basg\b|enterprise/i.test(lower)) {
+    resources.push("asg", "alb", "rds", "elasticache", "vpc", "subnets");
+  }
+
   if (/\bvpc\b/i.test(lower)) resources.push("vpc");
   if (/\bsubnet/i.test(lower)) resources.push("subnets");
   if (/\bnacl/i.test(lower) || /network.?acl/i.test(lower)) resources.push("nacls");
-  if (/\beks\b/i.test(lower) || /elastic.?kubernetes/i.test(lower) || /\bkubernetes\b/i.test(lower) || /\bk8s\b/i.test(lower)) resources.push("eks");
   if (/\bec2\b/i.test(lower) || /\binstance\b/i.test(lower) || /\bserver\b/i.test(lower) || /\bvm\b/i.test(lower)) resources.push("ec2");
-  if (/\bs3\b/i.test(lower) || /storage.?bucket/i.test(lower)) resources.push("s3");
-  if (/\bcloudfront\b/i.test(lower) || /cdn/i.test(lower)) resources.push("cloudfront");
-  if (/\bsqs\b/i.test(lower) || /queue/i.test(lower)) resources.push("sqs");
-  if (/\blambda\b/i.test(lower) || /function/i.test(lower)) resources.push("lambda");
-  if (/\bapi\b/i.test(lower) || /gateway/i.test(lower)) resources.push("api-gateway");
-  if (/\brds\b/i.test(lower) || /database/i.test(lower) || /postgres/i.test(lower) || /aurora/i.test(lower)) resources.push("rds");
 
-  // If VPC mentioned but no subnets/nacls explicitly, include them as they're needed
+  // If VPC mentioned but no subnets explicitly, include them
   if (resources.includes("vpc") && !resources.includes("subnets")) resources.push("subnets");
-  // If nothing specific detected, default to ec2
-  if (!resources.length) resources.push("ec2");
-  result.resources = resources;
+
+  // Deduplicate + fallback
+  result.resources = [...new Set(resources)];
+  if (!result.resources.length) result.resources = ["ec2"];
 
   // Workload / Pattern Detection
-  if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) result.workloadType = "global-spa";
+  if (/cross.?region|vpc.?peer|peering/i.test(lower)) result.workloadType = "cross-region-peered";
+  else if (/edge.?cache|global.?session|failover.?store|dynamodb.?global|route.?53.?arc|zig.?lambda/i.test(lower)) result.workloadType = "edge-cache";
+  else if (/global.?dashboard|static.?site|spa|global.?spa|cloudfront/i.test(lower)) result.workloadType = "global-spa";
   else if (/microservice|service.?mesh|app.?mesh|mesh/i.test(lower)) result.workloadType = "service-mesh";
   else if (/queue|pipeline|event.?driven|sqs|event.?bridge/i.test(lower)) result.workloadType = "event-pipeline";
   else if (/internal.?api|internal.?tool|bff|api.?gateway/i.test(lower)) result.workloadType = "internal-api";

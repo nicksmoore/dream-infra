@@ -1,5 +1,7 @@
 # Project Naawi: Intent-Driven Infrastructure
 
+Cloud infrastructure orchestration platform — describe what you want, and Naawi provisions it.
+
 ## 🚀 The Mission
 
 Infrastructure-as-Code has hit a wall of "boilerplate fatigue." **Project Naawi** is breaking through it—making Intent-Driven Infrastructure (IDI) conversational, intuitive, and actually fun to build.
@@ -27,6 +29,9 @@ We are officially opening the doors for:
 - **Intent Compiler**: Natural language intents → Infrastructure automation
 - **Founding 100 Badge**: Recognition for early adopters and contributors
 - **YAML Bounties Program** (Coming Soon): Financial incentives for legacy boilerplate replacement
+- **DAG-based Orchestration**: Cost estimates, risk assessment, and real-time deployment tracking
+- **Credential Vault**: Encrypted cloud provider key management
+- **Deployment History**: Rollback & cleanup capabilities
 
 ## 🤝 Get Involved
 
@@ -36,13 +41,8 @@ We are officially opening the doors for:
 
 ## 🛠️ Tech Stack
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **Frontend**: React · Vite · TypeScript · Tailwind CSS · shadcn/ui
+- **Backend**: Lovable Cloud (Edge Functions, Auth, Database)
 
 ## 📝 Development
 
