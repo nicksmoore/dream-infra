@@ -2,6 +2,18 @@
 
 Cloud infrastructure orchestration platform — describe what you want, and Naawi provisions it.
 
+## Screenshots
+
+### Intent Input
+Describe your infrastructure in plain English — Naawi parses multi-step, multi-region deployments from a single prompt.
+
+![Intent Input](public/images/naawi-intent-input.png)
+
+### Stack Orchestration
+DAG-resolved execution plan with cost estimates, risk assessment, and real-time step tracking.
+
+![Stack Orchestration](public/images/naawi-orchestration.png)
+
 ## Project Info
 
 **URL**: https://lovable.dev/projects/6a3465f5-385e-4ef9-8b73-c5fa5b64f26b
