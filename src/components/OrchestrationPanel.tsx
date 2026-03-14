@@ -155,16 +155,45 @@ export function OrchestrationPanel({
   }, [naawiOperations, resources, region, environment, workloadType, instanceType, os]);
 
   async function runPlan() {
-    if (naawiOperations.length === 0) return;
     setIsPlanning(true);
     try {
-      const result = await naawiPlan({ operations: naawiOperations, region });
-      if (result.status === "success") {
-        setPlanResult(result.details);
-        toast({ title: "Naawi Plan Ready", description: "Review the discovery report before execution." });
-      } else {
-        throw new Error(result.error || "Plan failed");
+      if (naawiOperations.length > 0) {
+        const result = await naawiPlan({ operations: naawiOperations, region });
+        if (result.status !== "success") throw new Error(result.error || "Plan failed");
+        setPlanResult(result.details as PlanResult);
+        toast({ title: "Naawi Plan Ready", description: "Review diff + estimated cost before execution." });
+        return;
       }
+
+      const isSrePattern = SRE_PATTERNS.includes(workloadType as (typeof SRE_PATTERNS)[number]);
+      if (isSrePattern) {
+        const result = await executeIntent({
+          intent: "sre-supreme",
+          action: "plan",
+          spec: {
+            workload_type: workloadType,
+            region,
+            environment,
+            name: `sre-${workloadType}-${environment}`,
+          },
+        });
+
+        if (result.status !== "success") throw new Error(result.error || result.message || "Plan failed");
+        setPlanResult(result.details as PlanResult);
+        toast({ title: "SRE Plan Ready", description: "Review planned SDK calls, diff, and cost before execution." });
+        return;
+      }
+
+      // Fallback local plan for non-SRE orchestration
+      const estimated = steps.reduce((sum, step) => sum + estimateLocalStepCost(step), 0);
+      setPlanResult({
+        risk_level: "LOW",
+        requires_approval: false,
+        estimated_monthly_cost_usd: estimated,
+        discovery: steps.map((step) => ({ operationId: step.id, status: "NOT_FOUND", suggestedAction: "CREATE" })),
+        operations: steps.map((step) => ({ id: step.id, service: step.intent.toUpperCase(), command: step.action })),
+      });
+      toast({ title: "Plan Ready", description: "Preview generated with estimated cost." });
     } catch (e) {
       toast({ title: "Planning failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
     } finally {
