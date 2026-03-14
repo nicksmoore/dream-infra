@@ -289,6 +289,11 @@ async function executeAwsCommand(
       if (route.queryString) queryString = route.queryString;
       if (actionName === "PutBucketPolicy") {
         body = typeof input.Policy === "string" ? input.Policy : JSON.stringify(input.Policy);
+      } else if (actionName === "PutObject") {
+        body = typeof input.Body === "string" ? input.Body : JSON.stringify(input.Body);
+        if (input.ContentType) {
+          extraHeaders["Content-Type"] = input.ContentType;
+        }
       }
       break;
     }
