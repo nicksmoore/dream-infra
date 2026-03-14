@@ -3386,8 +3386,80 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
       }
     }
 
+    case "nuke-stack": {
+      // Ordered multi-resource teardown: EKS → VPCs (handles the common "can't nuke because dependencies" problem)
+      const targetRegion = spec.region as string || "us-east-1";
+      const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+      const stackSteps: string[] = [];
+      const errors: string[] = [];
+
+      // Phase 1: Destroy all EKS clusters (this cleans up nodegroups + ENIs)
+      try {
+        const eksListRes = await awsSignedRequest({ service: "eks", region: targetRegion, method: "GET", path: "/clusters", accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+        if (eksListRes.ok) {
+          const eksData = JSON.parse(await eksListRes.text());
+          const clusters = (eksData.clusters || []) as string[];
+          for (const clusterName of clusters) {
+            // Check if managed
+            const descRes = await awsSignedRequest({ service: "eks", region: targetRegion, method: "GET", path: `/clusters/${encodeURIComponent(clusterName)}`, accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET });
+            if (descRes.ok) {
+              const cData = JSON.parse(await descRes.text());
+              const tags = cData.cluster?.tags || {};
+              if (tags["ManagedBy"] !== "UIDI" && !spec.force) {
+                stackSteps.push(`Skipped unmanaged cluster: ${clusterName}`);
+                continue;
+              }
+            }
+            stackSteps.push(`Destroying EKS cluster: ${clusterName}...`);
+            const result = await handleEks("destroy", { cluster_name: clusterName, region: targetRegion });
+            if (result.status === "error") {
+              errors.push(`EKS ${clusterName}: ${result.error}`);
+              stackSteps.push(`EKS ${clusterName} destroy failed: ${result.error}`);
+            } else {
+              stackSteps.push(`EKS ${clusterName} destroyed`);
+            }
+          }
+        }
+      } catch (e) {
+        errors.push(`EKS phase: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      // Phase 2: Destroy all UIDI-managed VPCs
+      try {
+        const vpcRes = await ec2Request("POST", targetRegion, new URLSearchParams({ Action: "DescribeVpcs", Version: "2016-11-15" }).toString(), AWS_KEY, AWS_SECRET);
+        const vpcBody = await vpcRes.text();
+        const vpcItems = vpcBody.match(/<item>[\s\S]*?<vpcId>vpc-[a-f0-9]+<\/vpcId>[\s\S]*?<\/item>/g) || [];
+        for (const item of vpcItems) {
+          const id = item.match(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/)?.[1];
+          if (!id) continue;
+          const isDefault = item.includes("<isDefault>true</isDefault>");
+          if (isDefault) continue;
+          const managed = item.includes("UIDI") || !!spec.force;
+          if (!managed) {
+            stackSteps.push(`Skipped unmanaged VPC: ${id}`);
+            continue;
+          }
+          stackSteps.push(`Destroying VPC: ${id}...`);
+          const result = await handleNetwork("destroy", { vpc_id: id, region: targetRegion });
+          if (result.status === "error") {
+            errors.push(`VPC ${id}: ${result.error}`);
+            stackSteps.push(`VPC ${id} destroy failed: ${result.error}`);
+          } else {
+            stackSteps.push(`VPC ${id} destroyed`);
+          }
+        }
+      } catch (e) {
+        errors.push(`VPC phase: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      if (errors.length > 0) {
+        return err("inventory", action, `Stack nuke completed with ${errors.length} error(s): ${errors[0]}`, { steps: stackSteps, errors, region: targetRegion });
+      }
+      return ok("inventory", action, `Stack nuke complete. ${stackSteps.length} operations.`, { steps: stackSteps, region: targetRegion });
+    }
+
     default:
-      return err("inventory", action, `Unknown inventory action: ${action}. Supported: scan, nuke.`);
+      return err("inventory", action, `Unknown inventory action: ${action}. Supported: scan, nuke, nuke-stack.`);
   }
 }
 

@@ -458,9 +458,12 @@ export function OrchestrationPanel({
     }
 
     setIsRollingBack(false);
+    if (failures > 0) {
+      setShowForceNuke(true);
+    }
     toast({
       title: failures === 0 ? "Rollback complete" : `Rollback finished with ${failures} failure(s)`,
-      description: failures === 0 ? "All resources destroyed. 0 orphans." : "Some resources may need manual cleanup.",
+      description: failures === 0 ? "All resources destroyed. 0 orphans." : "Use Force Nuke to clean up stuck resources.",
       variant: failures === 0 ? "default" : "destructive",
     });
   }, [steps, stepOutputs]);
