@@ -91,6 +91,8 @@ export function OrchestrationPanel({
   const [isPlanning, setIsPlanning] = useState(false);
   const [planResult, setPlanResult] = useState<PlanResult | null>(null);
   const [deploymentResult, setDeploymentResult] = useState<any>(null);
+  const [showForceNuke, setShowForceNuke] = useState(false);
+  const [isForceNuking, setIsForceNuking] = useState(false);
 
   const {
     restoredState,
@@ -458,9 +460,12 @@ export function OrchestrationPanel({
     }
 
     setIsRollingBack(false);
+    if (failures > 0) {
+      setShowForceNuke(true);
+    }
     toast({
       title: failures === 0 ? "Rollback complete" : `Rollback finished with ${failures} failure(s)`,
-      description: failures === 0 ? "All resources destroyed. 0 orphans." : "Some resources may need manual cleanup.",
+      description: failures === 0 ? "All resources destroyed. 0 orphans." : "Use Force Nuke to clean up stuck resources.",
       variant: failures === 0 ? "default" : "destructive",
     });
   }, [steps, stepOutputs]);
@@ -505,13 +510,60 @@ export function OrchestrationPanel({
 
     setIsRollingBack(false);
     setStepOutputs({});
+    if (failures > 0) {
+      setShowForceNuke(true);
+    }
     toast({
       title: failures === 0 ? "Stack destroyed" : `Teardown finished with ${failures} failure(s)`,
+      description: failures > 0 ? "Use Force Nuke to clean up stuck resources." : undefined,
       variant: failures === 0 ? "default" : "destructive",
     });
   }, [steps, stepOutputs]);
 
-  // ── UI Helpers ──
+  // ── Force Nuke: ordered EKS→VPC teardown via inventory/nuke-stack ──
+  const runForceNuke = useCallback(async () => {
+    setIsForceNuking(true);
+    toast({ title: "Force Nuke started", description: "Destroying EKS clusters → VPCs in dependency order..." });
+
+    try {
+      const result = await executeIntent({
+        intent: "inventory" as any,
+        action: "nuke-stack" as any,
+        spec: { region, force: true },
+      });
+
+      const details = result.details as any;
+
+      if (result.status === "error") {
+        toast({
+          title: "Force Nuke had errors",
+          description: result.error || "Some resources could not be deleted",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Force Nuke complete", description: result.message });
+        setShowForceNuke(false);
+        // Mark all steps as rolled back
+        setSteps(prev => prev.map(s => ({ ...s, status: "rolled_back" as any, output: "Force nuked" })));
+        setStepOutputs({});
+      }
+
+      // Log steps for debugging
+      if (details?.steps) {
+        console.log("Force Nuke steps:", details.steps);
+      }
+    } catch (e) {
+      toast({
+        title: "Force Nuke failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsForceNuking(false);
+    }
+  }, [region]);
+
+
   const statusIcon = (status: string) => {
     switch (status) {
       case "running": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
@@ -771,18 +823,29 @@ export function OrchestrationPanel({
         </div>
 
         {/* Rollback & Destroy */}
-        {(hasFailedSteps || allDone) && (
-          <div className="flex gap-2">
-            {hasFailedSteps && hasCompletedSteps && (
-              <Button onClick={runRollback} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
-                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-                Rollback Completed Steps
-              </Button>
-            )}
-            {allDone && (
-              <Button onClick={runStackDestroy} disabled={isRollingBack || isRunning} variant="destructive" className="flex-1" size="sm">
-                {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
-                Tear Down Stack
+        {(hasFailedSteps || allDone || showForceNuke) && (
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              {hasFailedSteps && hasCompletedSteps && (
+                <Button onClick={runRollback} disabled={isRollingBack || isRunning || isForceNuking} variant="destructive" className="flex-1" size="sm">
+                  {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                  Rollback Completed Steps
+                </Button>
+              )}
+              {allDone && (
+                <Button onClick={runStackDestroy} disabled={isRollingBack || isRunning || isForceNuking} variant="destructive" className="flex-1" size="sm">
+                  {isRollingBack ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                  Tear Down Stack
+                </Button>
+              )}
+            </div>
+            {showForceNuke && (
+              <Button onClick={runForceNuke} disabled={isForceNuking || isRunning} variant="destructive" size="sm" className="w-full border-2 border-destructive/50">
+                {isForceNuking ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Force Nuking (EKS→VPC)...</>
+                ) : (
+                  <><Trash2 className="h-4 w-4 mr-2" /> Force Nuke — Ordered Cleanup (EKS → VPCs)</>
+                )}
               </Button>
             )}
           </div>
