@@ -76,6 +76,8 @@ const S3_ROUTES: Record<string, { method: string; path: (i: any) => string; quer
   HeadBucket:       { method: "HEAD", path: i => `/${i.Bucket}` },
   DeleteBucket:     { method: "DELETE", path: i => `/${i.Bucket}` },
   PutObject:        { method: "PUT",  path: i => `/${i.Bucket}/${i.Key}` },
+  DeleteObject:     { method: "DELETE", path: i => `/${i.Bucket}/${i.Key}` },
+  ListObjectsV2:    { method: "GET",  path: i => `/${i.Bucket}`, queryString: "list-type=2" },
 };
 
 // CloudFront XML request builder
