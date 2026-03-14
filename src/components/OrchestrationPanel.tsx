@@ -342,6 +342,9 @@ export function OrchestrationPanel({
           </div>
         )}
 
+        {/* Deployment DAG Diagram */}
+        <DeploymentDiagram workloadType={workloadType} steps={steps} />
+
         {/* Steps */}
         <div className="space-y-3">
           {steps.map((step, i) => (
@@ -364,6 +367,14 @@ export function OrchestrationPanel({
             </div>
           ))}
         </div>
+
+        {/* Validation & Security Scan — shown after deployment */}
+        {steps.some(s => s.status === "done") && (
+          <ValidationPhase
+            workloadType={workloadType}
+            deploymentResult={deploymentResult}
+          />
+        )}
 
         <div className="flex gap-2">
           <Button onClick={runPlan} disabled={isPlanning || isRunning || steps.length === 0} className="flex-1" variant="secondary">
