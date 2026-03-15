@@ -11,6 +11,8 @@ import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
+import { GoldenPathSelector } from "@/components/GoldenPathSelector";
+import { SafetyGateReport } from "@/components/SafetyGateReport";
 
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
@@ -24,6 +26,13 @@ import {
   mapIntentToEc2Config,
   parseIntentRuleBased,
 } from "@/lib/intent-types";
+import {
+  mapIntentToGoldenPaths,
+  runSafetyGate,
+  type GoldenPathTemplate,
+  type GoldenPathChoice,
+  type SafetyGateReport as SafetyGateReportType,
+} from "@/lib/golden-path";
 import { Zap, Eye, Rocket, Vault } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
@@ -73,20 +82,87 @@ const normalizeWorkload = (value?: string): WorkloadType | null => {
 export default function Index() {
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
-  const [hasVaultCredentials] = useState(true); // BYOC vault handles credentials now
+  const [hasVaultCredentials] = useState(true);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
   const [operations, setOperations] = useState<any[]>([]);
   const [showDebugger, setShowDebugger] = useState(false);
 
+  // Golden Path state
+  const [goldenPathChoices, setGoldenPathChoices] = useState<GoldenPathChoice[]>([]);
+  const [selectedGoldenPath, setSelectedGoldenPath] = useState<GoldenPathTemplate | null>(null);
+  const [safetyReport, setSafetyReport] = useState<SafetyGateReportType | null>(null);
+  const [rawIntentText, setRawIntentText] = useState("");
+  const [goldenPathOverridden, setGoldenPathOverridden] = useState(false);
+
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
     setConfig(prev => ({ ...mapIntentToEc2Config(newIntent), ...getAdvancedOverrides(prev) }));
   }, []);
 
+  const handleGoldenPathSelect = useCallback((template: GoldenPathTemplate) => {
+    setSelectedGoldenPath(template);
+    setGoldenPathChoices([]); // Hide selector
+
+    // Run safety gate
+    const report = runSafetyGate(template, {
+      cpuMillicores: 1000, // default estimate
+      memoryMb: 2048,
+      instanceCount: config.instanceCount || 1,
+      estimatedMonthlyCost: 50, // heuristic
+      hasVaultIntegration: hasVaultCredentials,
+      hasHealthCheck: intent.environment === "prod",
+      hasSloAlerts: false,
+      environment: intent.environment,
+    });
+
+    setSafetyReport(report);
+
+    // Update resources from golden path
+    setDetectedResources(template.requiredResources);
+
+    toast({
+      title: `${template.icon} ${template.name} Selected`,
+      description: report.halted
+        ? "Safety gate has blockers — resolve before deploying."
+        : `${template.augmentations.length} augmentations will be auto-scaffolded.`,
+    });
+  }, [config.instanceCount, hasVaultCredentials, intent.environment]);
+
+  const handleGoldenPathOverride = useCallback((justification: string) => {
+    setGoldenPathOverridden(true);
+    setGoldenPathChoices([]);
+    setSafetyReport(null);
+    setSelectedGoldenPath(null);
+    toast({
+      title: "Golden Path Overridden",
+      description: `Off-road justification logged: "${justification.slice(0, 60)}..."`,
+      variant: "destructive",
+    });
+  }, []);
+
+  const handleSafetyProceed = useCallback(() => {
+    setSafetyReport(null); // Clear report, keep selectedGoldenPath for reference
+    toast({ title: "Safety Gate Cleared", description: "Proceeding to orchestration." });
+  }, []);
+
+  const handleSafetyAbort = useCallback(() => {
+    setSafetyReport(null);
+    setSelectedGoldenPath(null);
+    setGoldenPathChoices([]);
+    toast({ title: "Deployment Cancelled" });
+  }, []);
+
   const handleParse = useCallback(async (input: string) => {
     setIsParsing(true);
+    setRawIntentText(input);
+    // Reset golden path state on new parse
+    setGoldenPathChoices([]);
+    setSelectedGoldenPath(null);
+    setSafetyReport(null);
+    setGoldenPathOverridden(false);
+
     try {
       const { data, error } = await supabase.functions.invoke("parse-intent", {
         body: { message: input },
@@ -95,8 +171,6 @@ export default function Index() {
 
       const intentData = data?.intent;
       
-      // Cross-region override: if the raw input mentions peering/cross-region, 
-      // force that workload type regardless of what the AI parser returns
       const isCrossRegion = /cross.?region|vpc.?peer|peering/i.test(input);
       const mappedWorkload = isCrossRegion ? "cross-region-peered" as WorkloadType : normalizeWorkload(intentData?.archetype);
 
@@ -110,15 +184,19 @@ export default function Index() {
         updateIntent(mappedIntent);
         setDetectedResources(WORKLOAD_TO_RESOURCES[mappedWorkload]);
 
+        // Golden Path mapping
+        const choices = mapIntentToGoldenPaths(input, mappedWorkload);
+        if (choices.length === 1 && choices[0].confidence === "high") {
+          // Auto-select high-confidence single match
+          handleGoldenPathSelect(choices[0].template);
+        } else {
+          setGoldenPathChoices(choices);
+        }
+
         if (intentData?.confidence === "LOW") {
           toast({
             title: "Pattern inferred with defaults",
-            description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults. You can refine the parsed config below.",
-          });
-        } else {
-          toast({
-            title: "Archetype Confirmed",
-            description: `Routing to deterministic ${mappedWorkload} template.`,
+            description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults.",
           });
         }
         return;
@@ -130,6 +208,9 @@ export default function Index() {
           description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify the target architecture pattern.",
           variant: "destructive",
         });
+        // Still show golden path choices for refinement
+        const choices = mapIntentToGoldenPaths(input);
+        setGoldenPathChoices(choices);
         return;
       }
 
@@ -137,24 +218,39 @@ export default function Index() {
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || WORKLOAD_TO_RESOURCES[merged.workloadType] || ["ec2"]);
-      toast({ title: "Rule-based routing", description: "Applied deterministic keyword mapping for this prompt." });
+      
+      // Golden Path mapping for rule-based
+      const choices = mapIntentToGoldenPaths(input, merged.workloadType);
+      if (choices.length === 1 && choices[0].confidence === "high") {
+        handleGoldenPathSelect(choices[0].template);
+      } else {
+        setGoldenPathChoices(choices);
+      }
+
+      toast({ title: "Intent Parsed", description: "Review the Golden Path recommendation below." });
     } catch (e) {
       console.error("Parse error:", e);
       const parsed = parseIntentRuleBased(input);
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || ["ec2"]);
-      toast({ title: "Fell back to Rule-based", description: "Keyword matching used due to resolver timeout." });
+      
+      const choices = mapIntentToGoldenPaths(input, merged.workloadType);
+      setGoldenPathChoices(choices);
+      toast({ title: "Fell back to Rule-based", description: "Keyword matching used. Review Golden Path options." });
     } finally {
       setIsParsing(false);
     }
-  }, [updateIntent]);
+  }, [updateIntent, handleGoldenPathSelect]);
 
   const isMultiResource = detectedResources.length > 1 ||
     detectedResources.some(r => [
       "vpc", "eks", "subnets", "nacls", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds",
       "edge_static_spa", "service_mesh", "event_pipeline"
     ].includes(r));
+
+  // Determine if we should show orchestration (golden path cleared or overridden)
+  const showOrchestration = (isMultiResource || operations.length > 0) && !safetyReport && (selectedGoldenPath || goldenPathOverridden || goldenPathChoices.length === 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -171,7 +267,6 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            
             <UserMenu />
           </div>
         </div>
@@ -204,10 +299,34 @@ export default function Index() {
                 {detectedResources.map(r => (
                   <Badge key={r} variant="secondary" className="text-xs uppercase">{r}</Badge>
                 ))}
+                {selectedGoldenPath && (
+                  <Badge variant="default" className="text-xs ml-2">
+                    {selectedGoldenPath.icon} {selectedGoldenPath.name}
+                  </Badge>
+                )}
               </div>
             )}
 
-            {isMultiResource || operations.length > 0 ? (
+            {/* Golden Path Selector — Choice Architecture */}
+            {goldenPathChoices.length > 0 && (
+              <GoldenPathSelector
+                choices={goldenPathChoices}
+                onSelect={handleGoldenPathSelect}
+                onOverride={handleGoldenPathOverride}
+              />
+            )}
+
+            {/* Safety Gate Report — Halt & Report */}
+            {safetyReport && (
+              <SafetyGateReport
+                report={safetyReport}
+                onProceed={handleSafetyProceed}
+                onAbort={handleSafetyAbort}
+              />
+            )}
+
+            {/* Orchestration — after Golden Path cleared */}
+            {showOrchestration ? (
               <div className="space-y-6">
                 <OrchestrationPanel
                   resources={detectedResources}
@@ -234,7 +353,7 @@ export default function Index() {
 
                 {showDebugger && <DeploymentDebugger />}
               </div>
-            ) : (
+            ) : !safetyReport && goldenPathChoices.length === 0 && detectedResources.length > 0 && !isMultiResource ? (
               <>
                 <Card className="bg-card">
                   <CardContent className="pt-6">
@@ -254,12 +373,11 @@ export default function Index() {
                   config={config}
                   hasCredentials={hasVaultCredentials}
                   onRequestCredentials={() => {
-                    // Navigate to vault tab
                     toast({ title: "Add credentials in the Vault tab", description: "Your cloud keys are now managed via the encrypted BYOC vault." });
                   }}
                 />
               </>
-            )}
+            ) : null}
 
             <DeploymentHistory deployments={deployments} />
           </TabsContent>
