@@ -6,7 +6,6 @@
 // ───── Types ─────
 
 export type GoldenPathId =
-  | "high-performance-api"
   | "internal-worker"
   | "fintech-pci"
   | "global-spa"
@@ -84,6 +83,16 @@ export interface GoldenPathTemplate {
 
 // ───── Template Registry ─────
 
+/**
+ * @deprecated V1 Bootstrap Mechanism
+ * 
+ * Per ADR-002 (Trace-Derived Intent Taxonomy), this static registry is being deprecated.
+ * Future Golden Paths will be synthesized from successful execution traces (ZTAI Logs)
+ * via the Pattern Synthesizer, not declared manually.
+ * 
+ * This registry remains active for cold-start bootstrapping until the Synthesizer
+ * has observed enough production traffic to derive patterns automatically.
+ */
 export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
   // ─── V1.0: The Classics ───
   {
@@ -270,26 +279,6 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
   },
 
   // ─── V3.0: The AI-Ops Path ───
-  {
-    id: "high-performance-api",
-    name: "High-Performance API",
-    description: "Blitz Gateway with sub-10ms p99 latency. Includes circuit breakers, rate limiting, and 99.9% SLO.",
-    icon: "⚡",
-    tier: "V3.0 - The AI-Ops Path",
-    sensitivityTags: ["sensitive"],
-    runtimeHints: ["zig", "rust", "go"],
-    scaffolding: {
-      networkPolicies: "zero-trust",
-      observability: { serviceMonitor: true, goldenSignals: true, customMetrics: ["request_queue_depth"] },
-      resilience: { pdb: true, hpa: true, circuitBreaker: true, retryPolicy: true },
-      security: { vaultIntegration: true, imdsv2Only: true, encryptionAtRest: true, securityContext: true },
-    },
-    resourceCeiling: { maxCpuMillicores: 4000, maxMemoryMb: 8192, maxInstances: 20, maxMonthlyBudgetUsd: 2000 },
-    sloTarget: { availability: 99.9, p99LatencyMs: 10, requiresHealthCheck: true, requiresAlerts: true },
-    requiredResources: ["eks", "alb", "vpc", "subnets"],
-    suggestedInstanceType: { cheapest: "c6g.medium", balanced: "c7g.large", production: "c7g.2xlarge" },
-    augmentations: ["ServiceMonitor", "Envoy Sidecar Proxy", "PodDisruptionBudget", "HPA (Custom Metrics)"],
-  },
   {
     id: "ml-training",
     name: "ML Training Pipeline",
@@ -741,7 +730,6 @@ export function mapIntentToGoldenPaths(input: string, workloadType?: string): Go
     { id: "hardened-path", patterns: [/zero.?trust|multi.?region|disaster.?recovery|dr.?path|hardened/], confidence: "high" },
     { id: "ai-ops-path", patterns: [/ai.?ops|remediation|keda|scaling|ai.?driven/], confidence: "high" },
     { id: "fintech-pci", patterns: [/payment|fintech|pci|transaction|billing|checkout|stripe/], confidence: "high" },
-    { id: "high-performance-api", patterns: [/high.?perf|low.?latency|blitz|gateway|api.*(zig|rust)|sub.?10ms/], confidence: "high" },
     { id: "internal-worker", patterns: [/worker|queue.?consumer|batch.?process|background.?job/], confidence: "high" },
     { id: "ml-training", patterns: [/ml|machine.?learn|train|gpu|deep.?learn|model|pytorch|tensorflow/], confidence: "high" },
     { id: "global-spa", patterns: [/spa|static.?site|dashboard|cloudfront|cdn|landing.?page/], confidence: "high" },
@@ -788,8 +776,8 @@ export function mapIntentToGoldenPaths(input: string, workloadType?: string): Go
       "edge-cache": "edge-cache",
       "accelerated": "ml-training",
       "hpc": "ml-training",
-      "compute": "high-performance-api",
-      "memory": "high-performance-api",
+      "compute": "general-compute",
+      "memory": "general-compute",
     };
     const mapped = workloadMap[workloadType];
     if (mapped) {

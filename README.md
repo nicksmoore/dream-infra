@@ -33,6 +33,16 @@ We are officially opening the doors for:
 - **Credential Vault**: Encrypted cloud provider key management
 - **Deployment History**: Rollback & cleanup capabilities
 
+## 🧬 V2 Architecture: Trace-Derived Intents
+
+We are moving beyond static "Golden Path" templates. In V2, Naawi synthesizes intent definitions from your infrastructure's actual behavior.
+
+- **Deterministic Execution Engine (DEE)**: Captures raw SDK calls and outcomes.
+- **Zero-Trust Audit Immutable (ZTAI) Log**: The training dataset of every successful operation.
+- **Reliable Model Consistency Metric (RMCM)**: The governance gate. Patterns are promoted based on coherence scores, not committee votes.
+
+See [ADR-002: Trace-Derived Intent Taxonomy](docs/architecture/ADR-002-trace-derived-intents.md) for the full architectural specification.
+
 ## 🤝 Get Involved
 
 - **GitHub**: [github.com/nicksmoore/project-naawi](https://github.com/nicksmoore/project-naawi)
