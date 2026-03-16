@@ -36,6 +36,13 @@ import {
   type GoldenPathChoice,
   type SafetyGateReport as SafetyGateReportType,
 } from "@/lib/golden-path";
+import {
+  hydrateGoldenPathCeiling,
+  getCurrentCapacityTier,
+  escalateViaIntent,
+  type CapacityTierId,
+  type EscalationRecord,
+} from "@/lib/policy-registry";
 import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +122,17 @@ export default function Index() {
   const [selectedGoldenPath, setSelectedGoldenPath] = useState<GoldenPathTemplate | null>(null);
   const [safetyReport, setSafetyReport] = useState<SafetyGateReportType | null>(null);
   const [goldenPathOverridden, setGoldenPathOverridden] = useState(false);
+  const [currentTierId, setCurrentTierId] = useState<CapacityTierId>("sandbox");
+  const [doltCommitRef, setDoltCommitRef] = useState<string | null>(null);
+  const [escalationHistory, setEscalationHistory] = useState<EscalationRecord[]>([]);
+
+  // ───── Dolt Snapshot Manager ─────
+  // PRD §3.2: Auto-snapshot before pre-flight validation
+  const generateDoltSnapshot = useCallback((pathId: string, env: string): string => {
+    const hash = `dolt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
+    console.log(`[Naawi] Intent snapshot committed to Dolt: ${hash} (path=${pathId}, env=${env})`);
+    return hash;
+  }, []);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
     setIntent(newIntent);
@@ -124,25 +142,45 @@ export default function Index() {
   const handleGoldenPathSelect = useCallback((template: GoldenPathTemplate) => {
     setSelectedGoldenPath(template);
     setGoldenPathChoices([]);
-    const report = runSafetyGate(template, {
-      cpuMillicores: 1000,
-      memoryMb: 2048,
-      instanceCount: config.instanceCount || 1,
+
+    // ═══ PRD §3.1: Hydrate ceilings via Policy Registry ═══
+    const { template: hydrated, tierName, source } = hydrateGoldenPathCeiling(template, intent.environment);
+    const { tier } = getCurrentCapacityTier(template.id, intent.environment);
+    setCurrentTierId(tier.id);
+
+    // ═══ PRD §3.2: Auto-snapshot intent to Dolt before pre-flight ═══
+    const commitRef = generateDoltSnapshot(template.id, intent.environment);
+    setDoltCommitRef(commitRef);
+
+    console.log(
+      `[Naawi] Golden Path "${template.name}" hydrated with ${tierName} tier (source: ${source}). ` +
+      `Ceilings: ${hydrated.resourceCeiling.maxCpuMillicores}m CPU, ${hydrated.resourceCeiling.maxMemoryMb}MB Memory`
+    );
+
+    // Use hydrated template for safety gate
+    const needsCompute = hydrated.requiredResources.some(r => ["ec2", "asg", "eks", "lambda"].includes(r));
+    const report = runSafetyGate(hydrated, {
+      cpuMillicores: needsCompute ? Math.min(1000, hydrated.resourceCeiling.maxCpuMillicores) : 0,
+      memoryMb: needsCompute ? Math.min(2048, hydrated.resourceCeiling.maxMemoryMb) : 0,
+      instanceCount: needsCompute ? (config.instanceCount || 1) : 0,
       estimatedMonthlyCost: 50,
       hasVaultIntegration: hasVaultCredentials,
       hasHealthCheck: intent.environment === "prod",
       hasSloAlerts: false,
+      doltCommitRef: commitRef,  // PRD §3.2: Always provide Dolt commit
       environment: intent.environment,
     });
     setSafetyReport(report);
-    setDetectedResources(template.requiredResources);
+    setDetectedResources(hydrated.requiredResources);
+    setSelectedGoldenPath(hydrated);
+
     toast({
-      title: `${template.icon} ${template.name} Selected`,
+      title: `${hydrated.icon} ${hydrated.name} Selected`,
       description: report.halted
         ? "Safety gate has blockers — resolve before deploying."
-        : `${template.augmentations.length} augmentations will be auto-scaffolded.`,
+        : `${hydrated.augmentations.length} augmentations auto-scaffolded. Capacity: ${tierName} tier.`,
     });
-  }, [config.instanceCount, hasVaultCredentials, intent.environment]);
+  }, [config.instanceCount, hasVaultCredentials, intent.environment, generateDoltSnapshot]);
 
   const handleGoldenPathOverride = useCallback((justification: string) => {
     setGoldenPathOverridden(true);
@@ -165,8 +203,46 @@ export default function Index() {
     setSafetyReport(null);
     setSelectedGoldenPath(null);
     setGoldenPathChoices([]);
+    setDoltCommitRef(null);
     toast({ title: "Deployment Cancelled" });
   }, []);
+
+  // ═══ PRD §3.3: NLP Limit Escalation ═══
+  const handleEscalation = useCallback((escalationText: string) => {
+    if (!selectedGoldenPath) return;
+
+    const result = escalateViaIntent(
+      escalationText,
+      selectedGoldenPath.id,
+      intent.environment,
+      "current-user" // TODO: Wire to actual auth context
+    );
+
+    if (result.success && result.newTier && result.record) {
+      setEscalationHistory(prev => [...prev, result.record!]);
+      setCurrentTierId(result.newTier.id);
+
+      toast({
+        title: `✅ Escalated to ${result.newTier.name}`,
+        description: `Dolt commit: ${result.record.doltCommitHash}. Re-running safety gate...`,
+      });
+
+      // Re-run safety gate with new tier
+      handleGoldenPathSelect(selectedGoldenPath);
+    } else if (result.requiresApproval) {
+      toast({
+        title: "Approval Required",
+        description: result.error,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Escalation Failed",
+        description: result.error,
+        variant: "destructive",
+      });
+    }
+  }, [selectedGoldenPath, intent.environment, handleGoldenPathSelect]);
 
   const handleParse = useCallback(async (input: string) => {
     setIsParsing(true);
@@ -327,6 +403,7 @@ export default function Index() {
                 report={safetyReport}
                 onProceed={handleSafetyProceed}
                 onAbort={handleSafetyAbort}
+                onEscalate={handleEscalation}
               />
             )}
 

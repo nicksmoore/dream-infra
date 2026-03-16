@@ -71,7 +71,7 @@ export interface GoldenPathTemplate {
   description: string;
   icon: string; // emoji
   tier: LibraryTier;
-  stateStrategy: "dolt-primary" | "api-polling"; // ADR-003: Versioned State Layer
+  stateStrategy: "dolt-primary" | "dolt-mandatory" | "api-polling"; // ADR-003: Versioned State Layer
   sensitivityTags: SensitivityTag[];
   runtimeHints: RuntimeHint[];
   scaffolding: ScaffoldingSpec;
@@ -195,7 +195,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
       resilience: { pdb: false, hpa: false },
       security: { vaultIntegration: false, imdsv2Only: true, encryptionAtRest: true, securityContext: false },
     },
-    resourceCeiling: { maxCpuMillicores: 0, maxMemoryMb: 0, maxInstances: 0, maxMonthlyBudgetUsd: 1000 },
+    resourceCeiling: { maxCpuMillicores: 2000, maxMemoryMb: 4096, maxInstances: 5, maxMonthlyBudgetUsd: 1000 },
     sloTarget: { availability: 99.99, p99LatencyMs: 0, requiresHealthCheck: false, requiresAlerts: true },
     requiredResources: ["vpc", "subnets", "nat-gateway", "flow-logs"],
     suggestedInstanceType: { cheapest: "t3.nano", balanced: "t3.nano", production: "t3.nano" },
@@ -529,16 +529,19 @@ export function runSafetyGate(
   const tags = config.sensitivityTags || goldenPath.sensitivityTags;
 
   // 0. State Consistency: Dolt & Drift Detection
-  if (goldenPath.stateStrategy === "dolt-primary") {
+  // PRD §3.2: Mandatory Dolt State Commit — validation MUST fail without a commit hash
+  const isDoltRequired = goldenPath.stateStrategy === "dolt-primary" || goldenPath.stateStrategy === "dolt-mandatory";
+  if (isDoltRequired) {
     const hasValidCommit = !!config.doltCommitRef;
     results.push({
       id: "dolt-state-authority",
       rule: "State Authority — Dolt Commit",
-      severity: hasValidCommit ? "info" : "warning",
+      severity: hasValidCommit ? "info" : "error",
       message: hasValidCommit
         ? `State anchored to Dolt commit: ${config.doltCommitRef}`
-        : "No versioned state commit found; falling back to API polling",
-      passed: true, // Warning only, unless strict mode
+        : "HALT: No versioned state commit found. Dolt-first policy requires a committed intent snapshot before pre-flight validation.",
+      suggestion: hasValidCommit ? undefined : "Run 'naawi state snapshot' to commit current intent to the Dolt state store, or provide a dolt_commit_hash in the execution context.",
+      passed: hasValidCommit,
     });
 
     if (config.isDriftDetected) {
@@ -561,6 +564,23 @@ export function runSafetyGate(
         passed: true,
       });
     }
+  }
+
+  // 0b. Zero-Ceiling Hydration Guard
+  // PRD §3.1: Scaffolds must NEVER deploy with zero-value ceilings unless explicitly locked.
+  if (
+    goldenPath.resourceCeiling.maxCpuMillicores === 0 &&
+    goldenPath.resourceCeiling.maxMemoryMb === 0 &&
+    goldenPath.resourceCeiling.maxInstances === 0
+  ) {
+    results.push({
+      id: "zero-ceiling-guard",
+      rule: "Resource Hydration — Zero-Ceiling Guard",
+      severity: "error",
+      message: `HALT: "${goldenPath.name}" has zero-value resource ceilings (0m CPU, 0MB Memory). This scaffold was not hydrated with a capacity tier.`,
+      suggestion: "Hydrate this path via the Policy Registry: hydrateGoldenPathCeiling(template, environment). Or escalate via NLP: 'Escalate to Developer-Large capacity tier'.",
+      passed: false,
+    });
   }
 
   // 1. Resource Ceiling: CPU

@@ -2,9 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useState } from "react";
 import {
   ShieldCheck, ShieldAlert, AlertTriangle, Info, CheckCircle2, XCircle,
-  Activity, Lock, Eye, Layers, ArrowRight,
+  Activity, Lock, Eye, Layers, ArrowRight, ArrowUpCircle, MessageSquare,
 } from "lucide-react";
 import type { SafetyGateReport as SafetyGateReportType, GoldenPathTemplate } from "@/lib/golden-path";
 
@@ -12,6 +14,7 @@ interface SafetyGateReportProps {
   report: SafetyGateReportType;
   onProceed: () => void;
   onAbort: () => void;
+  onEscalate?: (escalationText: string) => void;
 }
 
 const SEVERITY_ICON = {
@@ -26,11 +29,13 @@ const SEVERITY_BG = {
   info: "bg-primary/5 border-primary/20",
 };
 
-export function SafetyGateReport({ report, onProceed, onAbort }: SafetyGateReportProps) {
+export function SafetyGateReport({ report, onProceed, onAbort, onEscalate }: SafetyGateReportProps) {
   const { goldenPath, results, halted, passed } = report;
   const errors = results.filter(r => r.severity === "error" && !r.passed);
   const warnings = results.filter(r => r.severity === "warning" && !r.passed);
   const passed_checks = results.filter(r => r.passed);
+  const [escalationInput, setEscalationInput] = useState("");
+  const [showEscalation, setShowEscalation] = useState(false);
 
   return (
     <Card className={`border ${halted ? "border-destructive/40 bg-destructive/5" : "border-primary/30 bg-primary/5"}`}>
@@ -154,10 +159,23 @@ export function SafetyGateReport({ report, onProceed, onAbort }: SafetyGateRepor
             Cancel
           </Button>
           {halted ? (
-            <Button variant="destructive" size="sm" disabled className="text-xs">
-              <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
-              Blocked — Resolve {errors.length} error{errors.length > 1 ? "s" : ""} first
-            </Button>
+            <>
+              {onEscalate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowEscalation(!showEscalation)}
+                  className="text-xs gap-1.5"
+                >
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                  Escalate via Intent
+                </Button>
+              )}
+              <Button variant="destructive" size="sm" disabled className="text-xs">
+                <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
+                Blocked — Resolve {errors.length} error{errors.length > 1 ? "s" : ""} first
+              </Button>
+            </>
           ) : (
             <Button size="sm" onClick={onProceed} className="text-xs">
               <ArrowRight className="h-3.5 w-3.5 mr-1.5" />
@@ -165,6 +183,65 @@ export function SafetyGateReport({ report, onProceed, onAbort }: SafetyGateRepor
             </Button>
           )}
         </div>
+
+        {/* NLP Escalation Panel — PRD §3.3 */}
+        {halted && showEscalation && onEscalate && (
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <div className="flex items-center gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
+                Natural Language Escalation
+              </p>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Resolve this halt by describing the capacity you need.
+              Every escalation is logged as a Dolt commit for auditability.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={escalationInput}
+                onChange={(e) => setEscalationInput(e.target.value)}
+                placeholder='e.g. "Escalate this VPC to the Developer-Large capacity tier"'
+                className="text-xs h-8 flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && escalationInput.trim()) {
+                    onEscalate(escalationInput.trim());
+                    setEscalationInput("");
+                    setShowEscalation(false);
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                className="text-xs h-8"
+                disabled={!escalationInput.trim()}
+                onClick={() => {
+                  if (escalationInput.trim()) {
+                    onEscalate(escalationInput.trim());
+                    setEscalationInput("");
+                    setShowEscalation(false);
+                  }
+                }}
+              >
+                <ArrowUpCircle className="h-3.5 w-3.5 mr-1" />
+                Escalate
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {["Escalate to Developer-Large", "Upgrade to staging tier", "Scale up to production"].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => {
+                    setEscalationInput(suggestion);
+                  }}
+                  className="text-[9px] px-2 py-1 rounded-full bg-muted/60 hover:bg-primary/10 hover:text-primary text-muted-foreground transition-colors cursor-pointer border border-border/30"
+                >
+                  💡 {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
