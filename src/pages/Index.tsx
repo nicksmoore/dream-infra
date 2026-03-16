@@ -252,7 +252,7 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <NavLink to="/community">Nexus</NavLink>
+            <NavLink to="/community" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">Nexus</NavLink>
             <ThemeToggle />
             <UserMenu />
           </div>
