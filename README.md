@@ -43,6 +43,14 @@ We are moving beyond static "Golden Path" templates. In V2, Naawi synthesizes in
 
 See [ADR-002: Trace-Derived Intent Taxonomy](docs/architecture/ADR-002-trace-derived-intents.md) for the full architectural specification.
 
+## 💾 V3 Architecture: Versioned State (Dolt)
+
+We are replacing implicit cloud polling with a **Dolt-backed versioned state layer**. Infrastructure state is now a first-class, queryable, and branchable artifact.
+
+- **Eliminate Rate Limits**: RMCM reads current state from Dolt commits, not Cloud APIs.
+- **Queryable Diffs**: `naawi audit diff` shows exactly what changed between any two points in history.
+- **Deterministic Rollback**: Reverting infrastructure is a `git checkout` equivalent for your entire stack.
+
 ## 🤝 Get Involved
 
 - **GitHub**: [github.com/nicksmoore/project-naawi](https://github.com/nicksmoore/project-naawi)

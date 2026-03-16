@@ -17,6 +17,8 @@ export interface EngineResponse {
   error?: string;
   details?: unknown;
   timestamp: string;
+  dolt_commit_ref?: string;   // ADR-003: Versioned state hash
+  dolt_write_failed?: boolean; // Fallback indicator
 }
 
 // ───── Client ─────

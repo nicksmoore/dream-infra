@@ -71,6 +71,7 @@ export interface GoldenPathTemplate {
   description: string;
   icon: string; // emoji
   tier: LibraryTier;
+  stateStrategy: "dolt-primary" | "api-polling"; // ADR-003: Versioned State Layer
   sensitivityTags: SensitivityTag[];
   runtimeHints: RuntimeHint[];
   scaffolding: ScaffoldingSpec;
@@ -101,6 +102,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Source → ArgoCD → Canary Rollout (Argo Rollouts/Flagger) → Automated Rollback on 5xx spike.",
     icon: "🚜",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["sensitive"],
     runtimeHints: ["node", "python", "go"],
     scaffolding: {
@@ -121,6 +123,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Provision temporary Namespace-as-a-Service on PR. Teardown on PR close.",
     icon: "⏳",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python"],
     scaffolding: {
@@ -141,6 +144,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Code → Lambda/Cloud Run → API Gateway → Automated Least-Privilege IAM.",
     icon: "⚡",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python", "go", "rust"],
     scaffolding: {
@@ -161,6 +165,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Classic ASG + ALB + RDS + ElastiCache with Multi-AZ, auto-scaling, and health checks.",
     icon: "🏗️",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["sensitive"],
     runtimeHints: ["java", "dotnet", "node", "python"],
     scaffolding: {
@@ -181,6 +186,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Public Subnets (ALB) → Private Subnets (App) → Isolated Subnets (DB) → NAT + Flow Logs.",
     icon: "🌐",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: [],
     scaffolding: {
@@ -203,6 +209,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Payment-grade infrastructure with mandatory Vault integration, encryption everywhere, and audit logging.",
     icon: "🏦",
     tier: "V2.0 - The Hardened Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["pci-dss", "sensitive"],
     runtimeHints: ["zig", "rust", "go", "java"],
     scaffolding: {
@@ -223,6 +230,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "EKS + App Mesh with mTLS, circuit breakers, and distributed tracing.",
     icon: "🕸️",
     tier: "V2.0 - The Hardened Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["sensitive"],
     runtimeHints: ["go", "rust", "java", "node"],
     scaffolding: {
@@ -243,6 +251,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "App Identity (IRSA/Workload Identity) → Automated Vault Policy → Dynamic Secret Injection.",
     icon: "🤝",
     tier: "V2.0 - The Hardened Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["sensitive"],
     runtimeHints: ["node", "python", "go", "java"],
     scaffolding: {
@@ -263,6 +272,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Zero-trust, multi-region, and automated disaster recovery (DR) with RTO < 15m.",
     icon: "🛡️",
     tier: "V2.0 - The Hardened Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["sensitive", "pci-dss"],
     runtimeHints: ["go", "rust", "java"],
     scaffolding: {
@@ -285,6 +295,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "GPU-accelerated training with spot instance support, S3 checkpointing, and cost guardrails.",
     icon: "🧠",
     tier: "V3.0 - The AI-Ops Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["python"],
     scaffolding: {
@@ -305,6 +316,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Auto-remediation, intent-based scaling, and AI-driven cost optimization.",
     icon: "🤖",
     tier: "V3.0 - The AI-Ops Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["python", "node", "go"],
     scaffolding: {
@@ -325,6 +337,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Auto-inject OTel Collector → Ship metrics to Prometheus/Grafana → Ship logs to Loki/Elastic.",
     icon: "📊",
     tier: "V3.0 - The AI-Ops Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: [],
     scaffolding: {
@@ -347,6 +360,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Standard EC2 instance with sensible defaults. The safe starting point for any workload.",
     icon: "💻",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python", "go", "java", "dotnet", "rust", "zig"],
     scaffolding: {
@@ -367,6 +381,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "Queue-depth autoscaling worker. Optimized for batch processing with DLQ and retry policies.",
     icon: "⚙️",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["zig", "rust", "go", "python"],
     scaffolding: {
@@ -387,6 +402,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "CloudFront + S3 with Origin Access Control, Lambda@Edge, and global distribution.",
     icon: "🌍",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python"],
     scaffolding: {
@@ -407,6 +423,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "SQS → Lambda → DynamoDB with mandatory DLQ, EventBridge integration, and backpressure handling.",
     icon: "📡",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python", "go", "rust"],
     scaffolding: {
@@ -427,6 +444,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "API Gateway + Lambda + RDS Proxy for internal tools. Provisioned concurrency for cold-start elimination.",
     icon: "🔧",
     tier: "V1.0 - The Classics",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python", "go"],
     scaffolding: {
@@ -447,6 +465,7 @@ export const GOLDEN_PATH_REGISTRY: GoldenPathTemplate[] = [
     description: "DynamoDB Global Tables + Route53 ARC + Lambda for ultra-low-latency edge data.",
     icon: "🌐",
     tier: "V2.0 - The Hardened Path",
+    stateStrategy: "dolt-primary",
     sensitivityTags: ["public"],
     runtimeHints: ["node", "python", "rust"],
     scaffolding: {
@@ -498,6 +517,9 @@ export function runSafetyGate(
     downstreamLatencyMs?: number;   // New: Dependency Lock
     hasHighCves?: boolean;          // New: Security Guardrail
     hasManagerApproval?: boolean;   // New: Cost Control Gate
+    doltCommitRef?: string;         // ADR-003: State Version
+    isDriftDetected?: boolean;      // ADR-003: Consistency check
+    isRollbackTarget?: boolean;     // ADR-003: Safe rollback
     environment?: string;
     sensitivityTags?: SensitivityTag[];
   }
@@ -505,6 +527,41 @@ export function runSafetyGate(
   const results: ValidationResult[] = [];
   const env = config.environment || "dev";
   const tags = config.sensitivityTags || goldenPath.sensitivityTags;
+
+  // 0. State Consistency: Dolt & Drift Detection
+  if (goldenPath.stateStrategy === "dolt-primary") {
+    const hasValidCommit = !!config.doltCommitRef;
+    results.push({
+      id: "dolt-state-authority",
+      rule: "State Authority — Dolt Commit",
+      severity: hasValidCommit ? "info" : "warning",
+      message: hasValidCommit
+        ? `State anchored to Dolt commit: ${config.doltCommitRef}`
+        : "No versioned state commit found; falling back to API polling",
+      passed: true, // Warning only, unless strict mode
+    });
+
+    if (config.isDriftDetected) {
+      results.push({
+        id: "drift-detection",
+        rule: "State Consistency — External Drift",
+        severity: "error",
+        message: "HALT: External drift detected between Dolt state and Cloud API ground truth",
+        suggestion: "Run 'naawi state refresh' or rollback to a known good Dolt commit.",
+        passed: false,
+      });
+    }
+
+    if (config.isRollbackTarget) {
+      results.push({
+        id: "rollback-target",
+        rule: "Rollback Safety — Valid Target",
+        severity: "info",
+        message: `Safe rollback target identified via Dolt history: ${config.doltCommitRef}`,
+        passed: true,
+      });
+    }
+  }
 
   // 1. Resource Ceiling: CPU
   if (config.cpuMillicores) {

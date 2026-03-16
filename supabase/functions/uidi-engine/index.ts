@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
+import { dolt, DoltResource } from "./dolt-client.ts";
 
 // ───── Raw AWS API Executor (zero SDK dependencies) ─────
 // All AWS calls use SigV4-signed HTTP requests via awsSignedRequest().
@@ -3500,7 +3501,7 @@ interface DiscoveryReport {
   suggestedAction: string;
 }
 
-async function handleDiscovery(ops: SdkOperation[], credentials: any, region: string): Promise<DiscoveryReport[]> {
+async function handleDiscovery(ops: SdkOperation[], credentials: any, region: string, forceRefresh = false): Promise<DiscoveryReport[]> {
   const reports: DiscoveryReport[] = [];
 
   for (const op of ops) {
@@ -3510,7 +3511,20 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
     let liveState: any = null;
 
     try {
-      if (SERVICE_CONFIG[service] && identifiers.length > 0) {
+      // 1. Dolt-First: Check if the resource is already in the versioned state layer
+      for (const resId of identifiers) {
+        const doltRecord = await dolt.queryResource(resId);
+        if (doltRecord && !forceRefresh) {
+          console.log(`[Dolt] Hit: Reusing versioned state for ${resId} (Commit: ${doltRecord.ztai_record_index})`);
+          liveState = doltRecord.state_json;
+          status = "MATCH";
+          break;
+        }
+      }
+
+      // 2. Fallback: Query Cloud API only if not in Dolt or if forced
+      if (status === "NOT_FOUND" && SERVICE_CONFIG[service] && identifiers.length > 0) {
+        console.log(`[Discovery] Miss: Querying Cloud API for ${service} identifiers: ${identifiers.join(", ")}`);
         const globalServices = ["CloudFront", "Route53", "ACM", "Lambda"];
         const effectiveRegion = globalServices.includes(service) ? "us-east-1" : region;
 
@@ -3554,9 +3568,28 @@ async function handleDiscovery(ops: SdkOperation[], credentials: any, region: st
   return reports;
 }
 
+function extractResourceIdentifier(service: string, command: string, result: any, input: any): string | null {
+  if (service === "EKS" && command === "CreateCluster") return result?.cluster?.name || input.name;
+  if (service === "EC2" && command === "RunInstances") return result?.instance_ids?.[0] || result?.Instances?.[0]?.InstanceId;
+  if (service === "EC2" && command === "CreateVpc") return result?.vpc_id || result?.Vpc?.VpcId;
+  if (service === "S3" && command === "CreateBucket") return input.Bucket;
+  if (service === "Lambda" && command === "CreateFunction") return result?.FunctionName || input.FunctionName;
+  return null;
+}
+
+function extractResourceType(service: string, command: string): string {
+  if (service === "EKS") return "cluster";
+  if (service === "EC2" && command.includes("Vpc")) return "vpc";
+  if (service === "EC2" && command.includes("Subnet")) return "subnet";
+  if (service === "EC2" && command.includes("Instance")) return "instance";
+  if (service === "S3") return "bucket";
+  return service.toLowerCase();
+}
+
 async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: string): Promise<EngineResponse> {
   const state: ExecutionState = {};
-  const history: { opId: string; status: string; result?: any; error?: string }[] = [];
+  const history: { opId: string; status: string; result?: any; error?: string; dolt_commit?: string }[] = [];
+  let dolt_write_failed = false;
 
   for (const op of ops) {
     const resolvedInput = resolveReferences(op.input, state);
@@ -3577,7 +3610,30 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
       const result = await executeAwsCommand(op.service, op.command, resolvedInput, effectiveRegion, credentials);
 
       state[op.id] = result || {};
-      history.push({ opId: op.id, status: "SUCCESS", result });
+      
+      // 3.2 Write Path: Persist successful execution state to Dolt
+      const resourceId = extractResourceIdentifier(op.service, op.command, result, resolvedInput);
+      let doltCommitHash: string | undefined;
+
+      if (resourceId) {
+        try {
+          doltCommitHash = await dolt.writeResource({
+            resource_id: resourceId,
+            resource_type: extractResourceType(op.service, op.command),
+            provider: "aws",
+            region: effectiveRegion,
+            intent_hash: await sha256Hex(JSON.stringify(op)),
+            ztai_record_index: `ztai-${Date.now()}-${op.id}`, // Mock ZTAI link
+            observed_at: new Date().toISOString(),
+            state_json: result || {},
+          }, `Auto-commit: ${op.service}.${op.command} for ${resourceId}`);
+        } catch (de) {
+          console.error(`[Dolt] Write failed for ${resourceId}:`, de);
+          dolt_write_failed = true;
+        }
+      }
+
+      history.push({ opId: op.id, status: "SUCCESS", result, dolt_commit: doltCommitHash });
 
     } catch (e: any) {
       console.error(`Execution failed at ${op.id}:`, e.message);
@@ -3586,7 +3642,11 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
     }
   }
 
-  return ok("naawi", "execute", "Project Naawi: Full Execution Sequence Successful", { history });
+  return ok("naawi", "execute", "Project Naawi: Full Execution Sequence Successful", { 
+    history, 
+    dolt_commit_ref: dolt.getLatestHash(),
+    dolt_write_failed 
+  });
 }
 
 function estimateOperationMonthlyCost(op: SdkOperation): number {
@@ -3670,6 +3730,31 @@ async function handleSreSupreme(action: string, spec: Record<string, unknown>): 
   }
 }
 
+async function handleDoltAudit(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  switch (action) {
+    case "diff": {
+      const from = spec.from_commit as string;
+      const to = spec.to_commit as string;
+      if (!from || !to) return err("dolt", action, "from_commit and to_commit are required for diff.");
+
+      const diffs = await dolt.diff(from, to);
+      return ok("dolt", action, `Successfully generated diff between ${from} and ${to}`, {
+        from_commit: from,
+        to_commit: to,
+        changes: diffs,
+        total_changes: diffs.length,
+      });
+    }
+    case "history": {
+      return ok("dolt", action, "Retrieved Dolt commit history", {
+        history: dolt.getHistory().map(c => ({ hash: c.hash, message: c.message, timestamp: c.timestamp })),
+      });
+    }
+    default:
+      return err("dolt", action, `Unknown Dolt action: ${action}`);
+  }
+}
+
 // ───── Main Handler ─────
 
 serve(async (req) => {
@@ -3721,8 +3806,11 @@ serve(async (req) => {
       case "naawi":
         result = await handleNaawi(action, spec, body.approved);
         break;
+      case "dolt":
+        result = await handleDoltAudit(action, spec);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi, dolt.`);
     }
     return new Response(JSON.stringify(result), {
       status: 200,
