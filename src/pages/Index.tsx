@@ -57,6 +57,14 @@ const ARCHETYPE_TO_WORKLOAD: Record<string, WorkloadType> = {
   THREE_TIER: "three-tier",
   EDGE_CACHE: "edge-cache",
   CROSS_REGION_PEERED: "cross-region-peered",
+  GITOPS_CANARY: "gitops-canary",
+  EPHEMERAL_PREVIEW: "ephemeral-preview",
+  SERVERLESS_FAST_PATH: "serverless-fast-path",
+  STANDARD_VPC: "standard-vpc",
+  OBSERVABILITY_STACK: "observability-stack",
+  SECURE_HANDSHAKE: "secure-handshake",
+  HARDENED_PATH: "hardened-path",
+  AI_OPS_PATH: "ai-ops-path",
 };
 
 const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
@@ -73,6 +81,14 @@ const WORKLOAD_TO_RESOURCES: Record<WorkloadType, string[]> = {
   "three-tier": ["asg", "alb", "rds", "elasticache", "vpc", "subnets"],
   "edge-cache": ["dynamodb", "route53", "lambda", "cloudfront"],
   "cross-region-peered": ["vpc", "subnets", "vpc-peering", "eks"],
+  "gitops-canary": ["eks", "argo-cd", "argo-rollouts"],
+  "ephemeral-preview": ["eks", "vcluster", "gh-actions"],
+  "serverless-fast-path": ["lambda", "api-gateway", "iam"],
+  "standard-vpc": ["vpc", "subnets", "nat-gateway", "flow-logs"],
+  "observability-stack": ["otel-collector", "prometheus", "loki"],
+  "secure-handshake": ["iam", "vault", "eks"],
+  "hardened-path": ["eks", "route53-arc", "rds-global", "s3-replication"],
+  "ai-ops-path": ["eks", "prometheus-adapter", "keda", "naawi-engine"],
 };
 
 const normalizeWorkload = (value?: string): WorkloadType | null => {

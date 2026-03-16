@@ -53,6 +53,9 @@ export function GoldenPathSelector({ choices, onSelect, onOverride }: GoldenPath
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm">{choice.template.name}</span>
+                    <Badge variant="outline" className="text-[8px] border-primary/20 text-muted-foreground">
+                      {choice.template.tier}
+                    </Badge>
                     {idx === 0 && (
                       <Badge className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-0">
                         RECOMMENDED
