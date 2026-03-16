@@ -13,6 +13,9 @@ import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
 import { GoldenPathSelector } from "@/components/GoldenPathSelector";
 import { SafetyGateReport } from "@/components/SafetyGateReport";
+import { DryRunPanel } from "@/components/DryRunPanel";
+import { BatchPreviewPanel } from "@/components/BatchPreviewPanel";
+import { AuditTrailPanel } from "@/components/AuditTrailPanel";
 
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
@@ -33,9 +36,10 @@ import {
   type GoldenPathChoice,
   type SafetyGateReport as SafetyGateReportType,
 } from "@/lib/golden-path";
-import { Zap, Eye, Rocket, Vault } from "lucide-react";
+import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
+import { NavLink } from "@/components/NavLink";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
@@ -88,12 +92,12 @@ export default function Index() {
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
   const [operations, setOperations] = useState<any[]>([]);
   const [showDebugger, setShowDebugger] = useState(false);
+  const [rawIntentText, setRawIntentText] = useState("");
 
   // Golden Path state
   const [goldenPathChoices, setGoldenPathChoices] = useState<GoldenPathChoice[]>([]);
   const [selectedGoldenPath, setSelectedGoldenPath] = useState<GoldenPathTemplate | null>(null);
   const [safetyReport, setSafetyReport] = useState<SafetyGateReportType | null>(null);
-  const [rawIntentText, setRawIntentText] = useState("");
   const [goldenPathOverridden, setGoldenPathOverridden] = useState(false);
 
   const updateIntent = useCallback((newIntent: ParsedIntent) => {
@@ -103,25 +107,19 @@ export default function Index() {
 
   const handleGoldenPathSelect = useCallback((template: GoldenPathTemplate) => {
     setSelectedGoldenPath(template);
-    setGoldenPathChoices([]); // Hide selector
-
-    // Run safety gate
+    setGoldenPathChoices([]);
     const report = runSafetyGate(template, {
-      cpuMillicores: 1000, // default estimate
+      cpuMillicores: 1000,
       memoryMb: 2048,
       instanceCount: config.instanceCount || 1,
-      estimatedMonthlyCost: 50, // heuristic
+      estimatedMonthlyCost: 50,
       hasVaultIntegration: hasVaultCredentials,
       hasHealthCheck: intent.environment === "prod",
       hasSloAlerts: false,
       environment: intent.environment,
     });
-
     setSafetyReport(report);
-
-    // Update resources from golden path
     setDetectedResources(template.requiredResources);
-
     toast({
       title: `${template.icon} ${template.name} Selected`,
       description: report.halted
@@ -143,7 +141,7 @@ export default function Index() {
   }, []);
 
   const handleSafetyProceed = useCallback(() => {
-    setSafetyReport(null); // Clear report, keep selectedGoldenPath for reference
+    setSafetyReport(null);
     toast({ title: "Safety Gate Cleared", description: "Proceeding to orchestration." });
   }, []);
 
@@ -157,7 +155,6 @@ export default function Index() {
   const handleParse = useCallback(async (input: string) => {
     setIsParsing(true);
     setRawIntentText(input);
-    // Reset golden path state on new parse
     setGoldenPathChoices([]);
     setSelectedGoldenPath(null);
     setSafetyReport(null);
@@ -170,7 +167,6 @@ export default function Index() {
       if (error) throw new Error(error.message);
 
       const intentData = data?.intent;
-      
       const isCrossRegion = /cross.?region|vpc.?peer|peering/i.test(input);
       const mappedWorkload = isCrossRegion ? "cross-region-peered" as WorkloadType : normalizeWorkload(intentData?.archetype);
 
@@ -180,19 +176,14 @@ export default function Index() {
           ...intentData?.variables,
           workloadType: mappedWorkload,
         };
-
         updateIntent(mappedIntent);
         setDetectedResources(WORKLOAD_TO_RESOURCES[mappedWorkload]);
-
-        // Golden Path mapping
         const choices = mapIntentToGoldenPaths(input, mappedWorkload);
         if (choices.length === 1 && choices[0].confidence === "high") {
-          // Auto-select high-confidence single match
           handleGoldenPathSelect(choices[0].template);
         } else {
           setGoldenPathChoices(choices);
         }
-
         if (intentData?.confidence === "LOW") {
           toast({
             title: "Pattern inferred with defaults",
@@ -208,7 +199,6 @@ export default function Index() {
           description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify the target architecture pattern.",
           variant: "destructive",
         });
-        // Still show golden path choices for refinement
         const choices = mapIntentToGoldenPaths(input);
         setGoldenPathChoices(choices);
         return;
@@ -218,15 +208,12 @@ export default function Index() {
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || WORKLOAD_TO_RESOURCES[merged.workloadType] || ["ec2"]);
-      
-      // Golden Path mapping for rule-based
       const choices = mapIntentToGoldenPaths(input, merged.workloadType);
       if (choices.length === 1 && choices[0].confidence === "high") {
         handleGoldenPathSelect(choices[0].template);
       } else {
         setGoldenPathChoices(choices);
       }
-
       toast({ title: "Intent Parsed", description: "Review the Golden Path recommendation below." });
     } catch (e) {
       console.error("Parse error:", e);
@@ -234,7 +221,6 @@ export default function Index() {
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || ["ec2"]);
-      
       const choices = mapIntentToGoldenPaths(input, merged.workloadType);
       setGoldenPathChoices(choices);
       toast({ title: "Fell back to Rule-based", description: "Keyword matching used. Review Golden Path options." });
@@ -249,65 +235,69 @@ export default function Index() {
       "edge_static_spa", "service_mesh", "event_pipeline"
     ].includes(r));
 
-  // Determine if we should show orchestration (golden path cleared or overridden)
   const showOrchestration = (isMultiResource || operations.length > 0) && !safetyReport && (selectedGoldenPath || goldenPathOverridden || goldenPathChoices.length === 0);
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      {/* Header — Glass style */}
+      <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
+        <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="h-5 w-5 text-primary-foreground" />
+            <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Zap className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">IDI Console</h1>
-              <p className="text-xs text-muted-foreground">Intent-Driven Infrastructure</p>
+              <h1 className="text-base font-bold tracking-tight font-display text-foreground">Project Naawi</h1>
+              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure Compiler</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <NavLink to="/community">Nexus</NavLink>
             <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="container max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
+        {/* Primary Tabs — Deploy / Preflight / Inventory / Vault */}
         <Tabs defaultValue="deploy" className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="deploy" className="gap-1.5">
+          <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
+            <TabsTrigger value="deploy" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Rocket className="h-3.5 w-3.5" /> Deploy
             </TabsTrigger>
-            <TabsTrigger value="inventory" className="gap-1.5">
+            <TabsTrigger value="preflight" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+              <FlaskConical className="h-3.5 w-3.5" /> Preflight
+            </TabsTrigger>
+            <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Eye className="h-3.5 w-3.5" /> Inventory
             </TabsTrigger>
-            <TabsTrigger value="vault" className="gap-1.5">
+            <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Vault className="h-3.5 w-3.5" /> Vault
             </TabsTrigger>
           </TabsList>
 
+          {/* ═══════════ DEPLOY TAB ═══════════ */}
           <TabsContent value="deploy" className="space-y-6">
-            <Card className="bg-card">
-              <CardContent className="pt-6">
-                <IntentInput onParse={handleParse} isLoading={isParsing} />
-              </CardContent>
-            </Card>
+            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+              <IntentInput onParse={handleParse} isLoading={isParsing} />
+            </div>
 
             {detectedResources.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Detected Resources:</span>
+              <div className="flex items-center gap-2 flex-wrap animate-fade-in">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
                 {detectedResources.map(r => (
-                  <Badge key={r} variant="secondary" className="text-xs uppercase">{r}</Badge>
+                  <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
                 ))}
                 {selectedGoldenPath && (
-                  <Badge variant="default" className="text-xs ml-2">
-                    {selectedGoldenPath.icon} {selectedGoldenPath.name}
+                  <Badge className="text-[10px] ml-2 gap-1">
+                    <Layers className="h-3 w-3" />
+                    {selectedGoldenPath.name}
                   </Badge>
                 )}
               </div>
             )}
 
-            {/* Golden Path Selector — Choice Architecture */}
             {goldenPathChoices.length > 0 && (
               <GoldenPathSelector
                 choices={goldenPathChoices}
@@ -316,7 +306,6 @@ export default function Index() {
               />
             )}
 
-            {/* Safety Gate Report — Halt & Report */}
             {safetyReport && (
               <SafetyGateReport
                 report={safetyReport}
@@ -325,7 +314,6 @@ export default function Index() {
               />
             )}
 
-            {/* Orchestration — after Golden Path cleared */}
             {showOrchestration ? (
               <div className="space-y-6">
                 <OrchestrationPanel
@@ -337,12 +325,11 @@ export default function Index() {
                   os={config.os}
                   naawiOperations={operations}
                 />
-                
                 {operations.length > 0 && (
                   <div className="flex justify-center">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setShowDebugger(!showDebugger)}
                       className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
                     >
@@ -350,25 +337,17 @@ export default function Index() {
                     </Button>
                   </div>
                 )}
-
                 {showDebugger && <DeploymentDebugger />}
               </div>
             ) : !safetyReport && goldenPathChoices.length === 0 && detectedResources.length > 0 && !isMultiResource ? (
               <>
-                <Card className="bg-card">
-                  <CardContent className="pt-6">
-                    <IntentForm intent={intent} onChange={updateIntent} />
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-card">
-                  <CardContent className="pt-6">
-                    <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
-                  </CardContent>
-                </Card>
-
+                <div className="glass-panel rounded-2xl p-6">
+                  <IntentForm intent={intent} onChange={updateIntent} />
+                </div>
+                <div className="glass-panel rounded-2xl p-6">
+                  <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
+                </div>
                 <ConfigPreview config={config} />
-
                 <ComputeActions
                   config={config}
                   hasCredentials={hasVaultCredentials}
@@ -382,10 +361,69 @@ export default function Index() {
             <DeploymentHistory deployments={deployments} />
           </TabsContent>
 
+          {/* ═══════════ PREFLIGHT TAB — DryRun / Batch / Audit ═══════════ */}
+          <TabsContent value="preflight" className="space-y-6">
+            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+              <div className="flex items-center gap-3 mb-1">
+                <FlaskConical className="h-5 w-5 text-primary" />
+                <div>
+                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Dry-run and live closures share the same code path — what you review is exactly what executes
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Tabs defaultValue="dry-run" className="w-full">
+              <TabsList className="glass-panel border-0 p-1 h-auto">
+                <TabsTrigger value="dry-run" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+                  <FlaskConical className="h-3 w-3" /> Dry-Run
+                </TabsTrigger>
+                <TabsTrigger value="batch" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+                  <ListOrdered className="h-3 w-3" /> Batch Preview
+                </TabsTrigger>
+                <TabsTrigger value="audit" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+                  <ScrollText className="h-3 w-3" /> Audit Trail
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="dry-run" className="mt-4">
+                <div className="glass-panel rounded-2xl p-6">
+                  <DryRunPanel
+                    intentText={rawIntentText}
+                    workloadType={intent.workloadType}
+                    region={intent.region}
+                    environment={intent.environment}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="batch" className="mt-4">
+                <div className="glass-panel rounded-2xl p-6">
+                  <BatchPreviewPanel
+                    workloadType={intent.workloadType}
+                    region={intent.region}
+                    environment={intent.environment}
+                    resources={detectedResources}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="audit" className="mt-4">
+                <div className="glass-panel rounded-2xl p-6">
+                  <AuditTrailPanel />
+                </div>
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+
+          {/* ═══════════ INVENTORY ═══════════ */}
           <TabsContent value="inventory">
             <ResourceInventory region={intent.region} />
           </TabsContent>
 
+          {/* ═══════════ VAULT ═══════════ */}
           <TabsContent value="vault">
             <CredentialVault />
           </TabsContent>
