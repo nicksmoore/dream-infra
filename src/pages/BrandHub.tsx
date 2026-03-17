@@ -27,9 +27,9 @@ export default function BrandHub() {
               </Badge>
             </div>
             <nav className="hidden md:flex items-center gap-1 ml-4">
-              <NavLink href="/">Console</NavLink>
-              <NavLink href="/community">Community</NavLink>
-              <NavLink href="/brand" active>Brand Hub</NavLink>
+              <NavLink to="/">Console</NavLink>
+              <NavLink to="/community">Community</NavLink>
+              <NavLink to="/brand" activeClassName="text-primary">Brand Hub</NavLink>
             </nav>
           </div>
           <div className="flex items-center gap-2">
