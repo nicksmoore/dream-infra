@@ -9,6 +9,7 @@ import Index from "./pages/Index.tsx";
 import Auth from "./pages/Auth.tsx";
 import Community from "./pages/Community.tsx";
 import BrandHub from "./pages/BrandHub.tsx";
+import GoldenPath from "./pages/GoldenPath.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
