@@ -515,7 +515,7 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
           const uploadRes = await fetch(uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": "application/octet-stream" },
-            body: tarball,
+            body: tarball as unknown as BodyInit,
           });
 
           if (!uploadRes.ok) {
