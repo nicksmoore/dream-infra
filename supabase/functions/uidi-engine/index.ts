@@ -2177,7 +2177,7 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
       let nodeRoleArn = spec.node_role_arn as string;
       if (!nodeRoleArn) {
         try {
-          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "nodegroup");
+          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "node");
           nodeRoleArn = resolved.arn;
           console.log(`EKS add_nodegroup: node role ${resolved.created ? "auto-created" : "discovered"}: ${nodeRoleArn}`);
         } catch (e) {
