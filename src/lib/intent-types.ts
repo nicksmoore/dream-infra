@@ -41,7 +41,9 @@ export type WorkloadType =
   | "serverless-fast-path"
   | "standard-vpc"
   | "observability-stack"
-  | "secure-handshake";
+  | "secure-handshake"
+  | "hardened-path"
+  | "ai-ops-path";
 export type CostSensitivity = "cheapest" | "balanced" | "production";
 export type Environment = "dev" | "staging" | "prod";
 export type OsType = "amazon-linux-2023" | "ubuntu" | "debian" | "rhel" | "suse" | "windows-2022" | "windows-2019";

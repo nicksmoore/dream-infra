@@ -94,6 +94,7 @@ export class PatternSynthesizer {
           description: "Synthesized from observed successful execution traces.",
           icon: "🧬",
           tier: "V3.0 - The AI-Ops Path",
+          stateStrategy: "api-polling",
           sensitivityTags: ["public"],
           runtimeHints: [],
           scaffolding: {

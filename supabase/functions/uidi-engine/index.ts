@@ -515,7 +515,7 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
           const uploadRes = await fetch(uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": "application/octet-stream" },
-            body: tarball,
+            body: tarball as unknown as BodyInit,
           });
 
           if (!uploadRes.ok) {
@@ -525,7 +525,7 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
 
         // Add config version to run
         if (cvId) {
-          runPayload.data.relationships["configuration-version" as string] = {
+          (runPayload.data.relationships as Record<string, unknown>)["configuration-version"] = {
             data: { type: "configuration-versions", id: cvId },
           };
         }
@@ -939,7 +939,8 @@ async function sha256Hex(data: string): Promise<string> {
 }
 
 async function hmacSha256(key: Uint8Array | ArrayBuffer, data: string): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const keyBuffer = key instanceof Uint8Array ? (key.buffer as ArrayBuffer) : key;
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
   return new Uint8Array(sig);
 }
@@ -2176,7 +2177,7 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
       let nodeRoleArn = spec.node_role_arn as string;
       if (!nodeRoleArn) {
         try {
-          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "nodegroup");
+          const resolved = await getOrCreateEksRole(AWS_KEY, AWS_SECRET, "node");
           nodeRoleArn = resolved.arn;
           console.log(`EKS add_nodegroup: node role ${resolved.created ? "auto-created" : "discovered"}: ${nodeRoleArn}`);
         } catch (e) {
@@ -3806,7 +3807,7 @@ serve(async (req) => {
       case "naawi":
         result = await handleNaawi(action, spec, body.approved);
         break;
-      case "dolt":
+      case "dolt" as string:
         result = await handleDoltAudit(action, spec);
         break;
       default:
