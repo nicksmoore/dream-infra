@@ -525,7 +525,7 @@ async function handleTerraform(action: string, spec: Record<string, unknown>): P
 
         // Add config version to run
         if (cvId) {
-          runPayload.data.relationships["configuration-version" as string] = {
+          (runPayload.data.relationships as Record<string, unknown>)["configuration-version"] = {
             data: { type: "configuration-versions", id: cvId },
           };
         }
