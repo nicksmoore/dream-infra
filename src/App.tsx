@@ -9,6 +9,7 @@ import Index from "./pages/Index.tsx";
 import Auth from "./pages/Auth.tsx";
 import Community from "./pages/Community.tsx";
 import BrandHub from "./pages/BrandHub.tsx";
+import GoldenPath from "./pages/GoldenPath.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/community" element={<Community />} />
             <Route path="/brand" element={<ProtectedRoute><BrandHub /></ProtectedRoute>} />
+            <Route path="/golden-path" element={<ProtectedRoute><GoldenPath /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
