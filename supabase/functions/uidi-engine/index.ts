@@ -3807,7 +3807,7 @@ serve(async (req) => {
       case "naawi":
         result = await handleNaawi(action, spec, body.approved);
         break;
-      case "dolt":
+      case "dolt" as string:
         result = await handleDoltAudit(action, spec);
         break;
       default:
