@@ -8,7 +8,7 @@ const corsHeaders = {
 
 // AWS Signature V4
 function hmacSha256(key: Uint8Array, message: string): Promise<ArrayBuffer> {
-  return crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]).then((k) =>
+  return crypto.subtle.importKey("raw", key.buffer as ArrayBuffer, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]).then((k) =>
     crypto.subtle.sign("HMAC", k, new TextEncoder().encode(message))
   );
 }
