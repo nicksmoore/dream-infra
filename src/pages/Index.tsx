@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntentInput } from "@/components/IntentInput";
 import { IntentForm } from "@/components/IntentForm";
@@ -16,6 +15,8 @@ import { SafetyGateReport } from "@/components/SafetyGateReport";
 import { DryRunPanel } from "@/components/DryRunPanel";
 import { BatchPreviewPanel } from "@/components/BatchPreviewPanel";
 import { AuditTrailPanel } from "@/components/AuditTrailPanel";
+import { GoldenPathCatalog, type GoldenPathEntry, type CloudProvider as CatalogProvider } from "@/components/GoldenPathCatalog";
+import { PostDeployValidation } from "@/components/PostDeployValidation";
 
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
@@ -43,10 +44,11 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers } from "lucide-react";
+import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers, BookOpen, Map } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
+import { useNavigate } from "react-router-dom";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
@@ -107,6 +109,7 @@ const normalizeWorkload = (value?: string): WorkloadType | null => {
 };
 
 export default function Index() {
+  const navigate = useNavigate();
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
   const [hasVaultCredentials] = useState(true);
@@ -126,8 +129,11 @@ export default function Index() {
   const [doltCommitRef, setDoltCommitRef] = useState<string | null>(null);
   const [escalationHistory, setEscalationHistory] = useState<EscalationRecord[]>([]);
 
+  // Catalog selection state
+  const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<GoldenPathEntry | null>(null);
+  const [selectedCatalogProvider, setSelectedCatalogProvider] = useState<CatalogProvider | null>(null);
+
   // ───── Dolt Snapshot Manager ─────
-  // PRD §3.2: Auto-snapshot before pre-flight validation
   const generateDoltSnapshot = useCallback((pathId: string, env: string): string => {
     const hash = `dolt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
     console.log(`[Naawi] Intent snapshot committed to Dolt: ${hash} (path=${pathId}, env=${env})`);
@@ -143,12 +149,10 @@ export default function Index() {
     setSelectedGoldenPath(template);
     setGoldenPathChoices([]);
 
-    // ═══ PRD §3.1: Hydrate ceilings via Policy Registry ═══
     const { template: hydrated, tierName, source } = hydrateGoldenPathCeiling(template, intent.environment);
     const { tier } = getCurrentCapacityTier(template.id, intent.environment);
     setCurrentTierId(tier.id);
 
-    // ═══ PRD §3.2: Auto-snapshot intent to Dolt before pre-flight ═══
     const commitRef = generateDoltSnapshot(template.id, intent.environment);
     setDoltCommitRef(commitRef);
 
@@ -157,7 +161,6 @@ export default function Index() {
       `Ceilings: ${hydrated.resourceCeiling.maxCpuMillicores}m CPU, ${hydrated.resourceCeiling.maxMemoryMb}MB Memory`
     );
 
-    // Use hydrated template for safety gate
     const needsCompute = hydrated.requiredResources.some(r => ["ec2", "asg", "eks", "lambda"].includes(r));
     const report = runSafetyGate(hydrated, {
       cpuMillicores: needsCompute ? Math.min(1000, hydrated.resourceCeiling.maxCpuMillicores) : 0,
@@ -167,7 +170,7 @@ export default function Index() {
       hasVaultIntegration: hasVaultCredentials,
       hasHealthCheck: intent.environment === "prod",
       hasSloAlerts: false,
-      doltCommitRef: commitRef,  // PRD §3.2: Always provide Dolt commit
+      doltCommitRef: commitRef,
       environment: intent.environment,
     });
     setSafetyReport(report);
@@ -207,42 +210,38 @@ export default function Index() {
     toast({ title: "Deployment Cancelled" });
   }, []);
 
-  // ═══ PRD §3.3: NLP Limit Escalation ═══
   const handleEscalation = useCallback((escalationText: string) => {
     if (!selectedGoldenPath) return;
-
     const result = escalateViaIntent(
       escalationText,
       selectedGoldenPath.id,
       intent.environment,
-      "current-user" // TODO: Wire to actual auth context
+      "current-user"
     );
-
     if (result.success && result.newTier && result.record) {
       setEscalationHistory(prev => [...prev, result.record!]);
       setCurrentTierId(result.newTier.id);
-
       toast({
         title: `✅ Escalated to ${result.newTier.name}`,
         description: `Dolt commit: ${result.record.doltCommitHash}. Re-running safety gate...`,
       });
-
-      // Re-run safety gate with new tier
       handleGoldenPathSelect(selectedGoldenPath);
     } else if (result.requiresApproval) {
-      toast({
-        title: "Approval Required",
-        description: result.error,
-        variant: "destructive",
-      });
+      toast({ title: "Approval Required", description: result.error, variant: "destructive" });
     } else {
-      toast({
-        title: "Escalation Failed",
-        description: result.error,
-        variant: "destructive",
-      });
+      toast({ title: "Escalation Failed", description: result.error, variant: "destructive" });
     }
   }, [selectedGoldenPath, intent.environment, handleGoldenPathSelect]);
+
+  const handleCatalogSelect = useCallback((entry: GoldenPathEntry, provider: CatalogProvider) => {
+    setSelectedCatalogEntry(entry);
+    setSelectedCatalogProvider(provider);
+    setDetectedResources(entry.resources[provider]);
+    toast({
+      title: `${entry.icon} ${entry.name}`,
+      description: `Deploying to ${provider.toUpperCase()} with ${entry.resources[provider].length} resources`,
+    });
+  }, []);
 
   const handleParse = useCallback(async (input: string) => {
     setIsParsing(true);
@@ -251,6 +250,8 @@ export default function Index() {
     setSelectedGoldenPath(null);
     setSafetyReport(null);
     setGoldenPathOverridden(false);
+    setSelectedCatalogEntry(null);
+    setSelectedCatalogProvider(null);
 
     try {
       const { data, error } = await supabase.functions.invoke("parse-intent", {
@@ -331,7 +332,7 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header — Glass style */}
+      {/* Header */}
       <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
         <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -344,7 +345,12 @@ export default function Index() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <NavLink to="/community" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">Nexus</NavLink>
+            <NavLink to="/backstage" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
+              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Docs
+            </NavLink>
+            <NavLink to="/golden-path" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
+              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Path
+            </NavLink>
             <ThemeToggle />
             <UserMenu />
           </div>
@@ -352,11 +358,13 @@ export default function Index() {
       </header>
 
       <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* Primary Tabs — Deploy / Preflight / Inventory / Vault */}
         <Tabs defaultValue="deploy" className="w-full">
           <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
             <TabsTrigger value="deploy" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Rocket className="h-3.5 w-3.5" /> Deploy
+            </TabsTrigger>
+            <TabsTrigger value="golden-paths" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+              <Layers className="h-3.5 w-3.5" /> Golden Paths
             </TabsTrigger>
             <TabsTrigger value="preflight" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <FlaskConical className="h-3.5 w-3.5" /> Preflight
@@ -454,7 +462,42 @@ export default function Index() {
             <DeploymentHistory deployments={deployments} />
           </TabsContent>
 
-          {/* ═══════════ PREFLIGHT TAB — DryRun / Batch / Audit ═══════════ */}
+          {/* ═══════════ GOLDEN PATHS TAB ═══════════ */}
+          <TabsContent value="golden-paths" className="space-y-6">
+            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+              <div className="flex items-center gap-3 mb-4">
+                <Layers className="h-5 w-5 text-primary" />
+                <div>
+                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalog</h2>
+                  <p className="text-xs text-muted-foreground">
+                    10 production-hardened deployment templates across AWS, GCP, and Azure
+                  </p>
+                </div>
+              </div>
+              <GoldenPathCatalog onSelect={handleCatalogSelect} />
+            </div>
+
+            {/* Post-Deploy Validation — shown when a catalog path is selected */}
+            {selectedCatalogEntry && selectedCatalogProvider && (
+              <PostDeployValidation
+                goldenPathId={selectedCatalogEntry.id}
+                goldenPathName={selectedCatalogEntry.name}
+                provider={selectedCatalogProvider}
+                resources={selectedCatalogEntry.resources[selectedCatalogProvider]}
+                onComplete={(passed) => {
+                  toast({
+                    title: passed ? "Validation Passed" : "Validation Issues Found",
+                    description: passed
+                      ? "All post-deploy checks passed successfully."
+                      : "Some checks require attention — review the results above.",
+                    variant: passed ? "default" : "destructive",
+                  });
+                }}
+              />
+            )}
+          </TabsContent>
+
+          {/* ═══════════ PREFLIGHT TAB ═══════════ */}
           <TabsContent value="preflight" className="space-y-6">
             <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
               <div className="flex items-center gap-3 mb-1">
