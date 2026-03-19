@@ -341,7 +341,7 @@ export default function Index() {
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight font-display text-foreground">Project Naawi</h1>
-              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure Compiler</p>
+              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure · Observed Truth · Zero Configuration</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
