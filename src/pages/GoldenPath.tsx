@@ -516,7 +516,7 @@ export default function GoldenPath() {
             <Badge variant="outline" className="font-mono text-[10px]">VPC Foundation</Badge>
           </div>
           <div className="flex items-center gap-2">
-            <NavLink to="/community">Nexus</NavLink>
+            <NavLink to="/backstage">Backstage</NavLink>
             <NavLink to="/brand">Brand</NavLink>
             <ThemeToggle />
             <UserMenu />

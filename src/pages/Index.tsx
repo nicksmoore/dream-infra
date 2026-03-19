@@ -341,15 +341,15 @@ export default function Index() {
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight font-display text-foreground">Project Naawi</h1>
-              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure Compiler</p>
+              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure · Observed Truth · Zero Configuration</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <NavLink to="/backstage" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Docs
+              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Backstage
             </NavLink>
             <NavLink to="/golden-path" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Path
+              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Foundation
             </NavLink>
             <ThemeToggle />
             <UserMenu />
@@ -468,9 +468,9 @@ export default function Index() {
               <div className="flex items-center gap-3 mb-4">
                 <Layers className="h-5 w-5 text-primary" />
                 <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalog</h2>
+                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
                   <p className="text-xs text-muted-foreground">
-                    10 production-hardened deployment templates across AWS, GCP, and Azure
+                    PRD §5.1 — Compiled intent batches with RMCM thresholds, JIT per-layer credentials, and Dolt state writes. Not templates — executable artifacts.
                   </p>
                 </div>
               </div>
@@ -503,9 +503,9 @@ export default function Index() {
               <div className="flex items-center gap-3 mb-1">
                 <FlaskConical className="h-5 w-5 text-primary" />
                 <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console</h2>
+                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console — P-1 → P-6</h2>
                   <p className="text-xs text-muted-foreground">
-                    Dry-run and live closures share the same code path — what you review is exactly what executes
+                    Patent §4.8: Dry-run and live closures share the same code path (shared closure invariant). The deploy button does not exist until PREFLIGHT_COMPLETE.
                   </p>
                 </div>
               </div>
