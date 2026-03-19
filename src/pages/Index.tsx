@@ -468,9 +468,9 @@ export default function Index() {
               <div className="flex items-center gap-3 mb-4">
                 <Layers className="h-5 w-5 text-primary" />
                 <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalog</h2>
+                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
                   <p className="text-xs text-muted-foreground">
-                    10 production-hardened deployment templates across AWS, GCP, and Azure
+                    PRD §5.1 — Compiled intent batches with RMCM thresholds, JIT per-layer credentials, and Dolt state writes. Not templates — executable artifacts.
                   </p>
                 </div>
               </div>
