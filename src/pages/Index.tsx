@@ -346,10 +346,10 @@ export default function Index() {
           </div>
           <div className="flex items-center gap-2">
             <NavLink to="/backstage" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Docs
+              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Backstage
             </NavLink>
             <NavLink to="/golden-path" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Path
+              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Foundation
             </NavLink>
             <ThemeToggle />
             <UserMenu />
