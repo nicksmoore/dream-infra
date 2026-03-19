@@ -503,9 +503,9 @@ export default function Index() {
               <div className="flex items-center gap-3 mb-1">
                 <FlaskConical className="h-5 w-5 text-primary" />
                 <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console</h2>
+                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console — P-1 → P-6</h2>
                   <p className="text-xs text-muted-foreground">
-                    Dry-run and live closures share the same code path — what you review is exactly what executes
+                    Patent §4.8: Dry-run and live closures share the same code path (shared closure invariant). The deploy button does not exist until PREFLIGHT_COMPLETE.
                   </p>
                 </div>
               </div>

@@ -12,123 +12,106 @@ import {
   DollarSign,
   Cloud,
   Layers,
+  Lock,
+  Eye,
+  FileCheck,
 } from "lucide-react";
 
 export type CloudProvider = "aws" | "gcp" | "azure";
 
+export interface PreflightStep {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface GoldenPathEntry {
   id: string;
+  intentId: string; // PRD: naawi.gold.v1.* taxonomy
   name: string;
   description: string;
   icon: string;
   providers: CloudProvider[];
-  tier: "Classic" | "Hardened" | "AI-Ops";
+  tier: "Foundation" | "Standard" | "Hardened" | "AI-Ops";
   sloAvailability: number;
   estimatedDeployMin: number;
   estimatedMonthlyCost: string;
   resources: Record<CloudProvider, string[]>;
   jitScope: string[];
+  jitTtl: string; // per-layer TTL range
+  rmcmThreshold: number; // minimum coherence score
+  preflightSteps: PreflightStep[];
+  doltTables: string[]; // Dolt schema tables written
   tags: string[];
+  status: "v1.0 — Specification complete" | "v1.0 — Planned (Phase 2)" | "v1.0 — Planned (Phase 3)";
 }
+
+const PREFLIGHT_STANDARD: PreflightStep[] = [
+  { id: "P-1", name: "Parameter Validation", description: "Server-side validation. CIDR overlap check against Dolt." },
+  { id: "P-2", name: "Dolt State Read", description: "RMCM queries existing resources. Zero AWS API calls." },
+  { id: "P-3", name: "RMCM Dependency Graph", description: "Per-layer coherence scores. Environment thresholds." },
+  { id: "P-4", name: "JIT Credential Pre-check", description: "STS AssumeRole capability check. No credentials vended." },
+  { id: "P-5", name: "Dry-Run (Shared Closure)", description: "Structured diff via Patent §4.8 shared closure." },
+  { id: "P-6", name: "PREFLIGHT_COMPLETE", description: "Overall coherence, cost delta, JIT TTL. ZTAI record." },
+];
 
 const CATALOG: GoldenPathEntry[] = [
   {
     id: "vpc-foundation",
-    name: "VPC / Network Foundation",
-    description: "Production-grade virtual network with tiered subnets, NAT, flow logs, and security groups.",
+    intentId: "naawi.gold.v1.VpcFoundation",
+    name: "VPC Foundation",
+    description: "VPC + Subnets + IGW + NAT GW + Route Tables + SG. Multi-AZ, JIT per-layer credentials. The dependency root for all subsequent Golden Paths.",
     icon: "🌐",
     providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
+    tier: "Foundation",
     sloAvailability: 99.99,
     estimatedDeployMin: 4,
     estimatedMonthlyCost: "$50–150",
     resources: {
-      aws: ["VPC", "Subnets", "NAT-GW", "IGW", "Flow Logs", "NACLs"],
-      gcp: ["VPC Network", "Subnets", "Cloud NAT", "Cloud Router", "Flow Logs"],
-      azure: ["VNet", "Subnets", "NAT Gateway", "NSGs", "Flow Logs"],
+      aws: ["VPC", "Subnets (×4)", "IGW", "NAT-GW", "Route Tables", "Security Group"],
+      gcp: ["VPC Network", "Subnets", "Cloud NAT", "Cloud Router", "Firewall Rules"],
+      azure: ["VNet", "Subnets", "NAT Gateway", "NSGs", "Route Tables"],
     },
-    jitScope: ["ec2:CreateVpc", "ec2:CreateSubnet", "ec2:CreateNatGateway"],
-    tags: ["networking", "foundation", "multi-az"],
+    jitScope: ["ec2:CreateVpc", "ec2:CreateSubnet", "ec2:CreateNatGateway", "ec2:CreateSecurityGroup"],
+    jitTtl: "1–5 min per layer",
+    rmcmThreshold: 95,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "vpc_attrs", "subnet_attrs", "nat_gateway_attrs", "security_group_attrs", "route_table_attrs", "resource_raw", "ztai_refs"],
+    tags: ["networking", "foundation", "multi-az", "layer-0"],
+    status: "v1.0 — Specification complete",
   },
   {
-    id: "container-platform",
-    name: "Container Platform (K8s)",
-    description: "Managed Kubernetes with node pools, IRSA/Workload Identity, and ingress controller.",
-    icon: "🐳",
-    providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
-    sloAvailability: 99.9,
-    estimatedDeployMin: 15,
-    estimatedMonthlyCost: "$200–800",
-    resources: {
-      aws: ["EKS", "Node Groups", "ALB Ingress", "IRSA", "EBS CSI"],
-      gcp: ["GKE", "Node Pools", "Ingress", "Workload Identity", "PD CSI"],
-      azure: ["AKS", "Node Pools", "AGIC", "Managed Identity", "Disk CSI"],
-    },
-    jitScope: ["eks:CreateCluster", "ec2:RunInstances", "iam:CreateRole"],
-    tags: ["kubernetes", "containers", "compute"],
-  },
-  {
-    id: "serverless-api",
-    name: "Serverless API",
-    description: "Functions + API Gateway + least-privilege IAM. Zero servers, auto-scaling by default.",
-    icon: "⚡",
-    providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
-    sloAvailability: 99.9,
-    estimatedDeployMin: 3,
-    estimatedMonthlyCost: "$5–200",
-    resources: {
-      aws: ["Lambda", "API Gateway", "IAM Roles", "CloudWatch Logs"],
-      gcp: ["Cloud Functions", "API Gateway", "IAM", "Cloud Logging"],
-      azure: ["Azure Functions", "API Management", "Managed Identity", "App Insights"],
-    },
-    jitScope: ["lambda:CreateFunction", "apigateway:CreateRestApi"],
-    tags: ["serverless", "api", "functions"],
-  },
-  {
-    id: "static-cdn",
-    name: "Static Site + CDN",
-    description: "Object storage origin with global CDN, TLS, and origin shielding. Perfect for SPAs.",
-    icon: "🚀",
-    providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
-    sloAvailability: 99.95,
-    estimatedDeployMin: 5,
-    estimatedMonthlyCost: "$10–100",
-    resources: {
-      aws: ["S3", "CloudFront", "ACM", "Route 53", "OAC"],
-      gcp: ["Cloud Storage", "Cloud CDN", "Cloud Load Balancing", "SSL Cert"],
-      azure: ["Blob Storage", "Azure CDN", "Front Door", "App Service Cert"],
-    },
-    jitScope: ["s3:CreateBucket", "cloudfront:CreateDistribution"],
-    tags: ["static", "cdn", "spa", "frontend"],
-  },
-  {
-    id: "three-tier-app",
-    name: "Enterprise 3-Tier",
-    description: "Load Balancer → Compute (ASG/MIG) → Managed DB + Cache. Multi-AZ by default.",
+    id: "web-standard",
+    intentId: "naawi.gold.v1.WebStandard",
+    name: "Web Standard",
+    description: "ALB + ECS Fargate + RDS Aurora Serverless v2. Auto-scaling compute with managed database.",
     icon: "🏗️",
     providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
+    tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 12,
     estimatedMonthlyCost: "$300–2000",
     resources: {
-      aws: ["ALB", "ASG", "RDS (Multi-AZ)", "ElastiCache", "VPC"],
-      gcp: ["Cloud LB", "MIG", "Cloud SQL (HA)", "Memorystore", "VPC"],
-      azure: ["App Gateway", "VMSS", "Azure SQL (HA)", "Azure Cache", "VNet"],
+      aws: ["ALB", "ECS Fargate", "RDS Aurora Serverless v2", "VPC (dep)"],
+      gcp: ["Cloud LB", "Cloud Run", "Cloud SQL (HA)", "VPC (dep)"],
+      azure: ["App Gateway", "Container Apps", "Azure SQL (HA)", "VNet (dep)"],
     },
-    jitScope: ["rds:CreateDBInstance", "elasticache:CreateCacheCluster"],
-    tags: ["enterprise", "database", "cache", "compute"],
+    jitScope: ["ecs:CreateService", "rds:CreateDBCluster", "elasticloadbalancing:CreateLoadBalancer"],
+    jitTtl: "3–8 min per layer",
+    rmcmThreshold: 90,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["web", "compute", "database", "standard"],
+    status: "v1.0 — Planned (Phase 2)",
   },
   {
-    id: "event-pipeline",
+    id: "event-driven",
+    intentId: "naawi.gold.v1.EventDriven",
     name: "Event-Driven Pipeline",
-    description: "Message queue → Functions → Data store with DLQ, retries, and exactly-once semantics.",
+    description: "Lambda + SQS + DynamoDB. Serverless async with DLQ, retries, and exactly-once semantics.",
     icon: "📨",
     providers: ["aws", "gcp", "azure"],
-    tier: "Classic",
+    tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 5,
     estimatedMonthlyCost: "$20–500",
@@ -138,10 +121,88 @@ const CATALOG: GoldenPathEntry[] = [
       azure: ["Service Bus", "Azure Functions", "Cosmos DB", "Event Grid", "DLQ"],
     },
     jitScope: ["sqs:CreateQueue", "lambda:CreateFunction", "dynamodb:CreateTable"],
-    tags: ["events", "async", "queue", "pipeline"],
+    jitTtl: "2–5 min per layer",
+    rmcmThreshold: 90,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["events", "async", "serverless", "pipeline"],
+    status: "v1.0 — Planned (Phase 2)",
+  },
+  {
+    id: "secure-edge",
+    intentId: "naawi.gold.v1.SecureEdge",
+    name: "Secure Edge",
+    description: "CloudFront + WAF + Intent-based API Gateway. Global CDN with edge security and TLS.",
+    icon: "🛡️",
+    providers: ["aws", "gcp", "azure"],
+    tier: "Hardened",
+    sloAvailability: 99.95,
+    estimatedDeployMin: 8,
+    estimatedMonthlyCost: "$100–1000",
+    resources: {
+      aws: ["CloudFront", "WAF", "API Gateway", "ACM", "S3 Origin"],
+      gcp: ["Cloud CDN", "Cloud Armor", "API Gateway", "SSL Cert", "GCS Origin"],
+      azure: ["Front Door", "WAF Policy", "API Management", "App Service Cert"],
+    },
+    jitScope: ["cloudfront:CreateDistribution", "wafv2:CreateWebACL"],
+    jitTtl: "3–6 min per layer",
+    rmcmThreshold: 92,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["cdn", "waf", "edge", "security"],
+    status: "v1.0 — Planned (Phase 2)",
+  },
+  {
+    id: "container-platform",
+    intentId: "naawi.gold.v1.ContainerPlatform",
+    name: "Container Platform (K8s)",
+    description: "Managed Kubernetes with node pools, IRSA/Workload Identity, and ingress controller.",
+    icon: "🐳",
+    providers: ["aws", "gcp", "azure"],
+    tier: "Standard",
+    sloAvailability: 99.9,
+    estimatedDeployMin: 15,
+    estimatedMonthlyCost: "$200–800",
+    resources: {
+      aws: ["EKS", "Node Groups", "ALB Ingress", "IRSA", "EBS CSI"],
+      gcp: ["GKE", "Node Pools", "Ingress", "Workload Identity", "PD CSI"],
+      azure: ["AKS", "Node Pools", "AGIC", "Managed Identity", "Disk CSI"],
+    },
+    jitScope: ["eks:CreateCluster", "ec2:RunInstances", "iam:CreateRole"],
+    jitTtl: "5–15 min per layer",
+    rmcmThreshold: 88,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["kubernetes", "containers", "compute"],
+    status: "v1.0 — Planned (Phase 2)",
+  },
+  {
+    id: "serverless-api",
+    intentId: "naawi.gold.v1.ServerlessApi",
+    name: "Serverless API",
+    description: "Functions + API Gateway + least-privilege IAM. Zero servers, auto-scaling by default.",
+    icon: "⚡",
+    providers: ["aws", "gcp", "azure"],
+    tier: "Standard",
+    sloAvailability: 99.9,
+    estimatedDeployMin: 3,
+    estimatedMonthlyCost: "$5–200",
+    resources: {
+      aws: ["Lambda", "API Gateway", "IAM Roles", "CloudWatch Logs"],
+      gcp: ["Cloud Functions", "API Gateway", "IAM", "Cloud Logging"],
+      azure: ["Azure Functions", "API Management", "Managed Identity", "App Insights"],
+    },
+    jitScope: ["lambda:CreateFunction", "apigateway:CreateRestApi"],
+    jitTtl: "2–4 min per layer",
+    rmcmThreshold: 90,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["serverless", "api", "functions"],
+    status: "v1.0 — Planned (Phase 2)",
   },
   {
     id: "fintech-pci",
+    intentId: "naawi.gold.v1.FintechPci",
     name: "Fintech / PCI-DSS",
     description: "Payment-grade infra: Vault integration, mTLS, zero-trust network, encryption everywhere.",
     icon: "🏦",
@@ -156,10 +217,16 @@ const CATALOG: GoldenPathEntry[] = [
       azure: ["AKS", "Azure SQL", "Key Vault", "VNet (zero-trust)", "WAF"],
     },
     jitScope: ["kms:CreateKey", "secretsmanager:CreateSecret"],
+    jitTtl: "3–10 min per layer",
+    rmcmThreshold: 98,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
     tags: ["compliance", "pci", "fintech", "zero-trust"],
+    status: "v1.0 — Planned (Phase 3)",
   },
   {
     id: "service-mesh",
+    intentId: "naawi.gold.v1.ServiceMesh",
     name: "Service Mesh",
     description: "Managed mesh with mTLS, circuit breakers, retries, and distributed tracing.",
     icon: "🕸️",
@@ -174,10 +241,16 @@ const CATALOG: GoldenPathEntry[] = [
       azure: ["AKS", "OSM / Istio", "App Insights", "App Gateway"],
     },
     jitScope: ["appmesh:CreateMesh", "eks:UpdateClusterConfig"],
+    jitTtl: "5–12 min per layer",
+    rmcmThreshold: 90,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
     tags: ["mesh", "mtls", "observability", "microservices"],
+    status: "v1.0 — Planned (Phase 3)",
   },
   {
     id: "ml-training",
+    intentId: "naawi.gold.v1.MlTraining",
     name: "ML Training Pipeline",
     description: "GPU compute with spot/preemptible instances, checkpointing, and cost guardrails.",
     icon: "🧠",
@@ -192,10 +265,16 @@ const CATALOG: GoldenPathEntry[] = [
       azure: ["NC-series VMs", "Blob Storage", "Managed Disks", "Azure ML", "Spot VMs"],
     },
     jitScope: ["ec2:RunInstances", "s3:CreateBucket"],
+    jitTtl: "5–15 min per layer",
+    rmcmThreshold: 85,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
     tags: ["ml", "gpu", "training", "ai"],
+    status: "v1.0 — Planned (Phase 3)",
   },
   {
     id: "disaster-recovery",
+    intentId: "naawi.gold.v1.DisasterRecovery",
     name: "Multi-Region DR",
     description: "Active-passive replication with automated failover, RTO < 15min, RPO < 1min.",
     icon: "🛡️",
@@ -210,7 +289,12 @@ const CATALOG: GoldenPathEntry[] = [
       azure: ["Traffic Manager", "Azure SQL Geo-Replication", "Blob Geo-Redundant", "AKS Fleet"],
     },
     jitScope: ["route53:CreateHealthCheck", "rds:CreateGlobalCluster"],
+    jitTtl: "5–20 min per layer",
+    rmcmThreshold: 98,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
     tags: ["dr", "multi-region", "failover", "resilience"],
+    status: "v1.0 — Planned (Phase 3)",
   },
 ];
 
@@ -221,9 +305,16 @@ const PROVIDER_LABELS: Record<CloudProvider, { label: string; color: string }> =
 };
 
 const TIER_COLORS: Record<string, string> = {
-  Classic: "border-primary/30 text-primary",
+  Foundation: "border-primary/30 text-primary",
+  Standard: "border-emerald-500/30 text-emerald-400",
   Hardened: "border-amber-500/30 text-amber-400",
   "AI-Ops": "border-violet-500/30 text-violet-400",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  "v1.0 — Specification complete": "text-emerald-400",
+  "v1.0 — Planned (Phase 2)": "text-amber-400",
+  "v1.0 — Planned (Phase 3)": "text-muted-foreground",
 };
 
 interface GoldenPathCatalogProps {
@@ -243,6 +334,7 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
       return (
         entry.name.toLowerCase().includes(q) ||
         entry.description.toLowerCase().includes(q) ||
+        entry.intentId.toLowerCase().includes(q) ||
         entry.tags.some((t) => t.includes(q))
       );
     }
@@ -257,14 +349,15 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search golden paths…"
+            placeholder="Search golden paths by name, intent ID, or tag…"
             className="pl-9 h-9 text-sm glass-panel border-border/50"
           />
         </div>
         <Tabs value={tierFilter} onValueChange={setTierFilter}>
           <TabsList className="glass-panel border-0 p-0.5 h-8">
             <TabsTrigger value="all" className="text-[10px] h-7 px-3 rounded-md">All</TabsTrigger>
-            <TabsTrigger value="Classic" className="text-[10px] h-7 px-3 rounded-md">Classic</TabsTrigger>
+            <TabsTrigger value="Foundation" className="text-[10px] h-7 px-3 rounded-md">Foundation</TabsTrigger>
+            <TabsTrigger value="Standard" className="text-[10px] h-7 px-3 rounded-md">Standard</TabsTrigger>
             <TabsTrigger value="Hardened" className="text-[10px] h-7 px-3 rounded-md">Hardened</TabsTrigger>
             <TabsTrigger value="AI-Ops" className="text-[10px] h-7 px-3 rounded-md">AI-Ops</TabsTrigger>
           </TabsList>
@@ -283,7 +376,7 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
         {filtered.map((entry) => (
           <Card
             key={entry.id}
-            className="glass-panel border-border/40 hover:border-primary/40 transition-all group cursor-pointer"
+            className="glass-panel border-border/40 hover:border-primary/40 transition-all group"
           >
             <CardContent className="p-4 space-y-3">
               <div className="flex items-start justify-between">
@@ -296,9 +389,23 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
                         {entry.tier}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{entry.description}</p>
+                    <code className="text-[10px] font-mono text-primary/70 block mt-0.5">{entry.intentId}</code>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{entry.description}</p>
                   </div>
                 </div>
+              </div>
+
+              {/* RMCM + JIT + Dolt indicators */}
+              <div className="flex items-center gap-2 flex-wrap text-[9px]">
+                <Badge variant="outline" className="gap-1 font-mono border-primary/20 text-primary">
+                  <Eye className="h-2.5 w-2.5" /> RMCM ≥{entry.rmcmThreshold}%
+                </Badge>
+                <Badge variant="outline" className="gap-1 font-mono border-amber-500/20 text-amber-400">
+                  <Lock className="h-2.5 w-2.5" /> JIT {entry.jitTtl}
+                </Badge>
+                <Badge variant="outline" className="gap-1 font-mono border-emerald-500/20 text-emerald-400">
+                  <FileCheck className="h-2.5 w-2.5" /> {entry.doltTables.length} Dolt tables
+                </Badge>
               </div>
 
               {/* Provider pills */}
@@ -325,6 +432,19 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
                 <span className="flex items-center gap-1">
                   <DollarSign className="h-3 w-3" /> {entry.estimatedMonthlyCost}
                 </span>
+                <span className={`ml-auto text-[9px] font-mono ${STATUS_COLORS[entry.status]}`}>
+                  {entry.status}
+                </span>
+              </div>
+
+              {/* Preflight summary */}
+              <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                <span className="uppercase tracking-wider font-semibold">Preflight:</span>
+                {entry.preflightSteps.map((step) => (
+                  <Badge key={step.id} variant="secondary" className="text-[8px] font-mono px-1.5 py-0">
+                    {step.id}
+                  </Badge>
+                ))}
               </div>
 
               {/* Deploy buttons per provider */}
