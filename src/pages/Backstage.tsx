@@ -302,7 +302,7 @@ export default function Backstage() {
       <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
         <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/console")} className="gap-1.5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </Button>
             <Separator orientation="vertical" className="h-5" />
