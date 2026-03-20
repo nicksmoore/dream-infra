@@ -30,7 +30,7 @@ export default function Auth() {
     if (error) {
       toast({ title: "Login failed", description: error.message, variant: "destructive" });
     } else {
-      navigate("/");
+      navigate("/console");
     }
   };
 
