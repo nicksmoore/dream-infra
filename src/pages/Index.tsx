@@ -567,6 +567,11 @@ export default function Index() {
           <TabsContent value="vault">
             <CredentialVault />
           </TabsContent>
+
+          {/* ═══════════ SRE ═══════════ */}
+          <TabsContent value="sre" className="space-y-6">
+            <SREPanel />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
