@@ -11,6 +11,7 @@ import Auth from "./pages/Auth.tsx";
 import BrandHub from "./pages/BrandHub.tsx";
 import GoldenPath from "./pages/GoldenPath.tsx";
 import Backstage from "./pages/Backstage.tsx";
+import SelfDrivingSRE from "./pages/SelfDrivingSRE.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/brand" element={<ProtectedRoute><BrandHub /></ProtectedRoute>} />
             <Route path="/golden-path" element={<ProtectedRoute><GoldenPath /></ProtectedRoute>} />
             <Route path="/backstage" element={<ProtectedRoute><Backstage /></ProtectedRoute>} />
+            <Route path="/sre" element={<ProtectedRoute><SelfDrivingSRE /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
