@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntentInput } from "@/components/IntentInput";
+import { SREPanel } from "@/components/SREPanel";
 import { IntentForm } from "@/components/IntentForm";
 import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
 import { ConfigPreview } from "@/components/ConfigPreview";
