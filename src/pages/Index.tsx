@@ -376,6 +376,9 @@ export default function Index() {
             <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Vault className="h-3.5 w-3.5" /> Vault
             </TabsTrigger>
+            <TabsTrigger value="sre" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+              <Bot className="h-3.5 w-3.5" /> SRE
+            </TabsTrigger>
           </TabsList>
 
           {/* ═══════════ DEPLOY TAB ═══════════ */}
