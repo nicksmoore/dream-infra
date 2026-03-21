@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntentInput } from "@/components/IntentInput";
+import { SREPanel } from "@/components/SREPanel";
 import { IntentForm } from "@/components/IntentForm";
 import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
 import { ConfigPreview } from "@/components/ConfigPreview";
@@ -44,7 +45,7 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers, BookOpen, Map } from "lucide-react";
+import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers, BookOpen, Map, Bot } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
@@ -375,6 +376,9 @@ export default function Index() {
             <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Vault className="h-3.5 w-3.5" /> Vault
             </TabsTrigger>
+            <TabsTrigger value="sre" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+              <Bot className="h-3.5 w-3.5" /> SRE
+            </TabsTrigger>
           </TabsList>
 
           {/* ═══════════ DEPLOY TAB ═══════════ */}
@@ -562,6 +566,11 @@ export default function Index() {
           {/* ═══════════ VAULT ═══════════ */}
           <TabsContent value="vault">
             <CredentialVault />
+          </TabsContent>
+
+          {/* ═══════════ SRE ═══════════ */}
+          <TabsContent value="sre" className="space-y-6">
+            <SREPanel />
           </TabsContent>
         </Tabs>
       </main>
