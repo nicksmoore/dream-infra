@@ -17,6 +17,7 @@ import { DryRunPanel } from "@/components/DryRunPanel";
 import { BatchPreviewPanel } from "@/components/BatchPreviewPanel";
 import { AuditTrailPanel } from "@/components/AuditTrailPanel";
 import { GoldenPathCatalog, type GoldenPathEntry, type CloudProvider as CatalogProvider } from "@/components/GoldenPathCatalog";
+import { GoldenPathDeployment } from "@/components/GoldenPathDeployment";
 import { PostDeployValidation } from "@/components/PostDeployValidation";
 
 import { UserMenu } from "@/components/UserMenu";
