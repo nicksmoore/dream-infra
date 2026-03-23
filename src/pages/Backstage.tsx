@@ -158,7 +158,7 @@ const SERVICE_CATALOG: ServiceEntry[] = [
     layer: "Layer 3 — Dolt",
     techStack: ["Dolt", "SQL", "SHA-256", "Roughtime"],
     docs: [
-      { title: "ADR-003: Dolt vs. Terraform State", path: "/docs/adr-003", type: "adr" },
+      { title: "ADR-003: Dolt vs. IaC State", path: "/docs/adr-003", type: "adr" },
       { title: "VPC Foundation Schema (Section 6)", path: "/docs/dolt-vpc-schema", type: "spec" },
       { title: "Drift Detection: raw_hash Compare", path: "/docs/dolt-drift", type: "guide" },
       { title: "FoundationDriftError Reference", path: "/docs/foundation-drift", type: "api-ref" },

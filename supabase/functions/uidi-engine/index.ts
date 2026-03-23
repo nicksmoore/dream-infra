@@ -360,7 +360,7 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
+  intent: "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
   action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
@@ -378,247 +378,6 @@ interface EngineResponse {
 }
 
 // ───── Provider Clients ─────
-
-async function resolveWorkspaceId(
-  tfeBase: string,
-  headers: Record<string, string>,
-  workspaceIdOrName: string,
-  organization?: string,
-): Promise<{ id: string; error?: string }> {
-  // If it already looks like a workspace ID (ws-...), use it directly
-  if (workspaceIdOrName.startsWith("ws-")) {
-    return { id: workspaceIdOrName };
-  }
-
-  // Otherwise treat it as a name and look it up via the org
-  if (!organization) {
-    return { id: "", error: "organization is required when workspace_id is a name (not ws-xxx). Add 'organization' to spec." };
-  }
-
-  const res = await fetch(
-    `${tfeBase}/api/v2/organizations/${encodeURIComponent(organization)}/workspaces/${encodeURIComponent(workspaceIdOrName)}`,
-    { headers },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    return { id: "", error: `Workspace lookup failed (${res.status}): ${body}` };
-  }
-
-  const data = await res.json();
-  const id = data.data?.id as string;
-  if (!id) {
-    return { id: "", error: "Workspace found but missing id in response." };
-  }
-  return { id };
-}
-
-async function handleTerraform(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
-  const TFE_TOKEN = Deno.env.get("TFE_TOKEN");
-  if (!TFE_TOKEN) {
-    return err("terraform", action, "TFE_TOKEN not configured. Add your HCP Terraform API token.");
-  }
-
-  const TFE_BASE = spec.tfe_base_url as string || "https://app.terraform.io";
-  const rawWorkspaceId = spec.workspace_id as string;
-  const organization = spec.organization as string | undefined;
-
-  const headers = {
-    "Authorization": `Bearer ${TFE_TOKEN}`,
-    "Content-Type": "application/vnd.api+json",
-  };
-
-  switch (action) {
-    case "plan":
-    case "deploy":
-    case "apply": {
-      const hcl = spec.hcl as string | undefined;
-
-      if (!rawWorkspaceId) {
-        return err("terraform", action, "workspace_id is required in spec.");
-      }
-
-      // Resolve workspace name → ID if needed
-      const ws = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
-      if (ws.error) return err("terraform", action, ws.error);
-      const workspaceId = ws.id;
-
-      // Ensure workspace is in remote execution mode
-      const patchRes = await fetch(`${TFE_BASE}/api/v2/workspaces/${workspaceId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({
-          data: {
-            type: "workspaces",
-            id: workspaceId,
-            attributes: { "execution-mode": "remote" },
-          },
-        }),
-      });
-      console.log("PATCH execution-mode response:", patchRes.status, await patchRes.clone().text().then(t => t.slice(0, 300)));
-
-      // Verify workspace is accessible
-      const verifyRes = await fetch(`${TFE_BASE}/api/v2/workspaces/${workspaceId}`, { headers });
-      const verifyData = await verifyRes.json();
-      console.log("Workspace verify:", verifyRes.status, "execution-mode:", verifyData.data?.attributes?.["execution-mode"], "permissions:", JSON.stringify(verifyData.data?.attributes?.permissions || {}).slice(0, 200));
-
-      // Create a run (plan-only for "plan", auto-apply for "apply"/"deploy")
-      const isAutoApply = action !== "plan";
-
-      const runPayload = {
-        data: {
-          attributes: {
-            "is-destroy": false,
-            "auto-apply": isAutoApply,
-            message: `UIDI ${action} via Core Engine`,
-            ...(hcl ? { "plan-only": action === "plan" } : {}),
-          },
-          type: "runs",
-          relationships: {
-            workspace: {
-              data: { type: "workspaces", id: workspaceId },
-            },
-          },
-        },
-      };
-
-      // If HCL provided, we need to create a configuration version first
-      if (hcl) {
-        // Step 1: Create config version
-        const cvUrl = `${TFE_BASE}/api/v2/workspaces/${workspaceId}/configuration-versions`;
-        console.log("Creating config version at:", cvUrl, "workspaceId:", workspaceId);
-        const cvRes = await fetch(cvUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            data: {
-              type: "configuration-versions",
-              attributes: { "auto-queue-runs": false },
-            },
-          }),
-        });
-
-        if (!cvRes.ok) {
-          const cvErr = await cvRes.text();
-          console.error("Config version error:", cvRes.status, cvErr);
-          return err("terraform", action, `Failed to create config version (workspace: ${workspaceId}): ${cvErr}`);
-        }
-
-        const cvData = await cvRes.json();
-        const uploadUrl = cvData.data?.attributes?.["upload-url"];
-        const cvId = cvData.data?.id;
-
-        if (uploadUrl) {
-          // Step 2: Upload HCL as a tar.gz
-          // For simplicity, we'll create a minimal tar with main.tf
-          const tarball = await createTarGz(hcl);
-          const uploadRes = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: { "Content-Type": "application/octet-stream" },
-            body: tarball as unknown as BodyInit,
-          });
-
-          if (!uploadRes.ok) {
-            return err("terraform", action, `Failed to upload configuration: ${await uploadRes.text()}`);
-          }
-        }
-
-        // Add config version to run
-        if (cvId) {
-          (runPayload.data.relationships as Record<string, unknown>)["configuration-version"] = {
-            data: { type: "configuration-versions", id: cvId },
-          };
-        }
-      }
-
-      // Step 3: Create the run
-      const runRes = await fetch(`${TFE_BASE}/api/v2/runs`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(runPayload),
-      });
-
-      if (!runRes.ok) {
-        const runErr = await runRes.text();
-        return err("terraform", action, `Failed to create run: ${runErr}`);
-      }
-
-      const runData = await runRes.json();
-      const runId = runData.data?.id;
-      const runStatus = runData.data?.attributes?.status;
-
-      // Poll for completion (up to 60s)
-      const finalStatus = await pollRunStatus(TFE_BASE, headers, runId, 60);
-
-      return ok("terraform", action, `Run ${runId} completed with status: ${finalStatus.status}`, {
-        run_id: runId,
-        status: finalStatus.status,
-        plan_summary: finalStatus.plan,
-        workspace_id: workspaceId,
-      });
-    }
-
-    case "destroy": {
-      if (!rawWorkspaceId) {
-        return err("terraform", action, "workspace_id is required for destroy.");
-      }
-      const wsD = await resolveWorkspaceId(TFE_BASE, headers, rawWorkspaceId, organization);
-      if (wsD.error) return err("terraform", action, wsD.error);
-      const workspaceId = wsD.id;
-
-      const destroyRes = await fetch(`${TFE_BASE}/api/v2/runs`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          data: {
-            attributes: {
-              "is-destroy": true,
-              "auto-apply": true,
-              message: "UIDI destroy via Core Engine",
-            },
-            type: "runs",
-            relationships: {
-              workspace: {
-                data: { type: "workspaces", id: workspaceId },
-              },
-            },
-          },
-        }),
-      });
-
-      if (!destroyRes.ok) {
-        return err("terraform", action, `Destroy failed: ${await destroyRes.text()}`);
-      }
-
-      const destroyData = await destroyRes.json();
-      const destroyRunId = destroyData.data?.id;
-      const finalStatus = await pollRunStatus(TFE_BASE, headers, destroyRunId, 60);
-
-      return ok("terraform", action, `Destroy run ${destroyRunId}: ${finalStatus.status}`, {
-        run_id: destroyRunId,
-        status: finalStatus.status,
-      });
-    }
-
-    case "status": {
-      const runId = spec.run_id as string;
-      if (!runId) return err("terraform", action, "run_id required for status check.");
-
-      const statusRes = await fetch(`${TFE_BASE}/api/v2/runs/${runId}`, { headers });
-      if (!statusRes.ok) return err("terraform", action, `Status check failed: ${await statusRes.text()}`);
-      
-      const statusData = await statusRes.json();
-      return ok("terraform", action, `Run ${runId}: ${statusData.data?.attributes?.status}`, {
-        run_id: runId,
-        status: statusData.data?.attributes?.status,
-        attributes: statusData.data?.attributes,
-      });
-    }
-
-    default:
-      return err("terraform", action, `Unknown terraform action: ${action}`);
-  }
-}
 
 async function handleKubernetes(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
   // K8s management via EKS API + raw K8s API calls
@@ -948,95 +707,6 @@ async function hmacSha256(key: Uint8Array | ArrayBuffer, data: string): Promise<
 async function hmacSha256Hex(key: Uint8Array | ArrayBuffer, data: string): Promise<string> {
   const sig = await hmacSha256(key, data);
   return Array.from(sig).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-// ───── HCP Terraform Helpers ─────
-
-async function pollRunStatus(
-  base: string,
-  headers: Record<string, string>,
-  runId: string,
-  timeoutSecs: number
-): Promise<{ status: string; plan?: unknown }> {
-  const start = Date.now();
-  const terminalStatuses = new Set([
-    "planned", "applied", "errored", "discarded", "canceled",
-    "planned_and_finished", "policy_checked", "policy_soft_failed",
-  ]);
-
-  while (Date.now() - start < timeoutSecs * 1000) {
-    const res = await fetch(`${base}/api/v2/runs/${runId}`, { headers });
-    if (!res.ok) break;
-
-    const data = await res.json();
-    const status = data.data?.attributes?.status;
-
-    if (terminalStatuses.has(status)) {
-      return { status, plan: data.data?.attributes };
-    }
-
-    await new Promise(r => setTimeout(r, 3000));
-  }
-
-  return { status: "timeout" };
-}
-
-async function createTarGz(hcl: string): Promise<Uint8Array> {
-  // Create a minimal tar archive containing main.tf
-  // Tar format: 512-byte header + file content padded to 512-byte blocks
-  const fileName = "main.tf";
-  const content = new TextEncoder().encode(hcl);
-  const fileSize = content.length;
-
-  // Create tar header (512 bytes)
-  const header = new Uint8Array(512);
-  const encoder = new TextEncoder();
-
-  // File name (0-99)
-  header.set(encoder.encode(fileName), 0);
-  // File mode (100-107)
-  header.set(encoder.encode("0000644\0"), 100);
-  // Owner ID (108-115)
-  header.set(encoder.encode("0001000\0"), 108);
-  // Group ID (116-123)
-  header.set(encoder.encode("0001000\0"), 116);
-  // File size in octal (124-135)
-  header.set(encoder.encode(fileSize.toString(8).padStart(11, "0") + "\0"), 124);
-  // Mod time (136-147)
-  const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, "0") + "\0";
-  header.set(encoder.encode(mtime), 136);
-  // Checksum placeholder (148-155) - spaces
-  header.set(encoder.encode("        "), 148);
-  // Type flag (156) - '0' for regular file
-  header[156] = 0x30;
-  // USTAR indicator (257-262)
-  header.set(encoder.encode("ustar\0"), 257);
-  // USTAR version (263-264)
-  header.set(encoder.encode("00"), 263);
-
-  // Calculate checksum
-  let checksum = 0;
-  for (let i = 0; i < 512; i++) checksum += header[i];
-  header.set(encoder.encode(checksum.toString(8).padStart(6, "0") + "\0 "), 148);
-
-  // Pad content to 512-byte boundary
-  const paddedSize = Math.ceil(fileSize / 512) * 512;
-  const paddedContent = new Uint8Array(paddedSize);
-  paddedContent.set(content);
-
-  // End-of-archive marker (two 512-byte blocks of zeros)
-  const endMarker = new Uint8Array(1024);
-
-  // Combine into tar
-  const tar = new Uint8Array(512 + paddedSize + 1024);
-  tar.set(header, 0);
-  tar.set(paddedContent, 512);
-  tar.set(endMarker, 512 + paddedSize);
-
-  // Compress with gzip using CompressionStream
-  const stream = new Blob([tar]).stream().pipeThrough(new CompressionStream("gzip"));
-  const compressed = await new Response(stream).arrayBuffer();
-  return new Uint8Array(compressed);
 }
 
 // ───── K8s Helpers ─────
@@ -3777,10 +3447,7 @@ serve(async (req) => {
     let result: EngineResponse;
 
     switch (intent) {
-      case "terraform":
-        result = await handleTerraform(action, spec);
-        break;
-      case "kubernetes":
+    case "kubernetes":
         result = await handleKubernetes(action, spec);
         break;
       case "ansible":
@@ -3811,7 +3478,7 @@ serve(async (req) => {
         result = await handleDoltAudit(action, spec);
         break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: terraform, kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi, dolt.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi, dolt.`);
     }
     return new Response(JSON.stringify(result), {
       status: 200,

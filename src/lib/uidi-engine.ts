@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 // ───── Types ─────
 
 export interface EngineRequest {
-  intent: "terraform" | "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
+  intent: "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
   action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
@@ -138,32 +138,6 @@ export async function eksDestroy(spec: {
   region?: string;
 }): Promise<EngineResponse> {
   return executeIntent({ intent: "eks", action: "destroy", spec });
-}
-
-// ───── Legacy Terraform helpers (kept for compatibility) ─────
-
-export async function terraformPlan(spec: {
-  workspace_id: string;
-  hcl?: string;
-  region?: string;
-  environment?: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "terraform", action: "plan", spec });
-}
-
-export async function terraformApply(spec: {
-  workspace_id: string;
-  hcl?: string;
-  region?: string;
-  environment?: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "terraform", action: "apply", spec });
-}
-
-export async function terraformDestroy(spec: {
-  workspace_id: string;
-}): Promise<EngineResponse> {
-  return executeIntent({ intent: "terraform", action: "destroy", spec });
 }
 
 export async function k8sDeploy(spec: {

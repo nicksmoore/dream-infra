@@ -43,7 +43,7 @@ serve(async (req) => {
       try {
         payload = JSON.parse(inputs.chatInput);
       } catch {
-        payload = { intent: "terraform", chatInput: inputs.chatInput };
+        payload = { intent: "sre-supreme", chatInput: inputs.chatInput };
       }
     } else {
       payload = inputs ?? {};

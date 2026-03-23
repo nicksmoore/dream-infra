@@ -76,7 +76,7 @@ const COMPARISON = [
   { cap: "Audit trail", existing: "Logs. Mutable.", naawi: "TEE-attested hash chain. Rekor log." },
   { cap: "Permissions model", existing: "RBAC. Standing credentials.", naawi: "JIT per-layer STS. Auto-expire." },
   { cap: "Coherence validation", existing: "OPA/Rego policies", naawi: "Riemannian manifold. Geodesic check." },
-  { cap: "Brownfield recovery", existing: "Generates Terraform code", naawi: "discover → analyse → graduate. No code." },
+  { cap: "Brownfield recovery", existing: "Generates HCL code", naawi: "discover → analyse → graduate. No code." },
 ];
 
 const TIER1_INTEGRATIONS = [
@@ -380,7 +380,7 @@ export default function Landing() {
               Architecture that can't be retrofitted.
             </h2>
             <p className="mt-4 text-[hsl(220,10%,52%)] max-w-2xl leading-relaxed">
-              You can't eliminate the configuration layer from a tool built on Terraform. You can't add a cryptographic audit chain to a tool built on log files.
+              You can't eliminate the configuration layer from a tool built on Legacy IaC. You can't add a cryptographic audit chain to a tool built on log files.
             </p>
           </Section>
 
