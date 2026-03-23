@@ -212,10 +212,10 @@ export default function Index() {
     toast({ title: "Deployment Cancelled" });
   }, []);
 
-  const handleEscalation = useCallback((escalationText: string) => {
+  const handleEscalation = useCallback((escalation_text: string) => {
     if (!selectedGoldenPath) return;
     const result = escalateViaIntent(
-      escalationText,
+      escalation_text,
       selectedGoldenPath.id,
       intent.environment,
       "current-user"
@@ -360,119 +360,132 @@ export default function Index() {
       </header>
 
       <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
-        <Tabs defaultValue="golden-paths" className="w-full">
-          <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
-            <TabsTrigger value="golden-paths" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <Layers className="h-3.5 w-3.5" /> Golden Paths
-            </TabsTrigger>
-            <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <Eye className="h-3.5 w-3.5" /> Inventory
-            </TabsTrigger>
-            <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <Vault className="h-3.5 w-3.5" /> Vault
-            </TabsTrigger>
-            <TabsTrigger value="sre" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <Bot className="h-3.5 w-3.5" /> SRE
-            </TabsTrigger>
-          </TabsList>
+        <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+          <IntentInput onParse={handleParse} isLoading={isParsing} />
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Describe what you need and the engine will match a Golden Path, or browse the catalog below.
+          </p>
+        </div>
 
-          {/* ═══════════ GOLDEN PATHS — Unified Deployment Wizard (PRD §5) ═══════════ */}
-          <TabsContent value="golden-paths" className="space-y-6">
-            {selectedCatalogEntry && selectedCatalogProvider ? (
-              <GoldenPathDeployment
-                entry={selectedCatalogEntry}
-                provider={selectedCatalogProvider}
-                region={intent.region}
-                environment={intent.environment}
-                onBack={() => {
-                  setSelectedCatalogEntry(null);
-                  setSelectedCatalogProvider(null);
-                }}
-              />
-            ) : (
-              <>
-                <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-                  <IntentInput onParse={handleParse} isLoading={isParsing} />
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    Describe your infrastructure intent in natural language. The engine resolves it to a dependency-validated Golden Path with mandatory preflight.
-                  </p>
-                </div>
-
-                {detectedResources.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap animate-fade-in">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
-                    {detectedResources.map(r => (
-                      <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
-                    ))}
-                    {selectedGoldenPath && (
-                      <Badge className="text-[10px] ml-2 gap-1">
-                        <Layers className="h-3 w-3" />
-                        {selectedGoldenPath.name}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-
-                {goldenPathChoices.length > 0 && (
-                  <GoldenPathSelector
-                    choices={goldenPathChoices}
-                    onSelect={handleGoldenPathSelect}
-                    onOverride={handleGoldenPathOverride}
-                  />
-                )}
-
-                {safetyReport && (
-                  <SafetyGateReport
-                    report={safetyReport}
-                    onProceed={handleSafetyProceed}
-                    onAbort={handleSafetyAbort}
-                    onEscalate={handleEscalation}
-                  />
-                )}
-
-                {showOrchestration && (
-                  <OrchestrationPanel
-                    resources={detectedResources}
-                    region={intent.region}
-                    environment={intent.environment}
-                    workloadType={intent.workloadType}
-                    instanceType={config.instanceType}
-                    os={config.os}
-                    naawiOperations={operations}
-                  />
-                )}
-
-                <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Layers className="h-5 w-5 text-primary" />
-                    <div>
-                      <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
-                      <p className="text-xs text-muted-foreground">
-                        Select a path → auto-preflight → dependency validation (L0→L1→L2) → live SDK deploy → resource verification. Zero mock data.
-                      </p>
-                    </div>
-                  </div>
-                  <GoldenPathCatalog onSelect={handleCatalogSelect} />
-                </div>
-              </>
+        {detectedResources.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap animate-fade-in">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
+            {detectedResources.map(r => (
+              <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
+            ))}
+            {selectedGoldenPath && (
+              <Badge className="text-[10px] ml-2 gap-1">
+                <Layers className="h-3 w-3" />
+                {selectedGoldenPath.name}
+              </Badge>
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          {/* ═══════════ INVENTORY ═══════════ */}
-          <TabsContent value="inventory">
-            <ResourceInventory region={intent.region} />
-          </TabsContent>
+        {goldenPathChoices.length > 0 && (
+          <GoldenPathSelector
+            choices={goldenPathChoices}
+            onSelect={handleGoldenPathSelect}
+            onOverride={handleGoldenPathOverride}
+          />
+        )}
 
-          {/* ═══════════ VAULT ═══════════ */}
-          <TabsContent value="vault">
-            <CredentialVault />
-          </TabsContent>
+        {safetyReport && (
+          <SafetyGateReport
+            report={safetyReport}
+            onProceed={handleSafetyProceed}
+            onAbort={handleSafetyAbort}
+            onEscalate={handleEscalation}
+          />
+        )}
 
-          {/* ═══════════ SRE ═══════════ */}
-          <TabsContent value="sre" className="space-y-6">
-            <SREPanel />
-          </TabsContent>
-        </Tabs>
+        {showOrchestration && (
+          <div className="space-y-6">
+            <OrchestrationPanel
+              resources={detectedResources}
+              region={intent.region}
+              environment={intent.environment}
+              workloadType={intent.workloadType}
+              instanceType={config.instanceType}
+              os={config.os}
+              naawiOperations={operations}
+            />
+            {operations.length > 0 && (
+              <div className="flex justify-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDebugger(!showDebugger)}
+                  className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
+                >
+                  {showDebugger ? "Hide Engine Traces" : "Inspect IDI Engine Traces"}
+                </Button>
+              </div>
+            )}
+            {showDebugger && <DeploymentDebugger />}
+          </div>
+        )}
+
+        {selectedCatalogEntry && selectedCatalogProvider ? (
+          <GoldenPathDeployment
+            entry={selectedCatalogEntry}
+            provider={selectedCatalogProvider}
+            region={intent.region}
+            environment={intent.environment}
+            onBack={() => {
+              setSelectedCatalogEntry(null);
+              setSelectedCatalogProvider(null);
+            }}
+          />
+        ) : (
+          <Tabs defaultValue="inventory" className="w-full">
+            <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
+              <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+                <Eye className="h-3.5 w-3.5" /> Inventory
+              </TabsTrigger>
+              <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+                <Vault className="h-3.5 w-3.5" /> Vault
+              </TabsTrigger>
+              <TabsTrigger value="sre" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+                <Bot className="h-3.5 w-3.5" /> SRE
+              </TabsTrigger>
+              <TabsTrigger value="catalog" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
+                <Layers className="h-3.5 w-3.5" /> Catalog
+              </TabsTrigger>
+            </TabsList>
+
+            {/* ═══════════ INVENTORY ═══════════ */}
+            <TabsContent value="inventory">
+              <ResourceInventory region={intent.region} />
+            </TabsContent>
+
+            {/* ═══════════ VAULT ═══════════ */}
+            <TabsContent value="vault">
+              <CredentialVault />
+            </TabsContent>
+
+            {/* ═══════════ SRE ═══════════ */}
+            <TabsContent value="sre" className="space-y-6">
+              <SREPanel />
+            </TabsContent>
+
+            {/* ═══════════ CATALOG ═══════════ */}
+            <TabsContent value="catalog" className="space-y-6">
+              <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+                <div className="flex items-center gap-3 mb-4">
+                  <Layers className="h-5 w-5 text-primary" />
+                  <div>
+                    <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
+                    <p className="text-xs text-muted-foreground">
+                      PRD §5.1 — Real SDK deployments with preflight dry-run, live provisioning, and post-deploy validation via resource discovery.
+                    </p>
+                  </div>
+                </div>
+                <GoldenPathCatalog onSelect={handleCatalogSelect} />
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
       </main>
     </div>
   );
