@@ -296,6 +296,30 @@ const CATALOG: GoldenPathEntry[] = [
     tags: ["dr", "multi-region", "failover", "resilience"],
     status: "v1.0 — Planned (Phase 3)",
   },
+  {
+    id: "openclaw-cloud",
+    intentId: "naawi.gold.v1.OpenClawCloud",
+    name: "OpenClaw Cloud Deployment (GP2)",
+    description: "Production topology for always-on operation: Linux VPS gateway (systemd) + macOS node (OpenClaw.app) connected over Tailscale WebSocket. No public ports. Nix-managed, reproducible, agent-first.",
+    icon: "🦞",
+    providers: ["aws", "gcp", "azure"],
+    tier: "Standard",
+    sloAvailability: 99.9,
+    estimatedDeployMin: 10,
+    estimatedMonthlyCost: "$20–100",
+    resources: {
+      aws: ["EC2 (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
+      gcp: ["Compute Engine (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
+      azure: ["Linux VM (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
+    },
+    jitScope: ["ec2:RunInstances", "ec2:CreateSecurityGroup"],
+    jitTtl: "3–8 min per layer",
+    rmcmThreshold: 90,
+    preflightSteps: PREFLIGHT_STANDARD,
+    doltTables: ["resources", "resource_raw", "ztai_refs"],
+    tags: ["openclaw", "agent-first", "tailscale", "nix", "macos", "gateway"],
+    status: "v1.0 — Specification complete",
+  },
 ];
 
 const PROVIDER_LABELS: Record<CloudProvider, { label: string; color: string }> = {
