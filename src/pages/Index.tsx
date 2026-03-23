@@ -469,36 +469,40 @@ export default function Index() {
 
           {/* ═══════════ GOLDEN PATHS TAB ═══════════ */}
           <TabsContent value="golden-paths" className="space-y-6">
-            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-              <div className="flex items-center gap-3 mb-4">
-                <Layers className="h-5 w-5 text-primary" />
-                <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
-                  <p className="text-xs text-muted-foreground">
-                    PRD §5.1 — Compiled intent batches with RMCM thresholds, JIT per-layer credentials, and Dolt state writes. Not templates — executable artifacts.
-                  </p>
-                </div>
-              </div>
-              <GoldenPathCatalog onSelect={handleCatalogSelect} />
-            </div>
-
-            {/* Post-Deploy Validation — shown when a catalog path is selected */}
-            {selectedCatalogEntry && selectedCatalogProvider && (
-              <PostDeployValidation
-                goldenPathId={selectedCatalogEntry.id}
-                goldenPathName={selectedCatalogEntry.name}
+            {selectedCatalogEntry && selectedCatalogProvider ? (
+              <GoldenPathDeployment
+                entry={selectedCatalogEntry}
                 provider={selectedCatalogProvider}
-                resources={selectedCatalogEntry.resources[selectedCatalogProvider]}
-                onComplete={(passed) => {
-                  toast({
-                    title: passed ? "Validation Passed" : "Validation Issues Found",
-                    description: passed
-                      ? "All post-deploy checks passed successfully."
-                      : "Some checks require attention — review the results above.",
-                    variant: passed ? "default" : "destructive",
-                  });
+                region={intent.region}
+                environment={intent.environment}
+                onBack={() => {
+                  setSelectedCatalogEntry(null);
+                  setSelectedCatalogProvider(null);
                 }}
               />
+            ) : (
+              <>
+                {/* NL Intent Input for Golden Paths */}
+                <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+                  <IntentInput onParse={handleParse} isLoading={isParsing} />
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Describe what you need and the engine will match a Golden Path, or browse the catalog below.
+                  </p>
+                </div>
+
+                <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+                  <div className="flex items-center gap-3 mb-4">
+                    <Layers className="h-5 w-5 text-primary" />
+                    <div>
+                      <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
+                      <p className="text-xs text-muted-foreground">
+                        PRD §5.1 — Real SDK deployments with preflight dry-run, live provisioning, and post-deploy validation via resource discovery.
+                      </p>
+                    </div>
+                  </div>
+                  <GoldenPathCatalog onSelect={handleCatalogSelect} />
+                </div>
+              </>
             )}
           </TabsContent>
 
