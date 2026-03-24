@@ -14,7 +14,7 @@ import {
   Layers, Network, Database, Server, AlertCircle, Wrench,
 } from "lucide-react";
 
-type Phase = "analyzing" | "preflight" | "deploying" | "validating" | "complete" | "failed";
+type Phase = "analyzing" | "foundation-check" | "preflight" | "deploying" | "validating" | "complete" | "failed";
 
 interface StepResult {
   resource: string;
@@ -57,6 +57,8 @@ export function GoldenPathDeployment({
   const [showDetails, setShowDetails] = useState(true);
   const [overallProgress, setOverallProgress] = useState(0);
   const [autoPreflightDone, setAutoPreflightDone] = useState(false);
+  const [foundationStatus, setFoundationStatus] = useState<"unknown" | "checking" | "healthy" | "missing">("unknown");
+  const [foundationCheckResults, setFoundationCheckResults] = useState<StepResult[]>([]);
 
   const resources = entry.resources[provider];
 
@@ -75,15 +77,21 @@ export function GoldenPathDeployment({
     }
   }, [resources]);
 
-  // ─── PRD §3.2: Auto-trigger preflight when analysis passes ───
+  // ─── PRD §3.2: Auto-trigger foundation check when analysis passes ───
   useEffect(() => {
     if (analysis?.canDeploy && phase === "analyzing" && !autoPreflightDone) {
       setAutoPreflightDone(true);
-      setPhase("preflight");
-      // Auto-start preflight
-      runPreflight();
+      runFoundationCheck();
     }
   }, [analysis, phase, autoPreflightDone]);
+
+  // Auto-trigger preflight once foundation is confirmed healthy
+  useEffect(() => {
+    if (foundationStatus === "healthy" && phase === "foundation-check" && !isRunning) {
+      setPhase("preflight");
+      runPreflight();
+    }
+  }, [foundationStatus, phase, isRunning]);
 
   // Map catalog resources to UIDI engine intents
   const mapResourceToIntent = useCallback((resource: string): { intent: string; action: string; spec: Record<string, unknown> } | null => {
@@ -147,6 +155,82 @@ export function GoldenPathDeployment({
     }
     return null;
   }, [entry.id, region, environment]);
+
+  // ─── FOUNDATION PRE-CHECK: Verify L0 stack exists before preflight ───
+  const runFoundationCheck = useCallback(async () => {
+    if (!analysis) return;
+    setPhase("foundation-check");
+    setIsRunning(true);
+    setFoundationStatus("checking");
+
+    const l0Resources = analysis.executionOrder.filter(r => r.level === 0);
+    if (l0Resources.length === 0) {
+      // No L0 deps to verify — proceed directly
+      setFoundationStatus("healthy");
+      setIsRunning(false);
+      return;
+    }
+
+    // Initialise all L0 resources as "checking"
+    const results: StepResult[] = l0Resources.map(r => ({
+      resource: r.resource,
+      action: "discover",
+      status: "running" as const,
+      level: 0 as DependencyLevel,
+    }));
+    setFoundationCheckResults([...results]);
+
+    // Single network discover covers VPC, Subnets, and Security Group
+    const start = Date.now();
+    let found = false;
+    let resultMessage = "";
+    let details: unknown;
+
+    try {
+      const response: EngineResponse = await executeIntent({
+        intent: "network" as any,
+        action: "discover",
+        spec: { region, environment, name: `vpc-foundation-${environment}` },
+      });
+      const duration = Date.now() - start;
+      found = response.status !== "error";
+      resultMessage = found
+        ? response.message || "Foundation stack confirmed healthy"
+        : "VPC Foundation not found — deploy naawi.gold.v1.VpcFoundation first";
+      details = response.details;
+
+      setFoundationCheckResults(results.map(r => ({
+        ...r,
+        status: (found ? "success" : "error") as StepResult["status"],
+        message: found ? `${r.resource} confirmed` : resultMessage,
+        details: found ? details : undefined,
+        duration,
+      })));
+    } catch (e) {
+      const duration = Date.now() - start;
+      found = false;
+      resultMessage = e instanceof Error ? e.message : "Foundation check failed";
+      setFoundationCheckResults(results.map(r => ({
+        ...r,
+        status: "error" as const,
+        message: resultMessage,
+        duration,
+      })));
+    }
+
+    setFoundationStatus(found ? "healthy" : "missing");
+    setIsRunning(false);
+
+    if (found) {
+      toast({ title: "✅ Foundation Verified", description: "VPC Foundation is healthy. Running preflight..." });
+    } else {
+      toast({
+        title: "⛔ Foundation Not Found",
+        description: "Deploy naawi.gold.v1.VpcFoundation before this path can proceed.",
+        variant: "destructive",
+      });
+    }
+  }, [analysis, region, environment]);
 
   // ─── PREFLIGHT (Dry Run) — PRD §3.2: Mandatory, automated ───
   const runPreflight = useCallback(async () => {
@@ -338,12 +422,20 @@ export function GoldenPathDeployment({
   }, [analysis, mapResourceToIntent]);
 
   const phaseConfig: Record<Phase, { label: string; color: string }> = {
-    analyzing: { label: "Analyzing Dependencies", color: "text-muted-foreground" },
-    preflight: { label: preflightPassed ? "Preflight Passed — Ready to Deploy" : "Preflight — Dry Run", color: preflightPassed ? "text-[hsl(var(--success))]" : "text-primary" },
-    deploying: { label: "Deploying Resources (Level 0 → 2)", color: "text-primary" },
-    validating: { label: "Validating Live State", color: "text-amber-400" },
-    complete: { label: "Deployment Complete & Validated", color: "text-[hsl(var(--success))]" },
-    failed: { label: "Deployment Failed — Remediation Available", color: "text-destructive" },
+    analyzing:        { label: "Analyzing Dependencies", color: "text-muted-foreground" },
+    "foundation-check": {
+      label: foundationStatus === "missing"
+        ? "⛔ Foundation Not Found — Deploy VPC Foundation First"
+        : foundationStatus === "healthy"
+          ? "Foundation Verified"
+          : "Checking Foundation...",
+      color: foundationStatus === "missing" ? "text-destructive" : foundationStatus === "healthy" ? "text-[hsl(var(--success))]" : "text-primary",
+    },
+    preflight:        { label: preflightPassed ? "Preflight Passed — Ready to Deploy" : "Preflight — Dry Run", color: preflightPassed ? "text-[hsl(var(--success))]" : "text-primary" },
+    deploying:        { label: "Deploying Resources (Level 0 → 2)", color: "text-primary" },
+    validating:       { label: "Validating Live State", color: "text-amber-400" },
+    complete:         { label: "Deployment Complete & Validated", color: "text-[hsl(var(--success))]" },
+    failed:           { label: "Deployment Failed — Remediation Available", color: "text-destructive" },
   };
 
   const StatusIcon = ({ status }: { status: StepResult["status"] }) => {
@@ -494,6 +586,16 @@ export function GoldenPathDeployment({
               <ArrowLeft className="h-3.5 w-3.5" /> Deploy Foundation First
             </Button>
           )}
+          {phase === "foundation-check" && foundationStatus === "missing" && !isRunning && (
+            <Button variant="outline" onClick={onBack} className="gap-2 text-xs border-destructive/40 text-destructive hover:bg-destructive/10">
+              <ArrowLeft className="h-3.5 w-3.5" /> Deploy naawi.gold.v1.VpcFoundation
+            </Button>
+          )}
+          {phase === "foundation-check" && foundationStatus === "missing" && !isRunning && (
+            <Button variant="ghost" size="sm" onClick={runFoundationCheck} className="gap-2 text-xs text-muted-foreground">
+              <FlaskConical className="h-3.5 w-3.5" /> Re-check Foundation
+            </Button>
+          )}
           {phase === "preflight" && !preflightPassed && !isRunning && (
             <Button onClick={runPreflight} disabled={isRunning || !analysis?.canDeploy} className="gap-2">
               <FlaskConical className="h-4 w-4" /> Retry Preflight
@@ -523,8 +625,14 @@ export function GoldenPathDeployment({
 
         {showDetails && (
           <div className="space-y-4">
+            {foundationCheckResults.length > 0 && (
+              <ResultList results={foundationCheckResults} label="Foundation Pre-Check — L0 Stack Discovery" />
+            )}
             {preflightResults.length > 0 && (
-              <ResultList results={preflightResults} label="Preflight — P-5 Shared Closure Dry Run" />
+              <>
+                {foundationCheckResults.length > 0 && <Separator />}
+                <ResultList results={preflightResults} label="Preflight — P-5 Shared Closure Dry Run" />
+              </>
             )}
             {deployResults.length > 0 && (
               <>

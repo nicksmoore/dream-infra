@@ -92,7 +92,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 12,
     estimatedMonthlyCost: "$300–2000",
     resources: {
-      aws: ["ALB", "ECS Fargate", "RDS Aurora Serverless v2", "VPC (dep)"],
+      aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "RDS Aurora Serverless v2", "ALB", "ECS Fargate"],
       gcp: ["Cloud LB", "Cloud Run", "Cloud SQL (HA)", "VPC (dep)"],
       azure: ["App Gateway", "Container Apps", "Azure SQL (HA)", "VNet (dep)"],
     },

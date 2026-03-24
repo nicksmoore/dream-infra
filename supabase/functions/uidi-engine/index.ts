@@ -797,7 +797,10 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
   switch (action) {
     case "dry_run":
     case "plan": {
-      // DryRun validates permissions, quotas, AMI, instance type — without launching
+      // Validate instance type availability and credentials using DescribeInstanceTypes.
+      // RunInstances DryRun=true requires a default VPC (or explicit SubnetId) which may
+      // not exist in production accounts, causing "GroupName only supported for EC2-Classic"
+      // errors. DescribeInstanceTypes is VPC-agnostic and sufficient for preflight.
       const instanceType = spec.instance_type as string || "t3.micro";
       const os = spec.os as string || "amazon-linux-2023";
       const count = spec.count as number || 1;
@@ -806,37 +809,31 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
       if (!ami) return err("compute", action, `No AMI for ${os} in ${region}. Try us-east-1.`);
 
       const params = new URLSearchParams({
-        Action: "RunInstances",
+        Action: "DescribeInstanceTypes",
         Version: "2016-11-15",
-        DryRun: "true",
-        ImageId: ami,
-        InstanceType: instanceType,
-        MinCount: String(count),
-        MaxCount: String(count),
+        "InstanceType.1": instanceType,
       });
-
-      if (spec.subnet_id) params.set("SubnetId", spec.subnet_id as string);
-      if (spec.key_name) params.set("KeyName", spec.key_name as string);
-      const sgIds = spec.security_group_ids as string[] | undefined;
-      if (sgIds?.length) sgIds.forEach((sg, i) => params.set(`SecurityGroupId.${i + 1}`, sg));
 
       const res = await ec2Request("POST", region, params.toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
       const body = await res.text();
 
-      // DryRun returns 412 with "DryRunOperation" on success, or a real error
-      if (body.includes("DryRunOperation")) {
-        return ok("compute", action, `Dry run passed: ${instanceType} x${count} in ${region} is valid`, {
-          instance_type: instanceType,
-          ami,
-          region,
-          count,
-          validation: "passed",
-          dry_run: true,
-        });
+      if (!res.ok) {
+        const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
+        return err("compute", action, `Dry run failed: ${errorMatch?.[1] || "Validation error"}`);
       }
 
-      const errorMatch = body.match(/<Message>(.*?)<\/Message>/);
-      return err("compute", action, `Dry run failed: ${errorMatch?.[1] || "Validation error"}`);
+      if (!body.includes(instanceType)) {
+        return err("compute", action, `Dry run failed: instance type ${instanceType} not available in ${region}`);
+      }
+
+      return ok("compute", action, `Dry run passed: ${instanceType} x${count} in ${region} is valid`, {
+        instance_type: instanceType,
+        ami,
+        region,
+        count,
+        validation: "passed",
+        dry_run: true,
+      });
     }
 
     case "deploy":
@@ -872,8 +869,29 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
         "TagSpecification.1.Tag.4.Value": clientToken,
       });
 
-      // Optional: subnet, security groups, key pair, user data
-      if (spec.subnet_id) params.set("SubnetId", spec.subnet_id as string);
+      // Resolve SubnetId — required in accounts without a default VPC.
+      // If the caller supplies one, use it directly; otherwise discover the first
+      // available public subnet (i.e. one with MapPublicIpOnLaunch=true).
+      let resolvedSubnetId = spec.subnet_id as string | undefined;
+      if (!resolvedSubnetId) {
+        const subnetRes = await ec2Request("POST", region, new URLSearchParams({
+          Action: "DescribeSubnets",
+          Version: "2016-11-15",
+          "Filter.1.Name": "map-public-ip-on-launch",
+          "Filter.1.Value.1": "true",
+          "Filter.2.Name": "state",
+          "Filter.2.Value.1": "available",
+          MaxResults: "5",
+        }).toString(), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY);
+        const subnetBody = await subnetRes.text();
+        resolvedSubnetId = subnetBody.match(/<subnetId>(subnet-[a-f0-9]+)<\/subnetId>/)?.[1];
+      }
+      if (!resolvedSubnetId) {
+        return err("compute", action, "No subnet available. Create a VPC with public subnets first (run the VPC Foundation golden path), or supply subnet_id in the spec.");
+      }
+      params.set("SubnetId", resolvedSubnetId);
+
+      // Optional: security groups, key pair, user data
       if (spec.key_name) params.set("KeyName", spec.key_name as string);
       if (spec.user_data) params.set("UserData", btoa(spec.user_data as string));
       const sgIds = spec.security_group_ids as string[] | undefined;
@@ -3450,6 +3468,29 @@ async function handleDoltAudit(action: string, spec: Record<string, unknown>): P
 
 // ───── Main Handler ─────
 
+async function fetchVaultCredentials(authHeader: string, provider = "aws", label = "default"): Promise<{ access_key_id: string; secret_access_key: string } | null> {
+  try {
+    const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/credential-vault`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": authHeader,
+        "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
+      },
+      body: JSON.stringify({ action: "retrieve", provider, label }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.credentials) return null;
+    return {
+      access_key_id: data.credentials.accessKeyId || data.credentials.access_key_id,
+      secret_access_key: data.credentials.secretAccessKey || data.credentials.secret_access_key,
+    };
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -3462,6 +3503,16 @@ serve(async (req) => {
         JSON.stringify(err("unknown", "unknown", "intent, action, and spec are required.")),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Inject vault credentials into spec if not already present in env or spec
+    if (!Deno.env.get("AWS_ACCESS_KEY_ID") && !spec.access_key_id) {
+      const authHeader = req.headers.get("Authorization") || "";
+      const vaultCreds = await fetchVaultCredentials(authHeader);
+      if (vaultCreds) {
+        spec.access_key_id = vaultCreds.access_key_id;
+        spec.secret_access_key = vaultCreds.secret_access_key;
+      }
     }
 
     console.log(`UIDI Engine: ${intent}/${action}`, metadata ? JSON.stringify(metadata) : "", JSON.stringify(spec).slice(0, 300));
