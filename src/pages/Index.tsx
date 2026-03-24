@@ -337,7 +337,7 @@ export default function Index() {
       {/* Header */}
       <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
         <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <Link to="/console" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
               <Zap className="h-5 w-5 text-primary" />
             </div>
