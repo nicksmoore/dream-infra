@@ -33,6 +33,11 @@ const AWS_DEPENDENCY_GRAPH: DependencyNode[] = [
   { resource: "IRSA",             level: 0, dependsOn: ["IAM Roles"],         category: "iam" },
   { resource: "VPC (dep)",        level: 0, dependsOn: [],                    category: "networking" },
   { resource: "VPC (zero-trust)", level: 0, dependsOn: [],                    category: "networking" },
+  // ─── OpenClaw / Tailscale stack ───
+  { resource: "Tailscale Tailnet", level: 0, dependsOn: [],                   category: "networking" },
+  { resource: "Nix Flake",         level: 0, dependsOn: [],                   category: "iam" },
+  { resource: "systemd Service",   level: 1, dependsOn: ["Tailscale Tailnet"], category: "compute" },
+  { resource: "OpenClaw.app Node", level: 2, dependsOn: ["Tailscale Tailnet"], category: "compute" },
 
   // ─── Level 1: Data & Services ───
   { resource: "RDS Aurora Serverless v2", level: 1, dependsOn: ["Subnets", "Security Group"], category: "database" },
@@ -56,7 +61,7 @@ const AWS_DEPENDENCY_GRAPH: DependencyNode[] = [
   // ─── Level 2: Compute & Orchestration ───
   { resource: "EC2",              level: 2, dependsOn: ["Subnets", "Security Group"], category: "compute" },
   { resource: "EC2 (GPU)",        level: 2, dependsOn: ["Subnets", "Security Group"], category: "compute" },
-  { resource: "EC2 (VPS Gateway)", level: 2, dependsOn: ["Security Group"],   category: "compute" },
+  { resource: "EC2 (VPS Gateway)", level: 2, dependsOn: ["Tailscale Tailnet"], category: "compute" },
   { resource: "EKS",              level: 2, dependsOn: ["Subnets", "Security Group", "IAM Roles"], category: "orchestration" },
   { resource: "Node Groups",      level: 2, dependsOn: ["EKS"],              category: "orchestration" },
   { resource: "ECS Fargate",      level: 2, dependsOn: ["Subnets", "Security Group"], category: "compute" },
