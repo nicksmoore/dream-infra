@@ -255,6 +255,58 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
     "security_group", "subnet", "vpc",
   ];
 
+  async function retryFailed() {
+    if (nukeAllFailures.length === 0) return;
+    const toRetry = nukeAllFailures
+      .map(f => resources.find(r => r.id === f.id))
+      .filter(Boolean) as typeof resources;
+    if (toRetry.length === 0) {
+      setNukeAllFailures([]);
+      return;
+    }
+
+    setIsNukingAll(true);
+    setNukeAllFailures([]);
+    const ordered = [...toRetry].sort(
+      (a, b) => NUKE_ORDER.indexOf(a.type) - NUKE_ORDER.indexOf(b.type)
+    );
+    setNukeAllProgress({ done: 0, total: ordered.length });
+    const failures: { id: string; name: string; error: string }[] = [];
+
+    for (let i = 0; i < ordered.length; i++) {
+      const r = ordered[i];
+      setNukeAllProgress({ done: i, total: ordered.length });
+      try {
+        const result = await executeIntent({
+          intent: "inventory" as any,
+          action: "nuke" as any,
+          spec: {
+            resource_id: r.id,
+            resource_type: r.type,
+            region: r.region,
+            ...(r.type === "eks"      ? { cluster_name: r.name } : {}),
+            ...(r.type === "s3"       ? { bucket_name: r.name } : {}),
+            ...(r.type === "lambda"   ? { function_name: r.name } : {}),
+            ...(r.type === "app_mesh" ? { mesh_name: r.name } : {}),
+            ...(r.type === "sqs"      ? { queue_url: (r.details as any)?.queue_url } : {}),
+          },
+        });
+        if (result.status === "error") {
+          failures.push({ id: r.id, name: r.name, error: result.error || result.message || "Unknown error" });
+        } else {
+          setResources(prev => prev.filter(x => x.id !== r.id));
+        }
+      } catch (e) {
+        failures.push({ id: r.id, name: r.name, error: e instanceof Error ? e.message : "Unknown error" });
+      }
+    }
+
+    setNukeAllProgress({ done: ordered.length, total: ordered.length });
+    setNukeAllFailures(failures);
+    setIsNukingAll(false);
+    setNukeAllProgress(null);
+  }
+
   async function nukeAll() {
     setNukeAllOpen(false);
     setIsNukingAll(true);
@@ -447,9 +499,14 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
               <span className="text-xs font-semibold text-destructive">{nukeAllFailures.length} resource(s) failed to destroy</span>
-              <Button variant="ghost" size="sm" className="h-5 w-5 p-0 ml-auto" onClick={() => setNukeAllFailures([])}>
-                <X className="h-3 w-3" />
-              </Button>
+              <div className="ml-auto flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-5 px-2 text-xs border-destructive/40 text-destructive hover:bg-destructive/10" onClick={retryFailed} disabled={isNukingAll}>
+                  Retry Failed
+                </Button>
+                <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setNukeAllFailures([])}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
             {nukeAllFailures.map(f => (
               <div key={f.id} className="flex items-start gap-2 text-xs">
