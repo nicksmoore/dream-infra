@@ -112,11 +112,7 @@ export function GoldenPathDeployment({
       };
     }
     if (lower.includes("security group") || lower === "sg" || lower.includes("nsg") || lower.includes("firewall")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { region, environment, name: `${entry.id}-sg`, security_group: true },
-      };
+      return null; // provisioned as part of VPC stack by handleNetwork("deploy")
     }
     if (lower.includes("igw") || lower.includes("nat") || lower.includes("route table")) {
       return null; // provisioned as part of VPC foundation

@@ -1092,6 +1092,28 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
   const region = spec.region as string || "us-east-1";
 
   switch (action) {
+    case "dry_run":
+    case "plan": {
+      // Validate credentials + region access without creating any resources
+      const res = await ec2Request("POST", region, new URLSearchParams({
+        Action: "DescribeVpcs",
+        Version: "2016-11-15",
+        MaxResults: "5",
+      }).toString(), AWS_KEY, AWS_SECRET);
+      const body = await res.text();
+      if (!res.ok) {
+        const msg = extractEc2Error(body) || "AWS credential validation failed";
+        return err("network", action, `Dry run failed: ${msg}`);
+      }
+      return ok("network", action, "Credentials and region validated — VPC stack ready to deploy", {
+        region,
+        vpc_cidr: spec.vpc_cidr || "10.0.0.0/16",
+        az_count: spec.az_count || 2,
+        validation: "passed",
+        dry_run: true,
+      });
+    }
+
     case "deploy": {
       const vpcCidr = spec.vpc_cidr as string || "10.0.0.0/16";
       const name = spec.name as string || "uidi-vpc";
