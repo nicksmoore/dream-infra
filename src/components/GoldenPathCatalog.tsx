@@ -116,7 +116,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 5,
     estimatedMonthlyCost: "$20–500",
     resources: {
-      aws: ["SQS", "Lambda", "DynamoDB", "EventBridge", "DLQ"],
+      aws: ["IAM Roles", "SQS", "DLQ", "DynamoDB", "EventBridge", "Lambda"],
       gcp: ["Pub/Sub", "Cloud Functions", "Firestore", "Eventarc", "DLQ"],
       azure: ["Service Bus", "Azure Functions", "Cosmos DB", "Event Grid", "DLQ"],
     },
@@ -164,7 +164,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 15,
     estimatedMonthlyCost: "$200–800",
     resources: {
-      aws: ["EKS", "Node Groups", "ALB Ingress", "IRSA", "EBS CSI"],
+      aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "IRSA", "ALB", "EKS", "Node Groups", "ALB Ingress", "EBS CSI"],
       gcp: ["GKE", "Node Pools", "Ingress", "Workload Identity", "PD CSI"],
       azure: ["AKS", "Node Pools", "AGIC", "Managed Identity", "Disk CSI"],
     },
@@ -212,7 +212,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 20,
     estimatedMonthlyCost: "$1000–5000",
     resources: {
-      aws: ["EKS", "RDS", "KMS", "Secrets Manager", "VPC (zero-trust)", "WAF"],
+      aws: ["VPC (zero-trust)", "Subnets (×4)", "Security Group", "IAM Roles", "KMS", "Secrets Manager", "RDS", "EKS", "WAF"],
       gcp: ["GKE", "Cloud SQL", "Cloud KMS", "Secret Manager", "VPC-SC"],
       azure: ["AKS", "Azure SQL", "Key Vault", "VNet (zero-trust)", "WAF"],
     },
@@ -236,7 +236,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 15,
     estimatedMonthlyCost: "$400–3000",
     resources: {
-      aws: ["EKS", "App Mesh", "X-Ray", "ALB", "Cloud Map"],
+      aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "Cloud Map", "X-Ray", "ALB", "EKS", "App Mesh"],
       gcp: ["GKE", "Anthos Service Mesh", "Cloud Trace", "Cloud LB"],
       azure: ["AKS", "OSM / Istio", "App Insights", "App Gateway"],
     },
@@ -260,7 +260,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 10,
     estimatedMonthlyCost: "$500–10000",
     resources: {
-      aws: ["EC2 (GPU)", "S3", "EBS", "CloudWatch GPU Metrics", "Spot Fleet"],
+      aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "S3", "EBS", "EC2 (GPU)", "Spot Fleet", "CloudWatch GPU Metrics"],
       gcp: ["Compute (GPU)", "GCS", "Persistent Disk", "Vertex AI", "Preemptible VMs"],
       azure: ["NC-series VMs", "Blob Storage", "Managed Disks", "Azure ML", "Spot VMs"],
     },
@@ -284,7 +284,7 @@ const CATALOG: GoldenPathEntry[] = [
     estimatedDeployMin: 25,
     estimatedMonthlyCost: "$2000–10000",
     resources: {
-      aws: ["Route53 ARC", "RDS Global", "S3 Cross-Region", "EKS (multi-region)", "DynamoDB Global Tables"],
+      aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "RDS Global", "S3 Cross-Region", "DynamoDB Global Tables", "Route53 ARC", "EKS"],
       gcp: ["Cloud DNS", "Cloud SQL (cross-region)", "GCS Dual-Region", "GKE Multi-Cluster"],
       azure: ["Traffic Manager", "Azure SQL Geo-Replication", "Blob Geo-Redundant", "AKS Fleet"],
     },
