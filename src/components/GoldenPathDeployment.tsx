@@ -125,12 +125,8 @@ export function GoldenPathDeployment({
     if (lower.includes("igw") || lower.includes("nat") || lower.includes("route table")) {
       return null; // provisioned as part of VPC foundation
     }
-    if (lower.includes("iam")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { region, environment, name: `${entry.id}-iam`, iam_role: true },
-      };
+    if (lower.includes("iam") || lower.includes("irsa")) {
+      return null; // auto-resolved by EKS role resolver during deploy
     }
     if (lower.includes("s3") || lower.includes("gcs") || lower.includes("blob")) {
       return {
