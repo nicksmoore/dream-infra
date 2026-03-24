@@ -2815,13 +2815,13 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
           }
 
           case "vpc": {
-            const result = await handleNetwork("destroy", { vpc_id: resourceId, region });
+            const result = await handleNetwork("destroy", { vpc_id: resourceId, region, access_key_id: AWS_KEY, secret_access_key: AWS_SECRET });
             return result;
           }
 
           case "eks": {
             const clusterName = spec.cluster_name as string || resourceId;
-            const result = await handleEks("destroy", { cluster_name: clusterName, region });
+            const result = await handleEks("destroy", { cluster_name: clusterName, region, access_key_id: AWS_KEY, secret_access_key: AWS_SECRET });
             return result;
           }
 
