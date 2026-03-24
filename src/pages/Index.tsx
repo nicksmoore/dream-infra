@@ -50,7 +50,7 @@ import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers,
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
@@ -337,7 +337,7 @@ export default function Index() {
       {/* Header */}
       <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
         <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
               <Zap className="h-5 w-5 text-primary" />
             </div>
@@ -345,7 +345,7 @@ export default function Index() {
               <h1 className="text-base font-bold tracking-tight font-display text-foreground">Project Naawi</h1>
               <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure · Observed Truth · Zero Configuration</p>
             </div>
-          </div>
+          </Link>
           <div className="flex items-center gap-2">
             <NavLink to="/backstage" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
               <BookOpen className="h-3.5 w-3.5 inline mr-1" />Backstage
