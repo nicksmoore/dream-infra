@@ -79,6 +79,7 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
   const [nukeAllOpen, setNukeAllOpen] = useState(false);
   const [isNukingAll, setIsNukingAll] = useState(false);
   const [nukeAllProgress, setNukeAllProgress] = useState<{ done: number; total: number } | null>(null);
+  const [nukeAllFailures, setNukeAllFailures] = useState<{ id: string; name: string; error: string }[]>([]);
   const pollTimers = useRef<Record<string, number>>({});
 
   // Progress ticker — updates progress bar smoothly
@@ -247,15 +248,28 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
     (r.type !== "vpc" || r.managed) && !(r.details as any)?.is_default
   );
 
+  // Destroy order: L2 compute first (EKS/EC2 hold ENIs), then L1, then L0 networking last
+  const NUKE_ORDER: InventoryResource["type"][] = [
+    "eks", "ec2", "lambda", "cloudfront", "api_gateway", "app_mesh",
+    "sqs", "s3", "ebs", "eip",
+    "security_group", "subnet", "vpc",
+  ];
+
   async function nukeAll() {
     setNukeAllOpen(false);
     setIsNukingAll(true);
-    setNukeAllProgress({ done: 0, total: nukeable.length });
-    let failed = 0;
+    setNukeAllFailures([]);
 
-    for (let i = 0; i < nukeable.length; i++) {
-      const r = nukeable[i];
-      setNukeAllProgress({ done: i, total: nukeable.length });
+    const ordered = [...nukeable].sort(
+      (a, b) => NUKE_ORDER.indexOf(a.type) - NUKE_ORDER.indexOf(b.type)
+    );
+
+    setNukeAllProgress({ done: 0, total: ordered.length });
+    const failures: { id: string; name: string; error: string }[] = [];
+
+    for (let i = 0; i < ordered.length; i++) {
+      const r = ordered[i];
+      setNukeAllProgress({ done: i, total: ordered.length });
       try {
         const result = await executeIntent({
           intent: "inventory" as any,
@@ -264,33 +278,34 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
             resource_id: r.id,
             resource_type: r.type,
             region: r.region,
-            ...(r.type === "eks"     ? { cluster_name: r.name } : {}),
-            ...(r.type === "s3"      ? { bucket_name: r.name } : {}),
-            ...(r.type === "lambda"  ? { function_name: r.name } : {}),
-            ...(r.type === "app_mesh"? { mesh_name: r.name } : {}),
-            ...(r.type === "sqs"     ? { queue_url: (r.details as any)?.queue_url } : {}),
+            ...(r.type === "eks"      ? { cluster_name: r.name } : {}),
+            ...(r.type === "s3"       ? { bucket_name: r.name } : {}),
+            ...(r.type === "lambda"   ? { function_name: r.name } : {}),
+            ...(r.type === "app_mesh" ? { mesh_name: r.name } : {}),
+            ...(r.type === "sqs"      ? { queue_url: (r.details as any)?.queue_url } : {}),
           },
         });
         if (result.status === "error") {
-          failed++;
+          failures.push({ id: r.id, name: r.name, error: result.error || result.message || "Unknown error" });
         } else {
           setResources(prev => prev.filter(x => x.id !== r.id));
         }
-      } catch {
-        failed++;
+      } catch (e) {
+        failures.push({ id: r.id, name: r.name, error: e instanceof Error ? e.message : "Unknown error" });
       }
     }
 
-    setNukeAllProgress({ done: nukeable.length, total: nukeable.length });
+    setNukeAllProgress({ done: ordered.length, total: ordered.length });
+    setNukeAllFailures(failures);
     setIsNukingAll(false);
     setNukeAllProgress(null);
 
-    if (failed === 0) {
-      toast({ title: "☢️ Nuke All complete", description: `${nukeable.length} resource(s) destroyed.` });
+    if (failures.length === 0) {
+      toast({ title: "☢️ Nuke All complete", description: `${ordered.length} resource(s) destroyed.` });
     } else {
       toast({
-        title: "Nuke All finished with errors",
-        description: `${nukeable.length - failed} destroyed, ${failed} failed.`,
+        title: `Nuke All: ${ordered.length - failures.length} destroyed, ${failures.length} failed`,
+        description: failures.map(f => `${f.name}: ${f.error}`).join(" · ").slice(0, 200),
         variant: "destructive",
       });
     }
@@ -423,6 +438,25 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
               <p className="text-2xl font-bold text-accent-foreground">{summary.orphan}</p>
               <p className="text-xs text-muted-foreground">Unmanaged</p>
             </button>
+          </div>
+        )}
+
+        {/* Nuke All failure details */}
+        {nukeAllFailures.length > 0 && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+              <span className="text-xs font-semibold text-destructive">{nukeAllFailures.length} resource(s) failed to destroy</span>
+              <Button variant="ghost" size="sm" className="h-5 w-5 p-0 ml-auto" onClick={() => setNukeAllFailures([])}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            {nukeAllFailures.map(f => (
+              <div key={f.id} className="flex items-start gap-2 text-xs">
+                <span className="font-mono text-muted-foreground shrink-0">{f.id}</span>
+                <span className="text-destructive">{f.error}</span>
+              </div>
+            ))}
           </div>
         )}
 
