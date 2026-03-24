@@ -123,7 +123,9 @@ export function analyzeDependencies(resources: string[]): DependencyAnalysis {
     if (!node) continue;
     for (const dep of node.dependsOn) {
       const depNorm = normalize(dep);
-      if (!normalizedSet.has(depNorm) && !seen.has(depNorm)) {
+      // Use prefix match so "Subnets (×4)" satisfies a "Subnets" dependency
+      const isSatisfied = [...normalizedSet].some(r => r.startsWith(depNorm));
+      if (!isSatisfied && !seen.has(depNorm)) {
         const depNode = GRAPH_INDEX.get(depNorm);
         missing.push({
           resource: dep,
