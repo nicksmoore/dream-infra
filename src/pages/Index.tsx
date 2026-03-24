@@ -360,16 +360,10 @@ export default function Index() {
       </header>
 
       <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
-        <Tabs defaultValue="deploy" className="w-full">
+        <Tabs defaultValue="golden-paths" className="w-full">
           <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
-            <TabsTrigger value="deploy" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <Rocket className="h-3.5 w-3.5" /> Deploy
-            </TabsTrigger>
             <TabsTrigger value="golden-paths" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Layers className="h-3.5 w-3.5" /> Golden Paths
-            </TabsTrigger>
-            <TabsTrigger value="preflight" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-              <FlaskConical className="h-3.5 w-3.5" /> Preflight
             </TabsTrigger>
             <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
               <Eye className="h-3.5 w-3.5" /> Inventory
