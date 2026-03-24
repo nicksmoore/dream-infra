@@ -98,6 +98,8 @@ export function GoldenPathDeployment({
     const lower = resource.toLowerCase();
 
     if (lower.includes("vpc") || lower.includes("vnet") || lower.includes("vpc network")) {
+      // "(dep)" suffix = dependency on another path's VPC — do not deploy a new one
+      if (lower.includes("(dep)") || lower.includes("(zero-trust)")) return null;
       return {
         intent: "network",
         action: "deploy",
