@@ -4,12 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { executeIntent } from "@/lib/uidi-engine";
 import type { EngineResponse } from "@/lib/uidi-engine";
 import { toast } from "@/hooks/use-toast";
 import {
   Loader2, Search, Trash2, AlertTriangle, Server, HardDrive, Globe, Network,
-  Box, Shield, RefreshCw, Skull, CheckCircle2, Eye, Clock, X
+  Box, Shield, RefreshCw, Skull, CheckCircle2, Eye, Clock, X, Zap,
 } from "lucide-react";
 
 interface InventoryResource {
@@ -72,6 +76,9 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
   const [nukingId, setNukingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "managed" | "waste" | "orphan">("all");
   const [disablingTrackers, setDisablingTrackers] = useState<DisablingTracker[]>([]);
+  const [nukeAllOpen, setNukeAllOpen] = useState(false);
+  const [isNukingAll, setIsNukingAll] = useState(false);
+  const [nukeAllProgress, setNukeAllProgress] = useState<{ done: number; total: number } | null>(null);
   const pollTimers = useRef<Record<string, number>>({});
 
   // Progress ticker — updates progress bar smoothly
@@ -236,6 +243,59 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
     }
   }
 
+  const nukeable = resources.filter(r =>
+    (r.type !== "vpc" || r.managed) && !(r.details as any)?.is_default
+  );
+
+  async function nukeAll() {
+    setNukeAllOpen(false);
+    setIsNukingAll(true);
+    setNukeAllProgress({ done: 0, total: nukeable.length });
+    let failed = 0;
+
+    for (let i = 0; i < nukeable.length; i++) {
+      const r = nukeable[i];
+      setNukeAllProgress({ done: i, total: nukeable.length });
+      try {
+        const result = await executeIntent({
+          intent: "inventory" as any,
+          action: "nuke" as any,
+          spec: {
+            resource_id: r.id,
+            resource_type: r.type,
+            region: r.region,
+            ...(r.type === "eks"     ? { cluster_name: r.name } : {}),
+            ...(r.type === "s3"      ? { bucket_name: r.name } : {}),
+            ...(r.type === "lambda"  ? { function_name: r.name } : {}),
+            ...(r.type === "app_mesh"? { mesh_name: r.name } : {}),
+            ...(r.type === "sqs"     ? { queue_url: (r.details as any)?.queue_url } : {}),
+          },
+        });
+        if (result.status === "error") {
+          failed++;
+        } else {
+          setResources(prev => prev.filter(x => x.id !== r.id));
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    setNukeAllProgress({ done: nukeable.length, total: nukeable.length });
+    setIsNukingAll(false);
+    setNukeAllProgress(null);
+
+    if (failed === 0) {
+      toast({ title: "☢️ Nuke All complete", description: `${nukeable.length} resource(s) destroyed.` });
+    } else {
+      toast({
+        title: "Nuke All finished with errors",
+        description: `${nukeable.length - failed} destroyed, ${failed} failed.`,
+        variant: "destructive",
+      });
+    }
+  }
+
   const filtered = resources.filter(r => {
     if (filter === "managed") return r.managed;
     if (filter === "waste") return !!r.waste;
@@ -253,10 +313,29 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
             <Eye className="h-4 w-4 text-primary" />
             Resource Inventory
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={scan} disabled={isScanning}>
-            {isScanning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
-            {isScanning ? "Scanning…" : "Scan Region"}
-          </Button>
+          <div className="flex items-center gap-2">
+            {nukeable.length > 0 && !isNukingAll && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setNukeAllOpen(true)}
+                className="gap-1.5"
+              >
+                <Zap className="h-3 w-3" />
+                Nuke All ({nukeable.length})
+              </Button>
+            )}
+            {isNukingAll && nukeAllProgress && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin text-destructive" />
+                <span className="font-mono">{nukeAllProgress.done}/{nukeAllProgress.total}</span>
+              </div>
+            )}
+            <Button variant="outline" size="sm" onClick={scan} disabled={isScanning || isNukingAll}>
+              {isScanning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
+              {isScanning ? "Scanning…" : "Scan Region"}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -453,6 +532,34 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
           </div>
         )}
       </CardContent>
+
+      <AlertDialog open={nukeAllOpen} onOpenChange={setNukeAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Zap className="h-5 w-5" /> Nuke All Resources?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                This will permanently destroy <strong>{nukeable.length} resource(s)</strong> in <strong>{region}</strong>.
+                This action cannot be undone.
+              </span>
+              <span className="block text-xs font-mono bg-muted rounded px-2 py-1.5 text-destructive">
+                {nukeable.map(r => r.id).join("\n")}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={nukeAll}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              <Zap className="h-4 w-4 mr-1.5" /> Yes, Nuke All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
