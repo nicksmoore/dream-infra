@@ -1601,8 +1601,26 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
   switch (action) {
     case "deploy": {
       const clusterName = (spec.cluster_name as string) || `uidi-cluster-${Date.now()}`;
-      const subnetIds = spec.subnet_ids as string[];
-      const securityGroupIds = spec.security_group_ids as string[];
+      let subnetIds = spec.subnet_ids as string[];
+      let securityGroupIds = spec.security_group_ids as string[];
+
+      // Auto-discover subnets + SGs from the UIDI-managed network stack when not explicitly provided
+      if (!Array.isArray(subnetIds) || subnetIds.length < 2) {
+        const environment = spec.environment as string || "dev";
+        const networkName = spec.network_name as string || `vpc-foundation-${environment}`;
+        try {
+          const stack = await describeExistingNetworkStack(region, networkName, environment, AWS_KEY, AWS_SECRET);
+          if (stack && stack.subnet_ids.length >= 2) {
+            subnetIds = stack.subnet_ids;
+            if (!Array.isArray(securityGroupIds) || securityGroupIds.length === 0) {
+              securityGroupIds = stack.security_group_id ? [stack.security_group_id] : [];
+            }
+            console.log(`EKS deploy: auto-resolved ${subnetIds.length} subnets and ${securityGroupIds.length} SGs from ${networkName}`);
+          }
+        } catch (e) {
+          console.warn(`EKS deploy: network stack discovery failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
 
       const preflight = {
         stage: "preflight",
@@ -1614,9 +1632,8 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
         security_group_ids_sample: Array.isArray(securityGroupIds) ? securityGroupIds.slice(0, 6) : [],
       };
 
-      // Be explicit about AZ requirement in the message, but keep the validation lightweight here.
       if (!Array.isArray(subnetIds) || subnetIds.length < 2) {
-        return err("eks", action, "subnet_ids required (at least 2 subnets across 2 AZs).", {
+        return err("eks", action, "subnet_ids required (at least 2 subnets across 2 AZs). Deploy VPC Foundation first.", {
           ...preflight,
           stage: "preflight_failed",
           async_complete: true,
