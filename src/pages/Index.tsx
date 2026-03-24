@@ -376,92 +376,7 @@ export default function Index() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ═══════════ DEPLOY TAB ═══════════ */}
-          <TabsContent value="deploy" className="space-y-6">
-            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-              <IntentInput onParse={handleParse} isLoading={isParsing} />
-            </div>
-
-            {detectedResources.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap animate-fade-in">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
-                {detectedResources.map(r => (
-                  <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
-                ))}
-                {selectedGoldenPath && (
-                  <Badge className="text-[10px] ml-2 gap-1">
-                    <Layers className="h-3 w-3" />
-                    {selectedGoldenPath.name}
-                  </Badge>
-                )}
-              </div>
-            )}
-
-            {goldenPathChoices.length > 0 && (
-              <GoldenPathSelector
-                choices={goldenPathChoices}
-                onSelect={handleGoldenPathSelect}
-                onOverride={handleGoldenPathOverride}
-              />
-            )}
-
-            {safetyReport && (
-              <SafetyGateReport
-                report={safetyReport}
-                onProceed={handleSafetyProceed}
-                onAbort={handleSafetyAbort}
-                onEscalate={handleEscalation}
-              />
-            )}
-
-            {showOrchestration ? (
-              <div className="space-y-6">
-                <OrchestrationPanel
-                  resources={detectedResources}
-                  region={intent.region}
-                  environment={intent.environment}
-                  workloadType={intent.workloadType}
-                  instanceType={config.instanceType}
-                  os={config.os}
-                  naawiOperations={operations}
-                />
-                {operations.length > 0 && (
-                  <div className="flex justify-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowDebugger(!showDebugger)}
-                      className="text-[10px] uppercase tracking-widest text-muted-foreground hover:text-primary"
-                    >
-                      {showDebugger ? "Hide Engine Traces" : "Inspect IDI Engine Traces"}
-                    </Button>
-                  </div>
-                )}
-                {showDebugger && <DeploymentDebugger />}
-              </div>
-            ) : !safetyReport && goldenPathChoices.length === 0 && detectedResources.length > 0 && !isMultiResource ? (
-              <>
-                <div className="glass-panel rounded-2xl p-6">
-                  <IntentForm intent={intent} onChange={updateIntent} />
-                </div>
-                <div className="glass-panel rounded-2xl p-6">
-                  <AdvancedConfigForm config={config} workloadType={intent.workloadType} onChange={setConfig} />
-                </div>
-                <ConfigPreview config={config} />
-                <ComputeActions
-                  config={config}
-                  hasCredentials={hasVaultCredentials}
-                  onRequestCredentials={() => {
-                    toast({ title: "Add credentials in the Vault tab", description: "Your cloud keys are now managed via the encrypted BYOC vault." });
-                  }}
-                />
-              </>
-            ) : null}
-
-            <DeploymentHistory deployments={deployments} />
-          </TabsContent>
-
-          {/* ═══════════ GOLDEN PATHS TAB ═══════════ */}
+          {/* ═══════════ GOLDEN PATHS — Unified Deployment Wizard (PRD §5) ═══════════ */}
           <TabsContent value="golden-paths" className="space-y-6">
             {selectedCatalogEntry && selectedCatalogProvider ? (
               <GoldenPathDeployment
@@ -476,13 +391,56 @@ export default function Index() {
               />
             ) : (
               <>
-                {/* NL Intent Input for Golden Paths */}
                 <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
                   <IntentInput onParse={handleParse} isLoading={isParsing} />
                   <p className="text-[10px] text-muted-foreground mt-2">
-                    Describe what you need and the engine will match a Golden Path, or browse the catalog below.
+                    Describe your infrastructure intent in natural language. The engine resolves it to a dependency-validated Golden Path with mandatory preflight.
                   </p>
                 </div>
+
+                {detectedResources.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap animate-fade-in">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
+                    {detectedResources.map(r => (
+                      <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
+                    ))}
+                    {selectedGoldenPath && (
+                      <Badge className="text-[10px] ml-2 gap-1">
+                        <Layers className="h-3 w-3" />
+                        {selectedGoldenPath.name}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+
+                {goldenPathChoices.length > 0 && (
+                  <GoldenPathSelector
+                    choices={goldenPathChoices}
+                    onSelect={handleGoldenPathSelect}
+                    onOverride={handleGoldenPathOverride}
+                  />
+                )}
+
+                {safetyReport && (
+                  <SafetyGateReport
+                    report={safetyReport}
+                    onProceed={handleSafetyProceed}
+                    onAbort={handleSafetyAbort}
+                    onEscalate={handleEscalation}
+                  />
+                )}
+
+                {showOrchestration && (
+                  <OrchestrationPanel
+                    resources={detectedResources}
+                    region={intent.region}
+                    environment={intent.environment}
+                    workloadType={intent.workloadType}
+                    instanceType={config.instanceType}
+                    os={config.os}
+                    naawiOperations={operations}
+                  />
+                )}
 
                 <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
                   <div className="flex items-center gap-3 mb-4">
@@ -490,7 +448,7 @@ export default function Index() {
                     <div>
                       <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
                       <p className="text-xs text-muted-foreground">
-                        PRD §5.1 — Real SDK deployments with preflight dry-run, live provisioning, and post-deploy validation via resource discovery.
+                        Select a path → auto-preflight → dependency validation (L0→L1→L2) → live SDK deploy → resource verification. Zero mock data.
                       </p>
                     </div>
                   </div>
@@ -498,63 +456,6 @@ export default function Index() {
                 </div>
               </>
             )}
-          </TabsContent>
-
-          {/* ═══════════ PREFLIGHT TAB ═══════════ */}
-          <TabsContent value="preflight" className="space-y-6">
-            <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-              <div className="flex items-center gap-3 mb-1">
-                <FlaskConical className="h-5 w-5 text-primary" />
-                <div>
-                  <h2 className="text-base font-bold font-display text-foreground">Preflight Console — P-1 → P-6</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Patent §4.8: Dry-run and live closures share the same code path (shared closure invariant). The deploy button does not exist until PREFLIGHT_COMPLETE.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <Tabs defaultValue="dry-run" className="w-full">
-              <TabsList className="glass-panel border-0 p-1 h-auto">
-                <TabsTrigger value="dry-run" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
-                  <FlaskConical className="h-3 w-3" /> Dry-Run
-                </TabsTrigger>
-                <TabsTrigger value="batch" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
-                  <ListOrdered className="h-3 w-3" /> Batch Preview
-                </TabsTrigger>
-                <TabsTrigger value="audit" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
-                  <ScrollText className="h-3 w-3" /> Audit Trail
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="dry-run" className="mt-4">
-                <div className="glass-panel rounded-2xl p-6">
-                  <DryRunPanel
-                    intentText={rawIntentText}
-                    workloadType={intent.workloadType}
-                    region={intent.region}
-                    environment={intent.environment}
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="batch" className="mt-4">
-                <div className="glass-panel rounded-2xl p-6">
-                  <BatchPreviewPanel
-                    workloadType={intent.workloadType}
-                    region={intent.region}
-                    environment={intent.environment}
-                    resources={detectedResources}
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="audit" className="mt-4">
-                <div className="glass-panel rounded-2xl p-6">
-                  <AuditTrailPanel />
-                </div>
-              </TabsContent>
-            </Tabs>
           </TabsContent>
 
           {/* ═══════════ INVENTORY ═══════════ */}
