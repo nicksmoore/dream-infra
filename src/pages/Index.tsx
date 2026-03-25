@@ -1,24 +1,14 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntentInput } from "@/components/IntentInput";
 import { SREPanel } from "@/components/SREPanel";
-import { IntentForm } from "@/components/IntentForm";
-import { AdvancedConfigForm } from "@/components/AdvancedConfigForm";
-import { ConfigPreview } from "@/components/ConfigPreview";
-import { DeploymentHistory } from "@/components/DeploymentHistory";
-import { ComputeActions } from "@/components/ComputeActions";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { DeploymentDebugger } from "@/components/DeploymentDebugger";
 import { ResourceInventory } from "@/components/ResourceInventory";
 import { GoldenPathSelector } from "@/components/GoldenPathSelector";
 import { SafetyGateReport } from "@/components/SafetyGateReport";
-import { DryRunPanel } from "@/components/DryRunPanel";
-import { BatchPreviewPanel } from "@/components/BatchPreviewPanel";
-import { AuditTrailPanel } from "@/components/AuditTrailPanel";
 import { GoldenPathCatalog, type GoldenPathEntry, type CloudProvider as CatalogProvider } from "@/components/GoldenPathCatalog";
 import { GoldenPathDeployment } from "@/components/GoldenPathDeployment";
-import { PostDeployValidation } from "@/components/PostDeployValidation";
 
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
@@ -46,11 +36,11 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Rocket, Vault, FlaskConical, ListOrdered, ScrollText, Layers, BookOpen, Map, Bot } from "lucide-react";
+import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 const DEFAULT_INTENT: ParsedIntent = {
   workloadType: "general",
@@ -110,19 +100,18 @@ const normalizeWorkload = (value?: string): WorkloadType | null => {
   return null;
 };
 
+type ConsoleSection = "catalog" | "inventory" | "vault" | "sre";
+
 export default function Index() {
-  const navigate = useNavigate();
   const [intent, setIntent] = useState<ParsedIntent>(DEFAULT_INTENT);
   const [config, setConfig] = useState<Ec2Config>(mapIntentToEc2Config(DEFAULT_INTENT));
   const [hasVaultCredentials] = useState(true);
-  const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [detectedResources, setDetectedResources] = useState<string[]>([]);
   const [operations, setOperations] = useState<any[]>([]);
   const [showDebugger, setShowDebugger] = useState(false);
-  const [rawIntentText, setRawIntentText] = useState("");
+  const [activeSection, setActiveSection] = useState<ConsoleSection>("catalog");
 
-  // Golden Path state
   const [goldenPathChoices, setGoldenPathChoices] = useState<GoldenPathChoice[]>([]);
   const [selectedGoldenPath, setSelectedGoldenPath] = useState<GoldenPathTemplate | null>(null);
   const [safetyReport, setSafetyReport] = useState<SafetyGateReportType | null>(null);
@@ -131,11 +120,9 @@ export default function Index() {
   const [doltCommitRef, setDoltCommitRef] = useState<string | null>(null);
   const [escalationHistory, setEscalationHistory] = useState<EscalationRecord[]>([]);
 
-  // Catalog selection state
   const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<GoldenPathEntry | null>(null);
   const [selectedCatalogProvider, setSelectedCatalogProvider] = useState<CatalogProvider | null>(null);
 
-  // ───── Dolt Snapshot Manager ─────
   const generateDoltSnapshot = useCallback((pathId: string, env: string): string => {
     const hash = `dolt_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
     console.log(`[Naawi] Intent snapshot committed to Dolt: ${hash} (path=${pathId}, env=${env})`);
@@ -150,19 +137,11 @@ export default function Index() {
   const handleGoldenPathSelect = useCallback((template: GoldenPathTemplate) => {
     setSelectedGoldenPath(template);
     setGoldenPathChoices([]);
-
     const { template: hydrated, tierName, source } = hydrateGoldenPathCeiling(template, intent.environment);
     const { tier } = getCurrentCapacityTier(template.id, intent.environment);
     setCurrentTierId(tier.id);
-
     const commitRef = generateDoltSnapshot(template.id, intent.environment);
     setDoltCommitRef(commitRef);
-
-    console.log(
-      `[Naawi] Golden Path "${template.name}" hydrated with ${tierName} tier (source: ${source}). ` +
-      `Ceilings: ${hydrated.resourceCeiling.maxCpuMillicores}m CPU, ${hydrated.resourceCeiling.maxMemoryMb}MB Memory`
-    );
-
     const needsCompute = hydrated.requiredResources.some(r => ["ec2", "asg", "eks", "lambda"].includes(r));
     const report = runSafetyGate(hydrated, {
       cpuMillicores: needsCompute ? Math.min(1000, hydrated.resourceCeiling.maxCpuMillicores) : 0,
@@ -178,7 +157,6 @@ export default function Index() {
     setSafetyReport(report);
     setDetectedResources(hydrated.requiredResources);
     setSelectedGoldenPath(hydrated);
-
     toast({
       title: `${hydrated.icon} ${hydrated.name} Selected`,
       description: report.halted
@@ -214,12 +192,7 @@ export default function Index() {
 
   const handleEscalation = useCallback((escalation_text: string) => {
     if (!selectedGoldenPath) return;
-    const result = escalateViaIntent(
-      escalation_text,
-      selectedGoldenPath.id,
-      intent.environment,
-      "current-user"
-    );
+    const result = escalateViaIntent(escalation_text, selectedGoldenPath.id, intent.environment, "current-user");
     if (result.success && result.newTier && result.record) {
       setEscalationHistory(prev => [...prev, result.record!]);
       setCurrentTierId(result.newTier.id);
@@ -247,7 +220,6 @@ export default function Index() {
 
   const handleParse = useCallback(async (input: string) => {
     setIsParsing(true);
-    setRawIntentText(input);
     setGoldenPathChoices([]);
     setSelectedGoldenPath(null);
     setSafetyReport(null);
@@ -260,17 +232,12 @@ export default function Index() {
         body: { message: input },
       });
       if (error) throw new Error(error.message);
-
       const intentData = data?.intent;
       const isCrossRegion = /cross.?region|vpc.?peer|peering/i.test(input);
       const mappedWorkload = isCrossRegion ? "cross-region-peered" as WorkloadType : normalizeWorkload(intentData?.archetype);
 
       if (mappedWorkload) {
-        const mappedIntent: ParsedIntent = {
-          ...DEFAULT_INTENT,
-          ...intentData?.variables,
-          workloadType: mappedWorkload,
-        };
+        const mappedIntent: ParsedIntent = { ...DEFAULT_INTENT, ...intentData?.variables, workloadType: mappedWorkload };
         updateIntent(mappedIntent);
         setDetectedResources(WORKLOAD_TO_RESOURCES[mappedWorkload]);
         const choices = mapIntentToGoldenPaths(input, mappedWorkload);
@@ -280,22 +247,14 @@ export default function Index() {
           setGoldenPathChoices(choices);
         }
         if (intentData?.confidence === "LOW") {
-          toast({
-            title: "Pattern inferred with defaults",
-            description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults.",
-          });
+          toast({ title: "Pattern inferred with defaults", description: intentData.disambiguationPrompt || "Some details were missing, so the engine used safe defaults." });
         }
         return;
       }
 
       if (intentData?.confidence === "LOW") {
-        toast({
-          title: "Disambiguation Required",
-          description: intentData.disambiguationPrompt || "Intent ambiguous. Please specify the target architecture pattern.",
-          variant: "destructive",
-        });
-        const choices = mapIntentToGoldenPaths(input);
-        setGoldenPathChoices(choices);
+        toast({ title: "Disambiguation Required", description: intentData.disambiguationPrompt || "Intent ambiguous.", variant: "destructive" });
+        setGoldenPathChoices(mapIntentToGoldenPaths(input));
         return;
       }
 
@@ -316,65 +275,87 @@ export default function Index() {
       const merged = { ...DEFAULT_INTENT, ...parsed } as ParsedIntent;
       updateIntent(merged);
       setDetectedResources(parsed.resources || ["ec2"]);
-      const choices = mapIntentToGoldenPaths(input, merged.workloadType);
-      setGoldenPathChoices(choices);
-      toast({ title: "Fell back to Rule-based", description: "Keyword matching used. Review Golden Path options." });
+      setGoldenPathChoices(mapIntentToGoldenPaths(input, merged.workloadType));
+      toast({ title: "Fell back to Rule-based", description: "Keyword matching used." });
     } finally {
       setIsParsing(false);
     }
   }, [updateIntent, handleGoldenPathSelect]);
 
   const isMultiResource = detectedResources.length > 1 ||
-    detectedResources.some(r => [
-      "vpc", "eks", "subnets", "nacls", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds",
-      "edge_static_spa", "service_mesh", "event_pipeline"
-    ].includes(r));
-
+    detectedResources.some(r => ["vpc", "eks", "subnets", "s3", "cloudfront", "sqs", "lambda", "api-gateway", "rds"].includes(r));
   const showOrchestration = (isMultiResource || operations.length > 0) && !safetyReport && (selectedGoldenPath || goldenPathOverridden || goldenPathChoices.length === 0);
+
+  const NAV_ITEMS: { id: ConsoleSection; label: string; icon: React.ReactNode }[] = [
+    { id: "catalog", label: "Golden Paths", icon: <Layers className="h-4 w-4" /> },
+    { id: "inventory", label: "Inventory", icon: <Eye className="h-4 w-4" /> },
+    { id: "vault", label: "Vault", icon: <Vault className="h-4 w-4" /> },
+    { id: "sre", label: "SRE", icon: <Bot className="h-4 w-4" /> },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
-        <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/console" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <Zap className="h-5 w-5 text-primary" />
+      {/* Minimal top bar */}
+      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+          <Link to="/console" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
+              <Zap className="h-4 w-4 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="text-base font-bold tracking-tight font-display text-foreground">Project Naawi</h1>
-              <p className="text-[10px] text-muted-foreground tracking-wide">Intent-Driven Infrastructure · Observed Truth · Zero Configuration</p>
-            </div>
+            <span className="text-sm font-semibold tracking-tight font-display text-foreground">Naawi</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <NavLink to="/backstage" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <BookOpen className="h-3.5 w-3.5 inline mr-1" />Backstage
+
+          <nav className="hidden md:flex items-center gap-1">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveSection(item.id); setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  activeSection === item.id
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <NavLink to="/backstage" className="hidden sm:flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+              <BookOpen className="h-3.5 w-3.5" />
+              Backstage
             </NavLink>
-            <NavLink to="/golden-path" className="text-xs font-medium text-muted-foreground hover:text-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-primary/5" activeClassName="text-primary bg-primary/10">
-              <Map className="h-3.5 w-3.5 inline mr-1" />VPC Foundation
+            <NavLink to="/golden-path" className="hidden sm:flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+              <Map className="h-3.5 w-3.5" />
+              VPC
             </NavLink>
+            <div className="w-px h-5 bg-border/50" />
             <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
-        <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
+      <main className="max-w-7xl mx-auto px-6">
+        {/* Hero intent input section */}
+        <section className="pt-16 pb-12">
           <IntentInput onParse={handleParse} isLoading={isParsing} />
-          <p className="text-[10px] text-muted-foreground mt-2">
-            Describe what you need and the engine will match a Golden Path, or browse the catalog below.
-          </p>
-        </div>
+        </section>
 
+        {/* Resolved resources strip */}
         {detectedResources.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap animate-fade-in">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Resources</span>
+          <div className="flex items-center gap-2.5 flex-wrap pb-8 animate-fade-in">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-semibold">Resolved</span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
             {detectedResources.map(r => (
-              <Badge key={r} variant="secondary" className="glass-badge text-[10px] uppercase font-mono">{r}</Badge>
+              <span key={r} className="px-2.5 py-1 rounded-full text-[10px] uppercase font-mono font-medium border border-border/60 text-muted-foreground bg-card/50">
+                {r}
+              </span>
             ))}
             {selectedGoldenPath && (
-              <Badge className="text-[10px] ml-2 gap-1">
+              <Badge className="text-[10px] gap-1 rounded-full">
                 <Layers className="h-3 w-3" />
                 {selectedGoldenPath.name}
               </Badge>
@@ -382,25 +363,32 @@ export default function Index() {
           </div>
         )}
 
+        {/* Golden Path choices */}
         {goldenPathChoices.length > 0 && (
-          <GoldenPathSelector
-            choices={goldenPathChoices}
-            onSelect={handleGoldenPathSelect}
-            onOverride={handleGoldenPathOverride}
-          />
+          <div className="pb-8">
+            <GoldenPathSelector
+              choices={goldenPathChoices}
+              onSelect={handleGoldenPathSelect}
+              onOverride={handleGoldenPathOverride}
+            />
+          </div>
         )}
 
+        {/* Safety gate */}
         {safetyReport && (
-          <SafetyGateReport
-            report={safetyReport}
-            onProceed={handleSafetyProceed}
-            onAbort={handleSafetyAbort}
-            onEscalate={handleEscalation}
-          />
+          <div className="pb-8">
+            <SafetyGateReport
+              report={safetyReport}
+              onProceed={handleSafetyProceed}
+              onAbort={handleSafetyAbort}
+              onEscalate={handleEscalation}
+            />
+          </div>
         )}
 
+        {/* Orchestration */}
         {showOrchestration && (
-          <div className="space-y-6">
+          <div className="pb-8 space-y-6">
             <OrchestrationPanel
               resources={detectedResources}
               region={intent.region}
@@ -426,66 +414,81 @@ export default function Index() {
           </div>
         )}
 
+        {/* Golden Path Deployment wizard */}
         {selectedCatalogEntry && selectedCatalogProvider ? (
-          <GoldenPathDeployment
-            entry={selectedCatalogEntry}
-            provider={selectedCatalogProvider}
-            region={intent.region}
-            environment={intent.environment}
-            onBack={() => {
-              setSelectedCatalogEntry(null);
-              setSelectedCatalogProvider(null);
-            }}
-          />
+          <div className="pb-12">
+            <GoldenPathDeployment
+              entry={selectedCatalogEntry}
+              provider={selectedCatalogProvider}
+              region={intent.region}
+              environment={intent.environment}
+              onBack={() => { setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
+            />
+          </div>
         ) : (
-          <Tabs defaultValue="inventory" className="w-full">
-            <TabsList className="glass-panel border-0 mb-6 p-1 h-auto flex-wrap">
-              <TabsTrigger value="inventory" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-                <Eye className="h-3.5 w-3.5" /> Inventory
-              </TabsTrigger>
-              <TabsTrigger value="vault" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-                <Vault className="h-3.5 w-3.5" /> Vault
-              </TabsTrigger>
-              <TabsTrigger value="sre" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-                <Bot className="h-3.5 w-3.5" /> SRE
-              </TabsTrigger>
-              <TabsTrigger value="catalog" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg">
-                <Layers className="h-3.5 w-3.5" /> Catalog
-              </TabsTrigger>
-            </TabsList>
-
-            {/* ═══════════ INVENTORY ═══════════ */}
-            <TabsContent value="inventory">
-              <ResourceInventory region={intent.region} />
-            </TabsContent>
-
-            {/* ═══════════ VAULT ═══════════ */}
-            <TabsContent value="vault">
-              <CredentialVault />
-            </TabsContent>
-
-            {/* ═══════════ SRE ═══════════ */}
-            <TabsContent value="sre" className="space-y-6">
-              <SREPanel />
-            </TabsContent>
-
-            {/* ═══════════ CATALOG ═══════════ */}
-            <TabsContent value="catalog" className="space-y-6">
-              <div className="glass-panel-elevated rounded-2xl p-6 animate-fade-in">
-                <div className="flex items-center gap-3 mb-4">
-                  <Layers className="h-5 w-5 text-primary" />
-                  <div>
-                    <h2 className="text-base font-bold font-display text-foreground">Golden Path Catalogue</h2>
-                    <p className="text-xs text-muted-foreground">
-                      PRD §5.1 — Real SDK deployments with preflight dry-run, live provisioning, and post-deploy validation via resource discovery.
-                    </p>
-                  </div>
+          /* Section content */
+          <section className="pb-16">
+            {activeSection === "catalog" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold font-display text-foreground">Golden Path Catalogue</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Validated production topologies with preflight, live provisioning, and post-deploy validation.
+                  </p>
                 </div>
                 <GoldenPathCatalog onSelect={handleCatalogSelect} />
               </div>
-            </TabsContent>
-          </Tabs>
+            )}
+
+            {activeSection === "inventory" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold font-display text-foreground">Resource Inventory</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Live cloud resources discovered via the UIDI engine.</p>
+                </div>
+                <ResourceInventory region={intent.region} />
+              </div>
+            )}
+
+            {activeSection === "vault" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold font-display text-foreground">Credential Vault</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Encrypted provider credentials for SDK operations.</p>
+                </div>
+                <CredentialVault />
+              </div>
+            )}
+
+            {activeSection === "sre" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold font-display text-foreground">SRE Dashboard</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Operational intelligence and incident management.</p>
+                </div>
+                <SREPanel />
+              </div>
+            )}
+          </section>
         )}
+
+        {/* Mobile nav */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border/40 bg-background/90 backdrop-blur-xl">
+          <div className="flex items-center justify-around h-14">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveSection(item.id); setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
+                className={`flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors ${
+                  activeSection === item.id ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </nav>
       </main>
     </div>
   );

@@ -2008,7 +2008,7 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
         method: "POST",
         path: "/",
         body: "Action=GetCallerIdentity&Version=2011-06-15",
-        contentType: "application/x-www-form-urlencoded",
+        extraHeaders: { "content-type": "application/x-www-form-urlencoded" },
         accessKeyId: AWS_KEY,
         secretAccessKey: AWS_SECRET,
       });
