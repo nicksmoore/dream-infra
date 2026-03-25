@@ -125,7 +125,12 @@ serve(async (req: Request) => {
       if (result.passed) break;
       if (iteration === MAX_ITERATIONS) break;
 
-      // 4. Retry: call uidi-engine with correction prompt
+      // 4. Retry: call uidi-engine with correction prompt prepended to intent.
+      // NOTE: uidi-engine's actual ExecuteRequest takes a structured intent enum + spec object,
+      // not a free-text string. This call uses the "naawi" intent path (natural-language gateway)
+      // and passes the corrections as context. The exact field contract for conveying corrections
+      // is a known dependency on uidi-engine's API — see spec Risk Notes and ADR-003.
+      // This is a best-effort hint; uidi-engine may or may not use it for additive re-deployment.
       const uidiUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/uidi-engine`;
       const correctionIntent = `${result.corrections}\n\n${originalIntent}`;
 
@@ -138,9 +143,14 @@ serve(async (req: Request) => {
             "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
           },
           body: JSON.stringify({
-            intent: correctionIntent,
-            archetype,
-            awsCredentials,
+            intent: "naawi",
+            action: "execute",
+            spec: {
+              naturalLanguageIntent: correctionIntent,
+              archetype,
+              awsCredentials,
+              priorDeploymentId: currentDeploymentId,
+            },
           }),
         });
       } catch (e) {

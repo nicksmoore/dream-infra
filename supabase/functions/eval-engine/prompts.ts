@@ -2,6 +2,8 @@
 // Exports shared EvalResult types and builds correction prompt strings
 // from CriterionScore findings arrays.
 
+import type { GoldenPathId } from "../../../../src/lib/golden-path.ts";
+
 export interface CriterionScore {
   score: number;      // 0–100
   findings: string[]; // specific issues found
@@ -28,7 +30,7 @@ export interface EvalResult {
 export interface EvalRequest {
   deploymentId: string;
   archetype: string;
-  templateId?: string;
+  templateId?: GoldenPathId;
   expectedArchetype?: string;
   originalIntent: string;
   awsCredentials: { accessKeyId: string; secretAccessKey: string; region: string };

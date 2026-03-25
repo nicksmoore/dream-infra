@@ -79,21 +79,21 @@ function scoreSecurity(
     },
   ];
 
-  const requiredChecks = checks.filter(c => c.required);
-  if (requiredChecks.length === 0) return { score: 100, findings: [] };
-
+  // Spec: denominator is always 4 (all four checks evaluated independently).
+  // Only checks with required=true can fail; required=false checks always pass.
+  const SECURITY_DENOMINATOR = 4;
   const findings: string[] = [];
   let passing = 0;
 
-  for (const check of requiredChecks) {
-    if (check.pass()) {
+  for (const check of checks) {
+    if (!check.required || check.pass()) {
       passing++;
     } else {
       findings.push(`${check.name} enforcement`);
     }
   }
 
-  const score = Math.round((passing / requiredChecks.length) * 100);
+  const score = Math.round((passing / SECURITY_DENOMINATOR) * 100);
   return { score, findings };
 }
 
