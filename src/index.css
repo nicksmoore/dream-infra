@@ -15,7 +15,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 20% 14%;
 
-    --primary: 215 80% 52%;
+    --primary: 199 89% 48%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 14% 92%;
@@ -32,13 +32,13 @@
 
     --border: 220 14% 88%;
     --input: 220 14% 88%;
-    --ring: 215 80% 52%;
+    --ring: 199 89% 48%;
 
     --radius: 1rem;
 
-    --success: 142 60% 45%;
+    --success: 160 84% 39%;
     --warning: 38 92% 50%;
-    --info: 215 80% 52%;
+    --info: 199 89% 48%;
 
     --glass: 0 0% 100% / 0.72;
     --glass-border: 0 0% 100% / 0.45;
@@ -48,68 +48,68 @@
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 215 80% 52%;
+    --sidebar-primary: 199 89% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 240 4.8% 95.9%;
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 215 80% 52%;
+    --sidebar-ring: 199 89% 48%;
   }
 
   .dark {
-    --background: 225 20% 7%;
+    --background: 225 28% 6%;
     --foreground: 220 14% 90%;
 
-    --card: 225 18% 11%;
+    --card: 225 24% 9%;
     --card-foreground: 220 14% 90%;
 
-    --popover: 225 18% 11%;
+    --popover: 225 24% 9%;
     --popover-foreground: 220 14% 90%;
 
-    --primary: 215 80% 58%;
-    --primary-foreground: 225 20% 5%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 225 28% 4%;
 
-    --secondary: 225 16% 16%;
+    --secondary: 225 20% 13%;
     --secondary-foreground: 220 14% 90%;
 
-    --muted: 225 16% 14%;
-    --muted-foreground: 220 10% 52%;
+    --muted: 225 20% 11%;
+    --muted-foreground: 220 10% 44%;
 
-    --accent: 225 16% 16%;
+    --accent: 225 20% 13%;
     --accent-foreground: 220 14% 90%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 225 14% 18%;
-    --input: 225 14% 18%;
-    --ring: 215 80% 58%;
+    --border: 225 16% 15%;
+    --input: 225 16% 15%;
+    --ring: 199 89% 48%;
 
-    --success: 142 60% 45%;
+    --success: 160 84% 39%;
     --warning: 38 92% 50%;
-    --info: 215 80% 58%;
+    --info: 199 89% 48%;
 
-    --glass: 225 20% 12% / 0.65;
-    --glass-border: 225 20% 25% / 0.35;
-    --glass-highlight: 0 0% 100% / 0.06;
-    --glass-shadow: 225 60% 3% / 0.4;
+    --glass: 225 24% 10% / 0.65;
+    --glass-border: 225 20% 20% / 0.35;
+    --glass-highlight: 0 0% 100% / 0.04;
+    --glass-shadow: 225 60% 3% / 0.5;
     --glass-blur: 24px;
 
     --nexus-glow: 150 80% 50%;
     --nexus-magenta: 320 80% 55%;
     --nexus-cyan: 185 90% 55%;
     --nexus-gold: 45 100% 55%;
-    --nexus-surface: 220 30% 10%;
-    --nexus-surface-elevated: 220 28% 14%;
+    --nexus-surface: 225 28% 6%;
+    --nexus-surface-elevated: 225 24% 10%;
 
-    --sidebar-background: 225 18% 9%;
+    --sidebar-background: 225 24% 7%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 215 80% 58%;
+    --sidebar-primary: 199 89% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 225 16% 14%;
+    --sidebar-accent: 225 20% 11%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 225 14% 16%;
-    --sidebar-ring: 215 80% 58%;
+    --sidebar-border: 225 16% 13%;
+    --sidebar-ring: 199 89% 48%;
   }
 }
 
@@ -241,5 +241,38 @@
     opacity: 1;
     transform: translateY(0);
     filter: blur(0);
+  }
+
+  /* Kinetic typing cursor */
+  .typing-cursor::after {
+    content: '▊';
+    animation: cursor-blink 1s steps(1) infinite;
+    color: hsl(var(--primary));
+    margin-left: 1px;
+  }
+  @keyframes cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  /* Node-edge glow dot */
+  .node-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: hsl(var(--primary) / 0.6);
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.3);
+    position: absolute;
+  }
+
+  /* Accent status indicators */
+  .status-resolved {
+    color: hsl(var(--success));
+  }
+  .status-active {
+    color: hsl(var(--primary));
+  }
+  .status-incident {
+    color: hsl(var(--warning));
   }
 }
