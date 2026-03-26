@@ -49,7 +49,10 @@ export type RequestTemplate = z.infer<typeof RequestTemplateSchema>;
 export const SigningMetadataSchema = z
   .object({
     strategy: SigningStrategySchema,
-    signed_headers: z.array(z.string()).min(1),
+    signed_headers: z.array(z.string()).min(1).refine(
+      (arr) => new Set(arr).size === arr.length,
+      { message: "signed_headers must not contain duplicates" },
+    ),
     /** AWS service name (e.g., "ec2", "eks"). Required for AWS_SIGV4. */
     service: z.string().optional(),
     region_required: z.boolean(),
@@ -98,8 +101,9 @@ export class ManifestError extends Error {
   constructor(
     public readonly code: ManifestErrorCode,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ManifestError";
   }
 }
@@ -108,7 +112,7 @@ export class ManifestError extends Error {
 
 /** Passed to the cloud signing functions. Signer adds Authorization header, returns unchanged. */
 export interface PreparedRequest {
-  method: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   url: string;
   headers: Record<string, string>;
   body: string | null;
@@ -116,7 +120,8 @@ export interface PreparedRequest {
     strategy: SigningStrategy;
     signed_headers: string[];
     service?: string;
-    region: string;
+    /** Omitted for strategies where region is not applicable (e.g., GCP_OAUTH2). */
+    region?: string;
   };
   /** Version of the manifest entry used to produce this request. */
   manifest_version: string;
