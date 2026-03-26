@@ -3680,16 +3680,41 @@ async function handleInventory(action: string, spec: Record<string, unknown>): P
                 return err("inventory", action, `Cannot detach volume from ${attachedInstance}: ${extractEc2Error(detachBody)}`, { steps });
               }
               steps.push(`Force-detached from instance ${attachedInstance}`);
-              // Wait for detach
-              await new Promise(r => setTimeout(r, 3000));
+              // Poll until volume is fully detached (up to 60s)
+              for (let poll = 0; poll < 12; poll++) {
+                await new Promise(r => setTimeout(r, 5000));
+                const pollParams = new URLSearchParams({ Action: "DescribeVolumes", Version: "2016-11-15", "VolumeId.1": resourceId });
+                const pollRes = await ec2Request("POST", region, pollParams.toString(), AWS_KEY, AWS_SECRET);
+                const pollBody = await pollRes.text();
+                const curStatus = pollBody.match(/<status>(available|in-use|detaching)<\/status>/)?.[1];
+                if (curStatus === "available") break;
+                if (poll === 11) {
+                  steps.push(`Warning: volume still not fully detached after 60s, attempting delete anyway`);
+                }
+              }
             }
 
-            const delParams = new URLSearchParams({ Action: "DeleteVolume", Version: "2016-11-15", VolumeId: resourceId });
-            const delRes = await ec2Request("POST", region, delParams.toString(), AWS_KEY, AWS_SECRET);
-            const delBody = await delRes.text();
-            if (!delRes.ok) return err("inventory", action, extractEc2Error(delBody) || "DeleteVolume failed", { steps });
-            steps.push(`Deleted volume ${resourceId}`);
-            return ok("inventory", action, `Volume ${resourceId} deleted`, { resource_id: resourceId, steps });
+            // Retry delete up to 3 times to handle eventual consistency
+            let lastDelError = "";
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const delParams = new URLSearchParams({ Action: "DeleteVolume", Version: "2016-11-15", VolumeId: resourceId });
+              const delRes = await ec2Request("POST", region, delParams.toString(), AWS_KEY, AWS_SECRET);
+              const delBody = await delRes.text();
+              if (delRes.ok) {
+                steps.push(`Deleted volume ${resourceId}`);
+                return ok("inventory", action, `Volume ${resourceId} deleted`, { resource_id: resourceId, steps });
+              }
+              lastDelError = extractEc2Error(delBody) || "DeleteVolume failed";
+              // If volume is still in-use/detaching, wait and retry
+              if (lastDelError.includes("in-use") || lastDelError.includes("VolumeInUse")) {
+                steps.push(`Retry ${attempt + 1}: volume still in-use, waiting 10s...`);
+                await new Promise(r => setTimeout(r, 10000));
+                continue;
+              }
+              // Non-retryable error
+              break;
+            }
+            return err("inventory", action, lastDelError, { steps });
           }
 
           case "eip": {
