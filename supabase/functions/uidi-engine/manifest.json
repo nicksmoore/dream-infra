@@ -1,0 +1,584 @@
+{
+  "version": "1",
+  "generated_at": "2026-03-26T00:00:00.000Z",
+  "entries": [
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "aws",
+      "request": {
+        "method": "POST",
+        "url_template": "https://ec2.{region}.amazonaws.com/?Action=CreateVpc&CidrBlock={cidrBlock}&Version=2016-11-15",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date"],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": { "cidrBlock": "10.0.0.0/16" },
+        "default": {},
+        "required_keys": ["region"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "oci",
+      "request": {
+        "method": "POST",
+        "url_template": "https://iaas.{region}.oraclecloud.com/20160918/vcns",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"compartmentId\":\"{compartmentId}\",\"cidrBlock\":\"{cidrBlock}\",\"isIpv6Enabled\":{isIpv6Enabled}}"
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date", "x-content-sha256"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": { "isIpv6Enabled": false, "cidrBlock": "10.0.0.0/16" },
+        "default": {},
+        "required_keys": ["region", "compartmentId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "gcp",
+      "request": {
+        "method": "POST",
+        "url_template": "https://compute.googleapis.com/compute/v1/projects/{projectId}/global/networks",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"name\":\"{networkName}\",\"autoCreateSubnetworks\":{autoCreateSubnetworks},\"routingConfig\":{\"routingMode\":\"{routingMode}\"}}"
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": { "autoCreateSubnetworks": false, "routingMode": "REGIONAL" },
+        "default": {},
+        "required_keys": ["projectId", "networkName"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "azure",
+      "request": {
+        "method": "PUT",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}?api-version=2023-05-01",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"location\":\"{location}\",\"properties\":{\"addressSpace\":{\"addressPrefixes\":{addressPrefixes}}}}"
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": { "addressPrefixes": ["10.1.0.0/16"] },
+        "default": {},
+        "required_keys": ["subscriptionId", "resourceGroup", "vnetName", "location"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "aws",
+      "request": {
+        "method": "GET",
+        "url_template": "https://ec2.{region}.amazonaws.com/?Action=DescribeVpcs&Version=2016-11-15",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date"],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "oci",
+      "request": {
+        "method": "GET",
+        "url_template": "https://iaas.{region}.oraclecloud.com/20160918/vcns?compartmentId={compartmentId}",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "compartmentId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "gcp",
+      "request": {
+        "method": "GET",
+        "url_template": "https://compute.googleapis.com/compute/v1/projects/{projectId}/global/networks",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["projectId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "azure",
+      "request": {
+        "method": "GET",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Network/virtualNetworks?api-version=2023-05-01",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["subscriptionId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "aws",
+      "request": {
+        "method": "POST",
+        "url_template": "https://ec2.{region}.amazonaws.com/?Action=DeleteVpc&VpcId={vpcId}&Version=2016-11-15",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date"],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "vpcId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "oci",
+      "request": {
+        "method": "DELETE",
+        "url_template": "https://iaas.{region}.oraclecloud.com/20160918/vcns/{vcnId}",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "vcnId"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "gcp",
+      "request": {
+        "method": "DELETE",
+        "url_template": "https://compute.googleapis.com/compute/v1/projects/{projectId}/global/networks/{networkName}",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["projectId", "networkName"]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "azure",
+      "request": {
+        "method": "DELETE",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}?api-version=2023-05-01",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["subscriptionId", "resourceGroup", "vnetName"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "aws",
+      "request": {
+        "method": "POST",
+        "url_template": "https://ec2.{region}.amazonaws.com/?Action=RunInstances&Version=2016-11-15",
+        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
+        "body_template": "ImageId={imageId}&InstanceType={instanceType}&MinCount=1&MaxCount=1&SubnetId={subnetId}"
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date", "content-type"],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "instanceType": "t3.micro" },
+        "required_keys": ["region", "imageId", "subnetId"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "oci",
+      "request": {
+        "method": "POST",
+        "url_template": "https://iaas.{region}.oraclecloud.com/20160918/instances",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"compartmentId\":\"{compartmentId}\",\"shape\":\"{shape}\",\"availabilityDomain\":\"{availabilityDomain}\",\"sourceDetails\":{\"sourceType\":\"image\",\"imageId\":\"{imageId}\"}}"
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date", "x-content-sha256"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "shape": "VM.Standard.E4.Flex" },
+        "required_keys": ["region", "compartmentId", "availabilityDomain", "imageId"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "gcp",
+      "request": {
+        "method": "POST",
+        "url_template": "https://compute.googleapis.com/compute/v1/projects/{projectId}/zones/{zone}/instances",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"name\":\"{instanceName}\",\"machineType\":\"zones/{zone}/machineTypes/{machineType}\",\"disks\":[{\"boot\":true,\"initializeParams\":{\"sourceImage\":\"{sourceImage}\"}}],\"networkInterfaces\":[{\"network\":\"{network}\"}]}"
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "machineType": "n2-standard-2" },
+        "required_keys": ["projectId", "zone", "instanceName", "sourceImage", "network"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "azure",
+      "request": {
+        "method": "PUT",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachines/{vmName}?api-version=2023-07-01",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"location\":\"{location}\",\"properties\":{\"hardwareProfile\":{\"vmSize\":\"{vmSize}\"},\"storageProfile\":{\"imageReference\":{\"id\":\"{imageId}\"}},\"networkProfile\":{\"networkInterfaces\":[{\"id\":\"{nicId}\"}]}}}"
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "vmSize": "Standard_D2s_v3" },
+        "required_keys": ["subscriptionId", "resourceGroup", "vmName", "location", "imageId", "nicId"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "aws",
+      "request": {
+        "method": "GET",
+        "url_template": "https://ec2.{region}.amazonaws.com/?Action=DescribeInstances&Version=2016-11-15",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date"],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "oci",
+      "request": {
+        "method": "GET",
+        "url_template": "https://iaas.{region}.oraclecloud.com/20160918/instances?compartmentId={compartmentId}",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "compartmentId"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "gcp",
+      "request": {
+        "method": "GET",
+        "url_template": "https://compute.googleapis.com/compute/v1/projects/{projectId}/zones/{zone}/instances",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["projectId", "zone"]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "azure",
+      "request": {
+        "method": "GET",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.Compute/virtualMachines?api-version=2023-07-01",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["subscriptionId"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "deploy",
+      "provider": "aws",
+      "request": {
+        "method": "POST",
+        "url_template": "https://eks.{region}.amazonaws.com/clusters",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"name\":\"{clusterName}\",\"roleArn\":\"{roleArn}\",\"resourcesVpcConfig\":{\"subnetIds\":{subnetIds},\"securityGroupIds\":{securityGroupIds}}}"
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date", "content-type"],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "clusterName", "roleArn", "subnetIds", "securityGroupIds"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "deploy",
+      "provider": "oci",
+      "request": {
+        "method": "POST",
+        "url_template": "https://containerengine.{region}.oraclecloud.com/20180222/clusters",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"compartmentId\":\"{compartmentId}\",\"name\":\"{clusterName}\",\"vcnId\":\"{vcnId}\",\"kubernetesVersion\":\"{kubernetesVersion}\"}"
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date", "x-content-sha256"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "kubernetesVersion": "v1.29.1" },
+        "required_keys": ["region", "compartmentId", "clusterName", "vcnId"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "deploy",
+      "provider": "gcp",
+      "request": {
+        "method": "POST",
+        "url_template": "https://container.googleapis.com/v1/projects/{projectId}/zones/{zone}/clusters",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"cluster\":{\"name\":\"{clusterName}\",\"nodePools\":[{\"name\":\"default-pool\",\"config\":{\"machineType\":\"{machineType}\"},\"initialNodeCount\":{initialNodeCount}}]}}"
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "machineType": "n2-standard-4", "initialNodeCount": 3 },
+        "required_keys": ["projectId", "zone", "clusterName"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "deploy",
+      "provider": "azure",
+      "request": {
+        "method": "PUT",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.ContainerService/managedClusters/{clusterName}?api-version=2024-01-01",
+        "headers": { "Content-Type": "application/json" },
+        "body_template": "{\"location\":\"{location}\",\"properties\":{\"kubernetesVersion\":\"{kubernetesVersion}\",\"dnsPrefix\":\"{dnsPrefix}\",\"agentPoolProfiles\":[{\"name\":\"agentpool\",\"count\":{nodeCount},\"vmSize\":\"{vmSize}\"}]}}"
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": { "vmSize": "Standard_D4s_v3", "nodeCount": 3, "kubernetesVersion": "1.29" },
+        "required_keys": ["subscriptionId", "resourceGroup", "clusterName", "location", "dnsPrefix"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "discover",
+      "provider": "aws",
+      "request": {
+        "method": "GET",
+        "url_template": "https://eks.{region}.amazonaws.com/clusters",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": ["host", "x-amz-date"],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "discover",
+      "provider": "oci",
+      "request": {
+        "method": "GET",
+        "url_template": "https://containerengine.{region}.oraclecloud.com/20180222/clusters?compartmentId={compartmentId}",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": ["host", "date"],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["region", "compartmentId"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "discover",
+      "provider": "gcp",
+      "request": {
+        "method": "GET",
+        "url_template": "https://container.googleapis.com/v1/projects/{projectId}/zones/{zone}/clusters",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["projectId", "zone"]
+      }
+    },
+    {
+      "intent": "eks",
+      "action": "discover",
+      "provider": "azure",
+      "request": {
+        "method": "GET",
+        "url_template": "https://management.azure.com/subscriptions/{subscriptionId}/providers/Microsoft.ContainerService/managedClusters?api-version=2024-01-01",
+        "headers": {}
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": ["authorization"],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": ["subscriptionId"]
+      }
+    }
+  ]
+}
