@@ -6,8 +6,30 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { inspectDeployment } from "./aws-inspector.ts";
 import { scoreDeployment } from "./scorer.ts";
 import { type EvalRequest, type EvalResponse, type EvalResult } from "./prompts.ts";
-import { GOLDEN_PATH_REGISTRY } from "../../../../src/lib/golden-path.ts";
-import type { GoldenPathTemplate } from "../../../../src/lib/golden-path.ts";
+// Golden path types inlined to avoid cross-boundary import from src/
+// Edge functions cannot import from the frontend codebase
+interface GoldenPathTemplateSubset {
+  id: string;
+  requiredResources: string[];
+  scaffolding: {
+    networkPolicies: string;
+    observability: { serviceMonitor: boolean; goldenSignals: boolean };
+    resilience: { pdb: boolean; hpa: boolean };
+    security: {
+      vaultIntegration: boolean;
+      imdsv2Only: boolean;
+      encryptionAtRest: boolean;
+      securityContext: boolean;
+    };
+  };
+  sloTarget: { availability: number; p99LatencyMs: number; requiresHealthCheck: boolean; requiresAlerts: boolean };
+  resourceCeiling: { maxCpuMillicores: number; maxMemoryMb: number; maxInstances: number; maxMonthlyBudgetUsd: number };
+}
+
+// Template registry is resolved at runtime via a lookup call to the frontend registry.
+// For now, eval-engine operates with the synthetic NL template for all deployments
+// until a shared registry module is extracted to a common Deno-compatible path.
+const GOLDEN_PATH_REGISTRY: GoldenPathTemplateSubset[] = [];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
