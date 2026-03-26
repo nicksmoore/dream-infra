@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { executeIntent, type EngineResponse } from "@/lib/uidi-engine";
-import { analyzeDependencies, getRemediationSteps, type DependencyAnalysis, type DependencyLevel } from "@/lib/dependency-dag";
+import { analyzeDependencies, getRemediationSteps, type DependencyAnalysis, type DependencyLevel, type Provider } from "@/lib/dependency-dag";
 import type { GoldenPathEntry, CloudProvider } from "@/components/GoldenPathCatalog";
 import {
   Rocket, FlaskConical, Eye, CheckCircle2, XCircle, Loader2,
@@ -64,7 +64,7 @@ export function GoldenPathDeployment({
 
   // ─── PRD §3.1: Run dependency analysis on mount ───
   useEffect(() => {
-    const result = analyzeDependencies(resources);
+    const result = analyzeDependencies(resources, provider as Provider);
     setAnalysis(result);
     setOverallProgress(5);
 
@@ -103,7 +103,7 @@ export function GoldenPathDeployment({
       return {
         intent: "network",
         action: "deploy",
-        spec: { region, environment, name: `${entry.id}-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 2 },
+        spec: { provider, region, environment, name: `${entry.id}-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 2 },
       };
     }
     if (lower.includes("subnet")) return null; // handled by VPC
@@ -111,14 +111,14 @@ export function GoldenPathDeployment({
       return {
         intent: "compute",
         action: "deploy",
-        spec: { instance_type: "t3.medium", os: "amazon-linux-2023", region, environment, name: `${entry.id}-${environment}`, count: 1 },
+        spec: { provider, instance_type: "t3.medium", os: "amazon-linux-2023", region, environment, name: `${entry.id}-${environment}`, count: 1 },
       };
     }
     if (lower.includes("eks") || lower.includes("gke") || lower.includes("aks")) {
       return {
         intent: "eks",
         action: "deploy",
-        spec: { cluster_name: `${entry.id}-${environment}`, region, environment, kubernetes_version: "1.29" },
+        spec: { provider, cluster_name: `${entry.id}-${environment}`, region, environment, kubernetes_version: "1.29" },
       };
     }
     if (lower.includes("security group") || lower === "sg" || lower.includes("nsg") || lower.includes("firewall")) {
@@ -134,25 +134,25 @@ export function GoldenPathDeployment({
       return {
         intent: "compute",
         action: "deploy",
-        spec: { region, environment, name: `${entry.id}-bucket`, bucket: true },
+        spec: { provider, region, environment, name: `${entry.id}-bucket`, bucket: true },
       };
     }
     if (lower.includes("lambda") || lower.includes("cloud function") || lower.includes("azure function")) {
       return {
         intent: "compute",
         action: "deploy",
-        spec: { region, environment, name: `${entry.id}-fn`, lambda: true },
+        spec: { provider, region, environment, name: `${entry.id}-fn`, lambda: true },
       };
     }
     if (lower.includes("rds") || lower.includes("cloud sql") || lower.includes("azure sql") || lower.includes("aurora")) {
       return {
         intent: "compute",
         action: "deploy",
-        spec: { region, environment, name: `${entry.id}-db`, database: true },
+        spec: { provider, region, environment, name: `${entry.id}-db`, database: true },
       };
     }
     return null;
-  }, [entry.id, region, environment]);
+  }, [entry.id, region, environment, provider]);
 
   // ─── FOUNDATION PRE-CHECK: Verify L0 stack exists before preflight ───
   const runFoundationCheck = useCallback(async () => {
@@ -178,7 +178,6 @@ export function GoldenPathDeployment({
     }));
     setFoundationCheckResults([...results]);
 
-    // Single network discover covers VPC, Subnets, and Security Group
     const start = Date.now();
     let found = false;
     let resultMessage = "";
@@ -188,7 +187,7 @@ export function GoldenPathDeployment({
       const response: EngineResponse = await executeIntent({
         intent: "network" as any,
         action: "discover",
-        spec: { region, environment, name: `vpc-foundation-${environment}` },
+        spec: { provider, region, environment, name: `vpc-foundation-${environment}` },
       });
       const duration = Date.now() - start;
       found = response.status !== "error";
@@ -228,7 +227,7 @@ export function GoldenPathDeployment({
         variant: "destructive",
       });
     }
-  }, [analysis, region, environment]);
+  }, [analysis, region, environment, provider]);
 
   // ─── PREFLIGHT (Dry Run) — PRD §3.2: Mandatory, automated ───
   const runPreflight = useCallback(async () => {
@@ -264,6 +263,8 @@ export function GoldenPathDeployment({
       setPreflightResults([...results]);
       setOverallProgress(10 + ((i + 1) / deployable.length) * 25);
 
+      const lastIdx = results.length - 1;
+
       const start = Date.now();
       try {
         const response: EngineResponse = await executeIntent({
@@ -272,7 +273,6 @@ export function GoldenPathDeployment({
           spec: mapping.spec,
         });
         const duration = Date.now() - start;
-        const lastIdx = results.length - 1;
 
         if (response.status === "error") {
           results[lastIdx] = { resource, action: "dry_run", status: "error", message: response.error || "Dry run failed", details: response.details, duration, level: level as DependencyLevel };
@@ -282,7 +282,6 @@ export function GoldenPathDeployment({
         }
       } catch (e) {
         const duration = Date.now() - start;
-        const lastIdx = results.length - 1;
         results[lastIdx] = { resource, action: "dry_run", status: "error", message: e instanceof Error ? e.message : "Unknown error", duration, level: level as DependencyLevel };
         passed = false;
       }
@@ -320,6 +319,8 @@ export function GoldenPathDeployment({
       setDeployResults([...results]);
       setOverallProgress(40 + ((i + 1) / deployable.length) * 35);
 
+      const lastIdx = results.length - 1;
+
       const start = Date.now();
       try {
         const response: EngineResponse = await executeIntent({
@@ -328,13 +329,11 @@ export function GoldenPathDeployment({
           spec: mapping.spec,
         });
         const duration = Date.now() - start;
-        const lastIdx = results.length - 1;
 
         if (response.status === "error") {
           results[lastIdx] = { resource, action: "deploy", status: "error", message: response.error || "Deploy failed", details: response.details, duration, level: level as DependencyLevel };
           setDeployResults([...results]);
 
-          // PRD §3.3: Remediation logic for live failures
           toast({
             title: `Deploy Failed: ${resource}`,
             description: `Level ${level} resource failed. ${level === 0 ? "Foundation failure — cannot continue." : "Attempting to continue with remaining resources."}`,
@@ -346,7 +345,7 @@ export function GoldenPathDeployment({
             setIsRunning(false);
             return;
           }
-          continue; // Non-foundation failures: continue deploying
+          continue;
         }
 
         results[lastIdx] = { resource, action: "deploy", status: "success", message: response.message || "Provisioned", details: response.details, duration, level: level as DependencyLevel };
@@ -390,15 +389,16 @@ export function GoldenPathDeployment({
       setValidateResults([...results]);
       setOverallProgress(80 + ((i + 1) / deployable.length) * 18);
 
+      const lastIdx = results.length - 1;
+
       const start = Date.now();
       try {
         const response: EngineResponse = await executeIntent({
           intent: mapping.intent as any,
           action: "discover",
-          spec: { region: mapping.spec.region, name: mapping.spec.name as string, environment: mapping.spec.environment as string },
+          spec: { provider, region: mapping.spec.region, name: mapping.spec.name as string, environment: mapping.spec.environment as string },
         });
         const duration = Date.now() - start;
-        const lastIdx = results.length - 1;
 
         if (response.status === "error") {
           results[lastIdx] = { resource, action: "discover", status: "error", message: "Resource not found — may still be provisioning", details: response.details, duration, level: level as DependencyLevel };
@@ -407,7 +407,6 @@ export function GoldenPathDeployment({
         }
       } catch (e) {
         const duration = Date.now() - start;
-        const lastIdx = results.length - 1;
         results[lastIdx] = { resource, action: "discover", status: "error", message: e instanceof Error ? e.message : "Validation failed", duration, level: level as DependencyLevel };
       }
       setValidateResults([...results]);

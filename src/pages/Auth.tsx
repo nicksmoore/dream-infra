@@ -147,15 +147,17 @@ function PreflightTerminal() {
 
   useEffect(() => {
     let i = 0;
+    let resetting = false;
     const interval = setInterval(() => {
       if (i < steps.length) {
         setLines(prev => [...prev, steps[i]]);
         i++;
-      } else {
-        // Reset after pause
+      } else if (!resetting) {
+        resetting = true;
         setTimeout(() => {
           setLines([]);
           i = 0;
+          resetting = false;
         }, 3000);
       }
     }, 400);
@@ -176,8 +178,8 @@ function PreflightTerminal() {
             key={`${i}-${line}`}
             className={`animate-fade-in ${
               i === 0 ? "text-foreground font-semibold" :
-              line.startsWith("⬢") ? "text-primary font-semibold mt-1" :
-              line.includes("✓") ? "text-[hsl(var(--success))]" :
+              line?.startsWith("⬢") ? "text-primary font-semibold mt-1" :
+              line?.includes("✓") ? "text-[hsl(var(--success))]" :
               "text-muted-foreground"
             }`}
           >

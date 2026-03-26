@@ -12,6 +12,37 @@ import { KeyRound, Plus, Trash2, ShieldCheck, Cloud } from "lucide-react";
 import type { CloudProvider, StoredCredential } from "@/lib/platform-types";
 import { PROVIDER_OPTIONS } from "@/lib/platform-types";
 
+interface CredentialFieldDef {
+  key: string;
+  label: string;
+  placeholder: string;
+  type?: "password";
+}
+
+const PROVIDER_CREDENTIAL_FIELDS: Record<CloudProvider, CredentialFieldDef[]> = {
+  aws: [
+    { key: "accessKeyId", label: "Access Key ID", placeholder: "AKIAIOSFODNN7EXAMPLE" },
+    { key: "secretAccessKey", label: "Secret Access Key", placeholder: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", type: "password" },
+  ],
+  gcp: [
+    { key: "projectId", label: "Project ID", placeholder: "my-project-123456" },
+    { key: "serviceAccountJson", label: "Service Account JSON", placeholder: '{"type":"service_account","project_id":"..."}', type: "password" },
+  ],
+  azure: [
+    { key: "tenantId", label: "Tenant ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+    { key: "clientId", label: "Client ID (App ID)", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+    { key: "clientSecret", label: "Client Secret", placeholder: "your-client-secret", type: "password" },
+    { key: "subscriptionId", label: "Subscription ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+  ],
+  oci: [
+    { key: "tenancyOcid", label: "Tenancy OCID", placeholder: "ocid1.tenancy.oc1..aaaaaaaaXXX" },
+    { key: "userOcid", label: "User OCID", placeholder: "ocid1.user.oc1..aaaaaaaaXXX" },
+    { key: "fingerprint", label: "API Key Fingerprint", placeholder: "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx" },
+    { key: "privateKey", label: "Private Key (PEM)", placeholder: "-----BEGIN RSA PRIVATE KEY-----\n...", type: "password" },
+    { key: "region", label: "Home Region", placeholder: "us-ashburn-1" },
+  ],
+};
+
 export function CredentialVault() {
   const { user } = useAuth();
   const [credentials, setCredentials] = useState<StoredCredential[]>([]);
@@ -21,9 +52,16 @@ export function CredentialVault() {
   // Add form state
   const [provider, setProvider] = useState<CloudProvider>("aws");
   const [label, setLabel] = useState("default");
-  const [accessKeyId, setAccessKeyId] = useState("");
-  const [secretAccessKey, setSecretAccessKey] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  const handleProviderChange = (v: CloudProvider) => {
+    setProvider(v);
+    setFields({});
+  };
+
+  const currentFields = PROVIDER_CREDENTIAL_FIELDS[provider];
+  const allFieldsFilled = currentFields.every((f) => fields[f.key]?.trim());
 
   const fetchCredentials = async () => {
     if (!user) return;
@@ -40,16 +78,14 @@ export function CredentialVault() {
   }, [user]);
 
   const handleAdd = async () => {
-    if (!user || !accessKeyId.trim() || !secretAccessKey.trim()) return;
+    if (!user || !allFieldsFilled) return;
     setSaving(true);
 
+    const credentialPayload: Record<string, string> = {};
+    currentFields.forEach((f) => { credentialPayload[f.key] = fields[f.key].trim(); });
+
     const { error } = await supabase.functions.invoke("credential-vault", {
-      body: {
-        action: "store",
-        provider,
-        label,
-        credentials: { accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim() },
-      },
+      body: { action: "store", provider, label, credentials: credentialPayload },
     });
 
     setSaving(false);
@@ -58,8 +94,7 @@ export function CredentialVault() {
     } else {
       toast({ title: "Credentials stored", description: `${provider.toUpperCase()} credentials encrypted and saved.` });
       setAddOpen(false);
-      setAccessKeyId("");
-      setSecretAccessKey("");
+      setFields({});
       fetchCredentials();
     }
   };
@@ -132,7 +167,7 @@ export function CredentialVault() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Provider</Label>
-                  <Select value={provider} onValueChange={(v) => setProvider(v as CloudProvider)}>
+                  <Select value={provider} onValueChange={(v) => handleProviderChange(v as CloudProvider)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {PROVIDER_OPTIONS.map((p) => (
@@ -148,29 +183,22 @@ export function CredentialVault() {
                   <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="default" />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Access Key ID</Label>
-                <Input
-                  value={accessKeyId}
-                  onChange={(e) => setAccessKeyId(e.target.value)}
-                  placeholder="AKIAIOSFODNN7EXAMPLE"
-                  className="font-mono text-sm"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Secret Access Key</Label>
-                <Input
-                  type="password"
-                  value={secretAccessKey}
-                  onChange={(e) => setSecretAccessKey(e.target.value)}
-                  placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                  className="font-mono text-sm"
-                />
-              </div>
+              {currentFields.map((f) => (
+                <div key={f.key} className="space-y-2">
+                  <Label>{f.label}</Label>
+                  <Input
+                    type={f.type || "text"}
+                    value={fields[f.key] || ""}
+                    onChange={(e) => setFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              ))}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-              <Button onClick={handleAdd} disabled={saving || !accessKeyId.trim() || !secretAccessKey.trim()}>
+              <Button onClick={handleAdd} disabled={saving || !allFieldsFilled}>
                 {saving ? "Encrypting…" : "Store Securely"}
               </Button>
             </DialogFooter>

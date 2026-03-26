@@ -537,6 +537,7 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
                   <TableHead className="w-8"></TableHead>
                   <TableHead>Resource</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead>Region</TableHead>
                   <TableHead>State</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Action</TableHead>
@@ -556,6 +557,9 @@ export function ResourceInventory({ region }: ResourceInventoryProps) {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs uppercase">{r.type}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-mono text-muted-foreground">{r.region}</span>
                       </TableCell>
                       <TableCell>
                         <Badge

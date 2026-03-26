@@ -12,7 +12,7 @@ import { ValidationPhase } from "@/components/ValidationPhase";
 import { useDeploymentState } from "@/hooks/use-deployment-state";
 import { resolveStepInputs, buildRollbackSpec, getExecutionOrder, getRollbackOrder } from "@/lib/dag-resolver";
 import type { DagStep } from "@/lib/dag-resolver";
-import { buildCrossRegionPeeredSteps, buildGenericSteps, buildSreStep, buildNaawiSteps } from "@/lib/dag-blueprints";
+import { buildCrossRegionPeeredSteps, buildGenericSteps, buildSreStep, buildNaawiSteps, deriveSecondaryRegion } from "@/lib/dag-blueprints";
 import {
   Loader2, CheckCircle2, XCircle, Circle, Rocket, Network, Server, Box,
   ShieldCheck, AlertTriangle, Eye, ShieldAlert, DollarSign, GitCompareArrows,
@@ -24,6 +24,7 @@ import {
 interface OrchestrationPanelProps {
   resources: string[];
   region: string;
+  drRegion?: string;
   environment: string;
   workloadType?: string;
   instanceType?: string;
@@ -76,6 +77,7 @@ const EMPTY_OPS: any[] = [];
 export function OrchestrationPanel({
   resources,
   region,
+  drRegion,
   environment,
   workloadType = "general",
   instanceType = "t3.medium",
@@ -124,7 +126,7 @@ export function OrchestrationPanel({
     if (stableOps.length > 0) {
       built = buildNaawiSteps(stableOps, region);
     } else if (workloadType === "cross-region-peered") {
-      built = buildCrossRegionPeeredSteps(environment);
+      built = buildCrossRegionPeeredSteps(environment, region, drRegion ?? deriveSecondaryRegion(region));
     } else if (SRE_PATTERNS.includes(workloadType as any)) {
       built = buildSreStep(workloadType, region, environment);
     } else {

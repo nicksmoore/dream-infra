@@ -5,15 +5,29 @@
 
 import type { DagStep } from "./dag-resolver";
 
-export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
+/** Returns a geographically separated fallback region for DR when none is specified. */
+export function deriveSecondaryRegion(primary: string): string {
+  if (primary.startsWith("us-east")) return "eu-central-1";
+  if (primary.startsWith("us-west")) return "eu-west-1";
+  if (primary.startsWith("eu-")) return "us-east-1";
+  if (primary.startsWith("ap-")) return "us-east-1";
+  if (primary.startsWith("sa-")) return "us-east-1";
+  return "us-west-2";
+}
+
+export function buildCrossRegionPeeredSteps(
+  environment: string,
+  primaryRegion: string,
+  drRegion: string,
+): DagStep[] {
   return [
     {
       id: "data-vpc",
-      name: "eu-central-1: Data VPC",
-      description: "VPC 10.1.0.0/16 with private subnet in Frankfurt",
+      name: `${drRegion}: Data VPC`,
+      description: `VPC 10.1.0.0/16 with private subnet in ${drRegion} (DR)`,
       intent: "network",
       action: "deploy",
-      spec: { region: "eu-central-1", environment, name: `data-vpc-${environment}`, vpc_cidr: "10.1.0.0/16", az_count: 1, public_subnets: false },
+      spec: { region: drRegion, environment, name: `data-vpc-${environment}`, vpc_cidr: "10.1.0.0/16", az_count: 1, public_subnets: false },
       io: {
         outputs: ["vpc_id", "subnet_ids", "route_table_id", "security_group_id"],
       },
@@ -24,11 +38,11 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
     },
     {
       id: "eks-vpc",
-      name: "us-east-1: EKS Management VPC",
-      description: "VPC 10.0.0.0/16 with public + private subnets in N. Virginia",
+      name: `${primaryRegion}: EKS Management VPC`,
+      description: `VPC 10.0.0.0/16 with public + private subnets in ${primaryRegion} (primary)`,
       intent: "network",
       action: "deploy",
-      spec: { region: "us-east-1", environment, name: `eks-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 3 },
+      spec: { region: primaryRegion, environment, name: `eks-vpc-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 3 },
       io: {
         outputs: ["vpc_id", "subnet_ids", "route_table_id", "security_group_id"],
       },
@@ -39,11 +53,11 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
     },
     {
       id: "vpc-peering",
-      name: "VPC Peering: us-east-1 ↔ eu-central-1",
+      name: `VPC Peering: ${primaryRegion} ↔ ${drRegion}`,
       description: "Cross-region peering connection with auto-accept + route propagation",
       intent: "network",
       action: "deploy",
-      spec: { region: "us-east-1", peer_region: "eu-central-1", type: "vpc-peering" },
+      spec: { region: primaryRegion, peer_region: drRegion, type: "vpc-peering" },
       io: {
         inputs: {
           requester_vpc_id: "eks-vpc.vpc_id",
@@ -62,7 +76,7 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
       description: "Inject routes for 10.1.0.0/16 ↔ 10.0.0.0/16 via peering connection",
       intent: "network",
       action: "deploy",
-      spec: { region: "us-east-1", peer_region: "eu-central-1", type: "peering-routes" },
+      spec: { region: primaryRegion, peer_region: drRegion, type: "peering-routes" },
       io: {
         inputs: {
           peering_connection_id: "vpc-peering.peering_connection_id",
@@ -76,11 +90,11 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
     },
     {
       id: "eks-cluster",
-      name: "us-east-1: EKS Cluster",
-      description: "Managed Kubernetes cluster with route to eu-central-1 Data VPC (~10-15 min)",
+      name: `${primaryRegion}: EKS Cluster`,
+      description: `Managed Kubernetes cluster with route to ${drRegion} Data VPC (~10-15 min)`,
       intent: "eks",
       action: "deploy",
-      spec: { region: "us-east-1", environment, cluster_name: `eks-${environment}-cluster`, kubernetes_version: "1.29" },
+      spec: { region: primaryRegion, environment, cluster_name: `eks-${environment}-cluster`, kubernetes_version: "1.29" },
       io: {
         inputs: {
           subnet_ids: "eks-vpc.subnet_ids",
@@ -95,11 +109,11 @@ export function buildCrossRegionPeeredSteps(environment: string): DagStep[] {
     },
     {
       id: "eks-nodegroup",
-      name: "us-east-1: EKS Node Group",
+      name: `${primaryRegion}: EKS Node Group`,
       description: "t3.medium managed node group (2 nodes)",
       intent: "eks",
       action: "add_nodegroup",
-      spec: { region: "us-east-1", cluster_name: `eks-${environment}-cluster`, instance_types: ["t3.medium"], desired_size: 2, min_size: 1, max_size: 3 },
+      spec: { region: primaryRegion, cluster_name: `eks-${environment}-cluster`, instance_types: ["t3.medium"], desired_size: 2, min_size: 1, max_size: 3 },
       io: {
         inputs: {
           cluster_name: "eks-cluster.cluster_name",

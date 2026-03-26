@@ -9,7 +9,7 @@
 export interface DoltResource {
   resource_id: string;      // Primary Key
   resource_type: string;
-  provider: "aws" | "gcp" | "azure";
+  provider: "aws" | "gcp" | "azure" | "oci";
   region: string;
   intent_hash: string;      // SHA-256 of the intent
   ztai_record_index: string; // Link to audit log

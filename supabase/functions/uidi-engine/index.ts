@@ -785,6 +785,11 @@ const AMI_MAP: Record<string, Record<string, string>> = {
 };
 
 async function handleCompute(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const provider = ((spec.provider as string) || "aws").toLowerCase();
+  if (provider === "oci") return ociCompute(action, spec);
+  if (provider === "gcp") return gcpCompute(action, spec);
+  if (provider === "azure") return azureCompute(action, spec);
+
   const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
 
@@ -1104,6 +1109,11 @@ async function describeExistingNetworkStack(
 }
 
 async function handleNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const provider = ((spec.provider as string) || "aws").toLowerCase();
+  if (provider === "oci") return ociNetwork(action, spec);
+  if (provider === "gcp") return gcpNetwork(action, spec);
+  if (provider === "azure") return azureNetwork(action, spec);
+
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
   if (!AWS_KEY || !AWS_SECRET) return err("network", action, "AWS credentials required.");
@@ -1241,7 +1251,7 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
       const dBody = await dRes.text();
       if (!dRes.ok) return err("network", action, extractEc2Error(dBody) || "DescribeVpcs failed");
       const vpcs = [...dBody.matchAll(/<vpcId>(vpc-[a-f0-9]+)<\/vpcId>/g)].map(m => m[1]);
-      return ok("network", action, `Discovered ${vpcs.length} UIDI-managed VPC(s)`, { vpcs, region });
+      return ok("network", action, `Discovered ${vpcs.length} UIDI-managed VPC(s)`, { vpcs, region, _debug_spec_provider: spec.provider ?? "MISSING" });
     }
 
     // Standalone peering connection delete (used by rollback)
@@ -1593,6 +1603,11 @@ async function getOrCreateEksRole(accessKey: string, secretKey: string, roleType
 // ───── EKS ─────
 
 async function handleEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const provider = ((spec.provider as string) || "aws").toLowerCase();
+  if (provider === "oci") return ociEks(action, spec);
+  if (provider === "gcp") return gcpEks(action, spec);
+  if (provider === "azure") return azureEks(action, spec);
+
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
   if (!AWS_KEY || !AWS_SECRET) return err("eks", action, "AWS credentials required.");
@@ -2081,6 +2096,888 @@ function ok(intent: string, action: string, message: string, details?: unknown):
 
 function err(intent: string, action: string, error: string, details?: unknown): EngineResponse {
   return { status: "error", intent, action, error, details, timestamp: new Date().toISOString() };
+}
+
+// ───── Multi-Cloud Auth & Handlers ─────
+
+// ─── OCI HTTP Signature V1 (RSA-SHA256) ───
+
+async function ociSign(
+  method: string,
+  host: string,
+  path: string,
+  keyId: string,
+  privateKeyPem: string,
+  signedHeadersMap: Record<string, string>,
+): Promise<string> {
+  const pemBody = privateKeyPem
+    .replace(/-----BEGIN[^-]+-----/g, "")
+    .replace(/-----END[^-]+-----/g, "")
+    .replace(/\s+/g, "");
+  const keyBytes = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const hasBody = "x-content-sha256" in signedHeadersMap;
+  const headerList = hasBody
+    ? ["(request-target)", "host", "date", "x-content-sha256", "content-type", "content-length"]
+    : ["(request-target)", "host", "date"];
+  const signingParts = headerList.map((h) => {
+    if (h === "(request-target)") return `(request-target): ${method.toLowerCase()} ${path}`;
+    if (h === "host") return `host: ${host}`;
+    return `${h}: ${signedHeadersMap[h] || ""}`;
+  });
+  const signingString = signingParts.join("\n");
+  const sig = await crypto.subtle.sign(
+    { name: "RSASSA-PKCS1-v1_5" },
+    cryptoKey,
+    new TextEncoder().encode(signingString),
+  );
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
+  return `Signature version="1",algorithm="rsa-sha256",headers="${headerList.join(" ")}",keyId="${keyId}",signature="${sigB64}"`;
+}
+
+async function ociRequest(
+  method: string,
+  host: string,
+  path: string,
+  tenancyOcid: string,
+  userOcid: string,
+  fingerprint: string,
+  privateKey: string,
+  body?: string,
+): Promise<Response> {
+  const keyId = `${tenancyOcid}/${userOcid}/${fingerprint}`;
+  const date = new Date().toUTCString();
+  const signedHeadersMap: Record<string, string> = { date };
+  if (body) {
+    const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+    signedHeadersMap["x-content-sha256"] = btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+    signedHeadersMap["content-type"] = "application/json";
+    signedHeadersMap["content-length"] = String(new TextEncoder().encode(body).length);
+  }
+  const auth = await ociSign(method, host, path, keyId, privateKey, signedHeadersMap);
+  const fetchHeaders: Record<string, string> = { ...signedHeadersMap, Authorization: auth };
+  // content-length is set automatically by Deno fetch — removing to avoid "forbidden header" errors
+  delete fetchHeaders["content-length"];
+  return fetch(`https://${host}${path}`, {
+    method,
+    headers: fetchHeaders,
+    ...(body ? { body } : {}),
+  });
+}
+
+// ─── GCP OAuth2 JWT Service Account ───
+
+async function gcpGetToken(serviceAccountJson: string, scopes: string[]): Promise<string> {
+  const sa = JSON.parse(serviceAccountJson) as Record<string, string>;
+  const now = Math.floor(Date.now() / 1000);
+  const encode = (obj: unknown) =>
+    btoa(JSON.stringify(obj)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const header = encode({ alg: "RS256", typ: "JWT" });
+  const payload = encode({
+    iss: sa.client_email,
+    scope: scopes.join(" "),
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  });
+  const sigInput = `${header}.${payload}`;
+  const pemBody = sa.private_key
+    .replace(/-----BEGIN[^-]+-----/g, "")
+    .replace(/-----END[^-]+-----/g, "")
+    .replace(/\s+/g, "");
+  const keyBytes = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyBytes,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    { name: "RSASSA-PKCS1-v1_5" },
+    cryptoKey,
+    new TextEncoder().encode(sigInput),
+  );
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const jwt = `${sigInput}.${sigB64}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
+    }).toString(),
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok || !data.access_token) throw new Error(`GCP token error: ${JSON.stringify(data)}`);
+  return data.access_token as string;
+}
+
+// ─── Azure Client Credentials Grant ───
+
+async function azureGetToken(tenantId: string, clientId: string, clientSecret: string): Promise<string> {
+  const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: "https://management.azure.com/.default",
+    }).toString(),
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok || !data.access_token) throw new Error(`Azure token error: ${JSON.stringify(data)}`);
+  return data.access_token as string;
+}
+
+// ─── OCI Network Handler ───
+
+async function ociNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const tenancy = spec.oci_tenancy_ocid as string;
+  const user = spec.oci_user_ocid as string;
+  const fingerprint = spec.oci_fingerprint as string;
+  const privateKey = spec.oci_private_key as string;
+  const region = spec.oci_region as string || spec.region as string || "us-ashburn-1";
+  const compartment = spec.oci_compartment_id as string || tenancy;
+  if (!tenancy || !user || !fingerprint || !privateKey) {
+    return err("network", action, "OCI credentials required: oci_tenancy_ocid, oci_user_ocid, oci_fingerprint, oci_private_key");
+  }
+  const host = `iaas.${region}.oraclecloud.com`;
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const path = `/20160918/vcns?compartmentId=${encodeURIComponent(compartment)}&limit=5`;
+      const res = await ociRequest("GET", host, path, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `OCI credential validation failed: ${body.slice(0, 400)}`);
+      const vcns = JSON.parse(body) as unknown[];
+      return ok("network", action, "OCI credentials validated — VCN stack ready to deploy", {
+        region, compartment, vcn_count: vcns.length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const path = `/20160918/vcns?compartmentId=${encodeURIComponent(compartment)}&limit=50`;
+      const res = await ociRequest("GET", host, path, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `OCI VCN list failed: ${body.slice(0, 400)}`);
+      const vcns = JSON.parse(body) as Array<Record<string, unknown>>;
+      return ok("network", action, `Discovered ${vcns.length} VCN(s)`, {
+        region, compartment,
+        vcns: vcns.map((v) => ({ id: v.id, displayName: v.displayName, cidrBlock: v.cidrBlock, lifecycleState: v.lifecycleState })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-vcn";
+      const cidr = spec.vpc_cidr as string || "10.0.0.0/16";
+      const subnetCidr = "10.0.1.0/24";
+      // 1. Create VCN
+      const vcnRes = await ociRequest("POST", host, "/20160918/vcns", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({ displayName: name, cidrBlock: cidr, compartmentId: compartment }));
+      const vcnBody = await vcnRes.text();
+      if (!vcnRes.ok) return err("network", action, `OCI CreateVCN failed: ${vcnBody.slice(0, 400)}`);
+      const vcn = JSON.parse(vcnBody) as Record<string, unknown>;
+      const vcnId = vcn.id as string;
+      // 2. Create Internet Gateway
+      const igwRes = await ociRequest("POST", host, "/20160918/internetGateways", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({ displayName: `${name}-igw`, compartmentId: compartment, vcnId, isEnabled: true }));
+      const igwBody = await igwRes.text();
+      if (!igwRes.ok) return err("network", action, `OCI CreateIGW failed: ${igwBody.slice(0, 400)}`);
+      const igwId = (JSON.parse(igwBody) as Record<string, unknown>).id as string;
+      // 3. Get default route table and add 0.0.0.0/0 → IGW
+      const rtListRes = await ociRequest("GET", host,
+        `/20160918/routeTables?compartmentId=${encodeURIComponent(compartment)}&vcnId=${encodeURIComponent(vcnId)}`,
+        tenancy, user, fingerprint, privateKey);
+      const rtList = JSON.parse(await rtListRes.text()) as Array<Record<string, unknown>>;
+      const defaultRt = rtList.find((rt) => String(rt.displayName || "").startsWith("Default Route Table"));
+      const rtId = defaultRt?.id as string | undefined;
+      if (rtId) {
+        await ociRequest("PUT", host, `/20160918/routeTables/${encodeURIComponent(rtId)}`, tenancy, user, fingerprint, privateKey,
+          JSON.stringify({ routeRules: [{ destination: "0.0.0.0/0", networkEntityId: igwId, destinationType: "CIDR_BLOCK" }] }));
+      }
+      // 4. Create Security List
+      const slRes = await ociRequest("POST", host, "/20160918/securityLists", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({
+          displayName: `${name}-sl`, compartmentId: compartment, vcnId,
+          egressSecurityRules: [{ protocol: "all", destination: "0.0.0.0/0", isStateless: false }],
+          ingressSecurityRules: [{ protocol: "6", source: "0.0.0.0/0", isStateless: false, tcpOptions: { destinationPortRange: { min: 443, max: 443 } } }],
+        }));
+      const slBody = await slRes.text();
+      const slId = slRes.ok ? (JSON.parse(slBody) as Record<string, unknown>).id as string : undefined;
+      // 5. Create Subnet
+      const subnetRes = await ociRequest("POST", host, "/20160918/subnets", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({
+          displayName: `${name}-subnet`, compartmentId: compartment, vcnId, cidrBlock: subnetCidr,
+          ...(rtId ? { routeTableId: rtId } : {}),
+          ...(slId ? { securityListIds: [slId] } : {}),
+        }));
+      const subnetBody = await subnetRes.text();
+      if (!subnetRes.ok) return err("network", action, `OCI CreateSubnet failed: ${subnetBody.slice(0, 400)}`);
+      const subnetId = (JSON.parse(subnetBody) as Record<string, unknown>).id as string;
+      return ok("network", action, `OCI VCN stack deployed: ${vcnId}`, {
+        vcn_id: vcnId, subnet_id: subnetId, igw_id: igwId, route_table_id: rtId, security_list_id: slId, region, compartment,
+      });
+    }
+    case "destroy": {
+      const vcnId = spec.vcn_id as string || spec.vpc_id as string;
+      if (!vcnId) return err("network", action, "vcn_id required for OCI destroy");
+      const q = `compartmentId=${encodeURIComponent(compartment)}&vcnId=${encodeURIComponent(vcnId)}`;
+      // Subnets
+      const sRes = await ociRequest("GET", host, `/20160918/subnets?${q}`, tenancy, user, fingerprint, privateKey);
+      for (const s of JSON.parse(await sRes.text()) as Array<Record<string, unknown>>) {
+        await ociRequest("DELETE", host, `/20160918/subnets/${encodeURIComponent(s.id as string)}`, tenancy, user, fingerprint, privateKey);
+      }
+      // Security Lists (non-default)
+      const slsRes = await ociRequest("GET", host, `/20160918/securityLists?${q}`, tenancy, user, fingerprint, privateKey);
+      for (const sl of (JSON.parse(await slsRes.text()) as Array<Record<string, unknown>>).filter((s) => !String(s.displayName || "").startsWith("Default"))) {
+        await ociRequest("DELETE", host, `/20160918/securityLists/${encodeURIComponent(sl.id as string)}`, tenancy, user, fingerprint, privateKey);
+      }
+      // Internet Gateways
+      const igwsRes = await ociRequest("GET", host, `/20160918/internetGateways?${q}`, tenancy, user, fingerprint, privateKey);
+      for (const igw of JSON.parse(await igwsRes.text()) as Array<Record<string, unknown>>) {
+        await ociRequest("DELETE", host, `/20160918/internetGateways/${encodeURIComponent(igw.id as string)}`, tenancy, user, fingerprint, privateKey);
+      }
+      // VCN
+      const delRes = await ociRequest("DELETE", host, `/20160918/vcns/${encodeURIComponent(vcnId)}`, tenancy, user, fingerprint, privateKey);
+      if (!delRes.ok && delRes.status !== 404) return err("network", action, `OCI VCN delete failed: ${(await delRes.text()).slice(0, 400)}`);
+      return ok("network", action, `OCI VCN ${vcnId} destroyed`, { vcn_id: vcnId, region });
+    }
+    default:
+      return err("network", action, `Unknown OCI network action: ${action}`);
+  }
+}
+
+// ─── GCP Network Handler ───
+
+async function gcpNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const saJson = spec.gcp_service_account_json as string;
+  const projectId = spec.gcp_project_id as string;
+  const region = spec.gcp_region as string || spec.region as string || "us-central1";
+  if (!saJson || !projectId) return err("network", action, "GCP credentials required: gcp_service_account_json, gcp_project_id");
+  let token: string;
+  try { token = await gcpGetToken(saJson, ["https://www.googleapis.com/auth/cloud-platform"]); }
+  catch (e) { return err("network", action, `GCP auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const gcpFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://compute.googleapis.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/global/networks?maxResults=5`);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `GCP credential validation failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("network", action, "GCP credentials validated — VPC stack ready to deploy", {
+        projectId, region, network_count: (data.items as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/global/networks`);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `GCP network list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const items = (data.items as Array<Record<string, unknown>> || []);
+      return ok("network", action, `Discovered ${items.length} GCP network(s)`, {
+        projectId, region,
+        networks: items.map((n) => ({ name: n.name, id: n.id, selfLink: n.selfLink })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-vpc";
+      const subnetCidr = spec.vpc_cidr as string || "10.0.0.0/16";
+      // Network
+      const netRes = await gcpFetch(`/compute/v1/projects/${projectId}/global/networks`, "POST",
+        JSON.stringify({ name, autoCreateSubnetworks: false }));
+      const netBody = await netRes.text();
+      if (!netRes.ok) return err("network", action, `GCP CreateNetwork failed: ${netBody.slice(0, 400)}`);
+      // Subnetwork
+      const snRes = await gcpFetch(`/compute/v1/projects/${projectId}/regions/${region}/subnetworks`, "POST",
+        JSON.stringify({
+          name: `${name}-subnet`,
+          network: `projects/${projectId}/global/networks/${name}`,
+          ipCidrRange: subnetCidr,
+          region: `regions/${region}`,
+        }));
+      const snBody = await snRes.text();
+      if (!snRes.ok) return err("network", action, `GCP CreateSubnetwork failed: ${snBody.slice(0, 400)}`);
+      // Firewall
+      await gcpFetch(`/compute/v1/projects/${projectId}/global/firewalls`, "POST",
+        JSON.stringify({
+          name: `${name}-allow-https`, network: `projects/${projectId}/global/networks/${name}`,
+          allowed: [{ IPProtocol: "tcp", ports: ["443"] }], direction: "INGRESS", sourceRanges: ["0.0.0.0/0"],
+        }));
+      // Cloud Router + NAT
+      const routerRes = await gcpFetch(`/compute/v1/projects/${projectId}/regions/${region}/routers`, "POST",
+        JSON.stringify({
+          name: `${name}-router`, network: `projects/${projectId}/global/networks/${name}`,
+          region: `regions/${region}`,
+          nats: [{ name: `${name}-nat`, natIpAllocateOption: "AUTO_ONLY", sourceSubnetworkIpRangesToNat: "ALL_SUBNETWORKS_ALL_IP_RANGES" }],
+        }));
+      const routerBody = await routerRes.text();
+      return ok("network", action, `GCP network ${name} deployed`, {
+        network: name, subnet: `${name}-subnet`, region, projectId,
+        router_op: (JSON.parse(routerBody) as Record<string, unknown>).name,
+      });
+    }
+    case "destroy": {
+      const name = spec.name as string || spec.vpc_id as string;
+      if (!name) return err("network", action, "name or vpc_id required for GCP destroy");
+      await gcpFetch(`/compute/v1/projects/${projectId}/regions/${region}/routers/${name}-router`, "DELETE");
+      await gcpFetch(`/compute/v1/projects/${projectId}/global/firewalls/${name}-allow-https`, "DELETE");
+      await gcpFetch(`/compute/v1/projects/${projectId}/regions/${region}/subnetworks/${name}-subnet`, "DELETE");
+      const delRes = await gcpFetch(`/compute/v1/projects/${projectId}/global/networks/${name}`, "DELETE");
+      if (!delRes.ok && delRes.status !== 404) return err("network", action, `GCP network delete failed: ${(await delRes.text()).slice(0, 400)}`);
+      return ok("network", action, `GCP network ${name} destroyed`, { name, region, projectId });
+    }
+    default:
+      return err("network", action, `Unknown GCP network action: ${action}`);
+  }
+}
+
+// ─── Azure Network Handler ───
+
+async function azureNetwork(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const clientId = spec.azure_client_id as string;
+  const clientSecret = spec.azure_client_secret as string;
+  const tenantId = spec.azure_tenant_id as string;
+  const subscriptionId = spec.azure_subscription_id as string;
+  const resourceGroup = spec.azure_resource_group as string || spec.resource_group as string || `uidi-${spec.environment || "default"}`;
+  const region = spec.azure_region as string || spec.region as string || "eastus";
+  if (!clientId || !clientSecret || !tenantId || !subscriptionId) {
+    return err("network", action, "Azure credentials required: azure_client_id, azure_client_secret, azure_tenant_id, azure_subscription_id");
+  }
+  let token: string;
+  try { token = await azureGetToken(tenantId, clientId, clientSecret); }
+  catch (e) { return err("network", action, `Azure auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const subBase = `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.Network`;
+  const azFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://management.azure.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await azFetch(`${subBase}/virtualNetworks?api-version=2023-04-01`);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `Azure credential validation failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("network", action, "Azure credentials validated — VNet stack ready to deploy", {
+        subscriptionId, resourceGroup, region, vnet_count: (data.value as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await azFetch(`${subBase}/virtualNetworks?api-version=2023-04-01`);
+      const body = await res.text();
+      if (!res.ok) return err("network", action, `Azure VNet list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const items = (data.value as Array<Record<string, unknown>> || []);
+      return ok("network", action, `Discovered ${items.length} Azure VNet(s)`, {
+        subscriptionId, resourceGroup, region,
+        vnets: items.map((v) => ({ name: v.name, id: v.id, location: v.location })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-vnet";
+      const cidr = spec.vpc_cidr as string || "10.0.0.0/16";
+      const subnetCidr = "10.0.1.0/24";
+      // NSG
+      const nsgRes = await azFetch(`${subBase}/networkSecurityGroups/${name}-nsg?api-version=2023-04-01`, "PUT",
+        JSON.stringify({
+          location: region,
+          properties: {
+            securityRules: [{
+              name: "AllowHTTPS",
+              properties: { priority: 100, protocol: "Tcp", access: "Allow", direction: "Inbound", sourceAddressPrefix: "*", sourcePortRange: "*", destinationAddressPrefix: "*", destinationPortRange: "443" },
+            }],
+          },
+        }));
+      const nsgBody = await nsgRes.text();
+      if (!nsgRes.ok) return err("network", action, `Azure CreateNSG failed: ${nsgBody.slice(0, 400)}`);
+      const nsgId = (JSON.parse(nsgBody) as Record<string, unknown>).id as string;
+      // VNet + Subnet
+      const vnetRes = await azFetch(`${subBase}/virtualNetworks/${name}?api-version=2023-04-01`, "PUT",
+        JSON.stringify({
+          location: region,
+          properties: {
+            addressSpace: { addressPrefixes: [cidr] },
+            subnets: [{ name: `${name}-subnet`, properties: { addressPrefix: subnetCidr, networkSecurityGroup: { id: nsgId } } }],
+          },
+        }));
+      const vnetBody = await vnetRes.text();
+      if (!vnetRes.ok) return err("network", action, `Azure CreateVNet failed: ${vnetBody.slice(0, 400)}`);
+      const vnet = JSON.parse(vnetBody) as Record<string, unknown>;
+      return ok("network", action, `Azure VNet ${name} deployed`, {
+        vnet_id: vnet.id, name, region, resourceGroup, subscriptionId, nsg_id: nsgId,
+      });
+    }
+    case "destroy": {
+      const name = spec.name as string || spec.vpc_id as string;
+      if (!name) return err("network", action, "name or vpc_id required for Azure destroy");
+      await azFetch(`${subBase}/virtualNetworks/${name}?api-version=2023-04-01`, "DELETE");
+      await azFetch(`${subBase}/networkSecurityGroups/${name}-nsg?api-version=2023-04-01`, "DELETE");
+      return ok("network", action, `Azure VNet ${name} destroyed`, { name, region, resourceGroup });
+    }
+    default:
+      return err("network", action, `Unknown Azure network action: ${action}`);
+  }
+}
+
+// ─── OCI EKS/OKE Handler ───
+
+async function ociEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const tenancy = spec.oci_tenancy_ocid as string;
+  const user = spec.oci_user_ocid as string;
+  const fingerprint = spec.oci_fingerprint as string;
+  const privateKey = spec.oci_private_key as string;
+  const region = spec.oci_region as string || spec.region as string || "us-ashburn-1";
+  const compartment = spec.oci_compartment_id as string || tenancy;
+  if (!tenancy || !user || !fingerprint || !privateKey) return err("eks", action, "OCI credentials required");
+  const host = `containerengine.${region}.oraclecloud.com`;
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await ociRequest("GET", host, `/20180222/clusters?compartmentId=${encodeURIComponent(compartment)}&limit=5`, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `OKE credential check failed: ${body.slice(0, 400)}`);
+      const clusters = JSON.parse(body) as unknown[];
+      return ok("eks", action, "OCI credentials validated — OKE cluster ready to deploy", {
+        region, compartment, cluster_count: clusters.length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await ociRequest("GET", host, `/20180222/clusters?compartmentId=${encodeURIComponent(compartment)}&limit=50`, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `OKE cluster list failed: ${body.slice(0, 400)}`);
+      const clusters = JSON.parse(body) as Array<Record<string, unknown>>;
+      return ok("eks", action, `Discovered ${clusters.length} OKE cluster(s)`, {
+        region, compartment,
+        clusters: clusters.map((c) => ({ id: c.id, name: c.name, lifecycleState: c.lifecycleState, kubernetesVersion: c.kubernetesVersion })),
+      });
+    }
+    case "deploy": {
+      const clusterName = spec.cluster_name as string || "uidi-oke";
+      const vcnId = spec.vcn_id as string;
+      const subnetIds = spec.subnet_ids as string[] || [];
+      const k8sVersion = spec.kubernetes_version as string || "v1.28.2";
+      if (!vcnId) return err("eks", action, "vcn_id required for OKE deploy");
+      const clusterRes = await ociRequest("POST", host, "/20180222/clusters", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({
+          name: clusterName, compartmentId: compartment, vcnId, kubernetesVersion: k8sVersion,
+          options: {
+            serviceLbSubnetIds: subnetIds.slice(0, 2),
+            kubernetesNetworkConfig: { podsCidr: "10.244.0.0/16", servicesCidr: "10.96.0.0/16" },
+          },
+        }));
+      const clusterBody = await clusterRes.text();
+      if (!clusterRes.ok) return err("eks", action, `OKE cluster create failed: ${clusterBody.slice(0, 400)}`);
+      return ok("eks", action, `OKE cluster ${clusterName} creation initiated`, {
+        cluster_name: clusterName, region, compartment, work_request_id: clusterRes.headers.get("opc-work-request-id"),
+      });
+    }
+    case "destroy": {
+      const clusterId = spec.cluster_id as string;
+      if (!clusterId) return err("eks", action, "cluster_id required for OKE destroy");
+      const delRes = await ociRequest("DELETE", host, `/20180222/clusters/${encodeURIComponent(clusterId)}`, tenancy, user, fingerprint, privateKey);
+      if (!delRes.ok && delRes.status !== 404) return err("eks", action, `OKE cluster delete failed: ${(await delRes.text()).slice(0, 400)}`);
+      return ok("eks", action, `OKE cluster ${clusterId} deletion initiated`, { cluster_id: clusterId, region });
+    }
+    default:
+      return err("eks", action, `Unknown OKE action: ${action}`);
+  }
+}
+
+// ─── GCP GKE Handler ───
+
+async function gcpEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const saJson = spec.gcp_service_account_json as string;
+  const projectId = spec.gcp_project_id as string;
+  const region = spec.gcp_region as string || spec.region as string || "us-central1";
+  if (!saJson || !projectId) return err("eks", action, "GCP credentials required: gcp_service_account_json, gcp_project_id");
+  let token: string;
+  try { token = await gcpGetToken(saJson, ["https://www.googleapis.com/auth/cloud-platform"]); }
+  catch (e) { return err("eks", action, `GCP auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const gkeFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://container.googleapis.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await gkeFetch(`/v1/projects/${projectId}/locations/${region}/clusters?pageSize=5`);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `GKE credential check failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("eks", action, "GCP credentials validated — GKE cluster ready to deploy", {
+        projectId, region, cluster_count: (data.clusters as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await gkeFetch(`/v1/projects/${projectId}/locations/-/clusters`);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `GKE cluster list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const clusters = (data.clusters as Array<Record<string, unknown>> || []);
+      return ok("eks", action, `Discovered ${clusters.length} GKE cluster(s)`, {
+        projectId, region,
+        clusters: clusters.map((c) => ({ name: c.name, location: c.location, status: c.status, currentMasterVersion: c.currentMasterVersion })),
+      });
+    }
+    case "deploy": {
+      const clusterName = spec.cluster_name as string || "uidi-gke";
+      const network = spec.network as string || "default";
+      const subnetwork = spec.subnetwork as string || "default";
+      const k8sVersion = spec.kubernetes_version as string || "1.28";
+      const res = await gkeFetch(`/v1/projects/${projectId}/locations/${region}/clusters`, "POST",
+        JSON.stringify({
+          cluster: {
+            name: clusterName, initialNodeCount: 1, network, subnetwork, initialClusterVersion: k8sVersion,
+            nodePools: [{
+              name: "default-pool", initialNodeCount: 1,
+              config: { machineType: "e2-standard-2", diskSizeGb: 100, oauthScopes: ["https://www.googleapis.com/auth/cloud-platform"] },
+            }],
+          },
+        }));
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `GKE cluster create failed: ${body.slice(0, 400)}`);
+      const op = JSON.parse(body) as Record<string, unknown>;
+      return ok("eks", action, `GKE cluster ${clusterName} creation initiated`, { cluster_name: clusterName, region, projectId, operation_id: op.name });
+    }
+    case "destroy": {
+      const clusterName = spec.cluster_name as string;
+      if (!clusterName) return err("eks", action, "cluster_name required for GKE destroy");
+      const res = await gkeFetch(`/v1/projects/${projectId}/locations/${region}/clusters/${clusterName}`, "DELETE");
+      if (!res.ok && res.status !== 404) return err("eks", action, `GKE cluster delete failed: ${(await res.text()).slice(0, 400)}`);
+      return ok("eks", action, `GKE cluster ${clusterName} deletion initiated`, { cluster_name: clusterName, region, projectId });
+    }
+    default:
+      return err("eks", action, `Unknown GKE action: ${action}`);
+  }
+}
+
+// ─── Azure AKS Handler ───
+
+async function azureEks(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const clientId = spec.azure_client_id as string;
+  const clientSecret = spec.azure_client_secret as string;
+  const tenantId = spec.azure_tenant_id as string;
+  const subscriptionId = spec.azure_subscription_id as string;
+  const resourceGroup = spec.azure_resource_group as string || spec.resource_group as string || `uidi-${spec.environment || "default"}`;
+  const region = spec.azure_region as string || spec.region as string || "eastus";
+  if (!clientId || !clientSecret || !tenantId || !subscriptionId) {
+    return err("eks", action, "Azure credentials required: azure_client_id, azure_client_secret, azure_tenant_id, azure_subscription_id");
+  }
+  let token: string;
+  try { token = await azureGetToken(tenantId, clientId, clientSecret); }
+  catch (e) { return err("eks", action, `Azure auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const subBase = `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.ContainerService`;
+  const azFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://management.azure.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await azFetch(`${subBase}/managedClusters?api-version=2023-04-02-preview`);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `AKS credential check failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("eks", action, "Azure credentials validated — AKS cluster ready to deploy", {
+        subscriptionId, resourceGroup, region, cluster_count: (data.value as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await azFetch(`${subBase}/managedClusters?api-version=2023-04-02-preview`);
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `AKS cluster list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const items = (data.value as Array<Record<string, unknown>> || []);
+      return ok("eks", action, `Discovered ${items.length} AKS cluster(s)`, {
+        subscriptionId, resourceGroup, region,
+        clusters: items.map((c) => ({ name: c.name, location: c.location, provisioningState: (c.properties as Record<string, unknown>)?.provisioningState })),
+      });
+    }
+    case "deploy": {
+      const clusterName = spec.cluster_name as string || "uidi-aks";
+      const k8sVersion = spec.kubernetes_version as string || "1.28.0";
+      const subnetId = spec.subnet_id as string;
+      const res = await azFetch(`${subBase}/managedClusters/${clusterName}?api-version=2023-04-02-preview`, "PUT",
+        JSON.stringify({
+          location: region,
+          properties: {
+            kubernetesVersion: k8sVersion, dnsPrefix: clusterName,
+            agentPoolProfiles: [{
+              name: "agentpool", count: 1, vmSize: "Standard_D2_v2", mode: "System",
+              ...(subnetId ? { vnetSubnetID: subnetId } : {}),
+            }],
+            networkProfile: { networkPlugin: "kubenet" },
+          },
+        }));
+      const body = await res.text();
+      if (!res.ok) return err("eks", action, `AKS cluster create failed: ${body.slice(0, 400)}`);
+      const cluster = JSON.parse(body) as Record<string, unknown>;
+      return ok("eks", action, `AKS cluster ${clusterName} creation initiated`, {
+        cluster_name: clusterName, region, subscriptionId, resourceGroup,
+        provisioning_state: (cluster.properties as Record<string, unknown>)?.provisioningState,
+      });
+    }
+    case "destroy": {
+      const clusterName = spec.cluster_name as string;
+      if (!clusterName) return err("eks", action, "cluster_name required for AKS destroy");
+      const res = await azFetch(`${subBase}/managedClusters/${clusterName}?api-version=2023-04-02-preview`, "DELETE");
+      if (!res.ok && res.status !== 404 && res.status !== 202) return err("eks", action, `AKS cluster delete failed: ${(await res.text()).slice(0, 400)}`);
+      return ok("eks", action, `AKS cluster ${clusterName} deletion initiated`, { cluster_name: clusterName, region, resourceGroup });
+    }
+    default:
+      return err("eks", action, `Unknown AKS action: ${action}`);
+  }
+}
+
+// ─── OCI Compute Handler ───
+
+async function ociCompute(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const tenancy = spec.oci_tenancy_ocid as string;
+  const user = spec.oci_user_ocid as string;
+  const fingerprint = spec.oci_fingerprint as string;
+  const privateKey = spec.oci_private_key as string;
+  const region = spec.oci_region as string || spec.region as string || "us-ashburn-1";
+  const compartment = spec.oci_compartment_id as string || tenancy;
+  if (!tenancy || !user || !fingerprint || !privateKey) return err("compute", action, "OCI credentials required");
+  const host = `iaas.${region}.oraclecloud.com`;
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await ociRequest("GET", host, `/20160918/instances?compartmentId=${encodeURIComponent(compartment)}&limit=5`, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `OCI credential check failed: ${body.slice(0, 400)}`);
+      const instances = JSON.parse(body) as unknown[];
+      return ok("compute", action, "OCI credentials validated — compute instance ready to deploy", {
+        region, compartment, instance_count: instances.length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await ociRequest("GET", host, `/20160918/instances?compartmentId=${encodeURIComponent(compartment)}&limit=50`, tenancy, user, fingerprint, privateKey);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `OCI instance list failed: ${body.slice(0, 400)}`);
+      const instances = JSON.parse(body) as Array<Record<string, unknown>>;
+      return ok("compute", action, `Discovered ${instances.length} OCI instance(s)`, {
+        region, compartment,
+        instances: instances.map((i) => ({ id: i.id, displayName: i.displayName, lifecycleState: i.lifecycleState, shape: i.shape })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-instance";
+      const shape = spec.instance_type as string || "VM.Standard.E4.Flex";
+      const subnetId = spec.subnet_id as string;
+      const imageId = spec.image_id as string;
+      if (!subnetId) return err("compute", action, "subnet_id required for OCI compute deploy");
+      if (!imageId) return err("compute", action, "image_id required for OCI compute deploy");
+      const instanceRes = await ociRequest("POST", host, "/20160918/instances", tenancy, user, fingerprint, privateKey,
+        JSON.stringify({
+          displayName: name, compartmentId: compartment, shape,
+          shapeConfig: shape.includes("Flex") ? { ocpus: 1, memoryInGBs: 6 } : undefined,
+          sourceDetails: { sourceType: "image", imageId },
+          createVnicDetails: { subnetId },
+        }));
+      const instanceBody = await instanceRes.text();
+      if (!instanceRes.ok) return err("compute", action, `OCI LaunchInstance failed: ${instanceBody.slice(0, 400)}`);
+      const instance = JSON.parse(instanceBody) as Record<string, unknown>;
+      return ok("compute", action, `OCI instance ${name} launched`, { instance_id: instance.id, name, region, compartment, shape });
+    }
+    case "destroy": {
+      const instanceId = spec.instance_id as string;
+      if (!instanceId) return err("compute", action, "instance_id required for OCI compute destroy");
+      const delRes = await ociRequest("DELETE", host, `/20160918/instances/${encodeURIComponent(instanceId)}?preserveBootVolume=false`, tenancy, user, fingerprint, privateKey);
+      if (!delRes.ok && delRes.status !== 404) return err("compute", action, `OCI instance terminate failed: ${(await delRes.text()).slice(0, 400)}`);
+      return ok("compute", action, `OCI instance ${instanceId} termination initiated`, { instance_id: instanceId, region });
+    }
+    default:
+      return err("compute", action, `Unknown OCI compute action: ${action}`);
+  }
+}
+
+// ─── GCP Compute Handler ───
+
+async function gcpCompute(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const saJson = spec.gcp_service_account_json as string;
+  const projectId = spec.gcp_project_id as string;
+  const region = spec.gcp_region as string || spec.region as string || "us-central1";
+  const zone = spec.zone as string || `${region}-a`;
+  if (!saJson || !projectId) return err("compute", action, "GCP credentials required: gcp_service_account_json, gcp_project_id");
+  let token: string;
+  try { token = await gcpGetToken(saJson, ["https://www.googleapis.com/auth/cloud-platform"]); }
+  catch (e) { return err("compute", action, `GCP auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const gcpFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://compute.googleapis.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/zones/${zone}/instances?maxResults=5`);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `GCP credential check failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("compute", action, "GCP credentials validated — compute instance ready to deploy", {
+        projectId, zone, instance_count: (data.items as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/zones/${zone}/instances`);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `GCP instance list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const items = (data.items as Array<Record<string, unknown>> || []);
+      return ok("compute", action, `Discovered ${items.length} GCP instance(s)`, {
+        projectId, zone,
+        instances: items.map((i) => ({ name: i.name, id: i.id, status: i.status, machineType: i.machineType })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-instance";
+      const machineType = spec.instance_type as string || "e2-medium";
+      const network = spec.network as string || "default";
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/zones/${zone}/instances`, "POST",
+        JSON.stringify({
+          name, machineType: `zones/${zone}/machineTypes/${machineType}`,
+          networkInterfaces: [{ network: `projects/${projectId}/global/networks/${network}`, accessConfigs: [{ type: "ONE_TO_ONE_NAT" }] }],
+          disks: [{ boot: true, autoDelete: true, initializeParams: { sourceImage: "projects/debian-cloud/global/images/family/debian-11", diskSizeGb: "20" } }],
+        }));
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `GCP instance create failed: ${body.slice(0, 400)}`);
+      const op = JSON.parse(body) as Record<string, unknown>;
+      return ok("compute", action, `GCP instance ${name} creation initiated`, { name, zone, projectId, operation_id: op.name });
+    }
+    case "destroy": {
+      const name = spec.name as string || spec.instance_id as string;
+      if (!name) return err("compute", action, "name or instance_id required for GCP compute destroy");
+      const res = await gcpFetch(`/compute/v1/projects/${projectId}/zones/${zone}/instances/${name}`, "DELETE");
+      if (!res.ok && res.status !== 404) return err("compute", action, `GCP instance delete failed: ${(await res.text()).slice(0, 400)}`);
+      return ok("compute", action, `GCP instance ${name} deletion initiated`, { name, zone, projectId });
+    }
+    default:
+      return err("compute", action, `Unknown GCP compute action: ${action}`);
+  }
+}
+
+// ─── Azure Compute Handler ───
+
+async function azureCompute(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const clientId = spec.azure_client_id as string;
+  const clientSecret = spec.azure_client_secret as string;
+  const tenantId = spec.azure_tenant_id as string;
+  const subscriptionId = spec.azure_subscription_id as string;
+  const resourceGroup = spec.azure_resource_group as string || spec.resource_group as string || `uidi-${spec.environment || "default"}`;
+  const region = spec.azure_region as string || spec.region as string || "eastus";
+  if (!clientId || !clientSecret || !tenantId || !subscriptionId) {
+    return err("compute", action, "Azure credentials required: azure_client_id, azure_client_secret, azure_tenant_id, azure_subscription_id");
+  }
+  let token: string;
+  try { token = await azureGetToken(tenantId, clientId, clientSecret); }
+  catch (e) { return err("compute", action, `Azure auth failed: ${e instanceof Error ? e.message : String(e)}`); }
+  const subBase = `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.Compute`;
+  const netBase = `/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.Network`;
+  const azFetch = (path: string, method = "GET", body?: string) =>
+    fetch(`https://management.azure.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      ...(body ? { body } : {}),
+    });
+
+  switch (action) {
+    case "dry_run":
+    case "plan": {
+      const res = await azFetch(`${subBase}/virtualMachines?api-version=2023-03-01`);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `Azure credential check failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      return ok("compute", action, "Azure credentials validated — VM ready to deploy", {
+        subscriptionId, resourceGroup, region, vm_count: (data.value as unknown[] || []).length, dry_run: true,
+      });
+    }
+    case "discover": {
+      const res = await azFetch(`${subBase}/virtualMachines?api-version=2023-03-01`);
+      const body = await res.text();
+      if (!res.ok) return err("compute", action, `Azure VM list failed: ${body.slice(0, 400)}`);
+      const data = JSON.parse(body) as Record<string, unknown>;
+      const items = (data.value as Array<Record<string, unknown>> || []);
+      return ok("compute", action, `Discovered ${items.length} Azure VM(s)`, {
+        subscriptionId, resourceGroup, region,
+        vms: items.map((v) => ({ name: v.name, location: v.location, provisioningState: (v.properties as Record<string, unknown>)?.provisioningState })),
+      });
+    }
+    case "deploy": {
+      const name = spec.name as string || "uidi-vm";
+      const vmSize = spec.instance_type as string || "Standard_B2s";
+      const subnetId = spec.subnet_id as string;
+      // NIC
+      const nicRes = await azFetch(`${netBase}/networkInterfaces/${name}-nic?api-version=2023-04-01`, "PUT",
+        JSON.stringify({
+          location: region,
+          properties: {
+            ipConfigurations: [{
+              name: "ipconfig1",
+              properties: { privateIPAllocationMethod: "Dynamic", ...(subnetId ? { subnet: { id: subnetId } } : {}) },
+            }],
+          },
+        }));
+      const nicBody = await nicRes.text();
+      if (!nicRes.ok) return err("compute", action, `Azure CreateNIC failed: ${nicBody.slice(0, 400)}`);
+      const nicId = (JSON.parse(nicBody) as Record<string, unknown>).id as string;
+      // VM
+      const vmRes = await azFetch(`${subBase}/virtualMachines/${name}?api-version=2023-03-01`, "PUT",
+        JSON.stringify({
+          location: region,
+          properties: {
+            hardwareProfile: { vmSize },
+            storageProfile: {
+              imageReference: { publisher: "Canonical", offer: "UbuntuServer", sku: "18.04-LTS", version: "latest" },
+              osDisk: { createOption: "FromImage", diskSizeGB: 30 },
+            },
+            osProfile: { computerName: name, adminUsername: "uidi", adminPassword: `Uidi-${Date.now()}!` },
+            networkProfile: { networkInterfaces: [{ id: nicId }] },
+          },
+        }));
+      const vmBody = await vmRes.text();
+      if (!vmRes.ok) return err("compute", action, `Azure CreateVM failed: ${vmBody.slice(0, 400)}`);
+      const vm = JSON.parse(vmBody) as Record<string, unknown>;
+      return ok("compute", action, `Azure VM ${name} creation initiated`, { vm_id: vm.id, name, region, resourceGroup, subscriptionId });
+    }
+    case "destroy": {
+      const name = spec.name as string || spec.instance_id as string;
+      if (!name) return err("compute", action, "name or instance_id required for Azure compute destroy");
+      await azFetch(`${subBase}/virtualMachines/${name}?api-version=2023-03-01`, "DELETE");
+      await azFetch(`${netBase}/networkInterfaces/${name}-nic?api-version=2023-04-01`, "DELETE");
+      return ok("compute", action, `Azure VM ${name} deletion initiated`, { name, region, resourceGroup });
+    }
+    default:
+      return err("compute", action, `Unknown Azure compute action: ${action}`);
+  }
 }
 
 // ───── Reconciliation Engine (Drift Controller) ─────
@@ -3543,6 +4440,25 @@ async function fetchVaultCredentials(authHeader: string, provider = "aws", label
   }
 }
 
+async function fetchVaultCredentialsRaw(authHeader: string, provider: string, label = "default"): Promise<Record<string, string> | null> {
+  try {
+    const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/credential-vault`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": authHeader,
+        "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
+      },
+      body: JSON.stringify({ action: "retrieve", provider, label }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    return (data.credentials as Record<string, string>) || null;
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -3557,13 +4473,35 @@ serve(async (req) => {
       );
     }
 
-    // Inject vault credentials into spec if not already present in env or spec
-    if (!Deno.env.get("AWS_ACCESS_KEY_ID") && !spec.access_key_id) {
-      const authHeader = req.headers.get("Authorization") || "";
-      const vaultCreds = await fetchVaultCredentials(authHeader);
-      if (vaultCreds) {
-        spec.access_key_id = vaultCreds.access_key_id;
-        spec.secret_access_key = vaultCreds.secret_access_key;
+    // Inject vault credentials into spec
+    const specProvider = ((spec.provider as string) || "aws").toLowerCase();
+    const authHeader = req.headers.get("Authorization") || "";
+    if (specProvider === "aws") {
+      if (!Deno.env.get("AWS_ACCESS_KEY_ID") && !spec.access_key_id) {
+        const vaultCreds = await fetchVaultCredentials(authHeader);
+        if (vaultCreds) {
+          spec.access_key_id = vaultCreds.access_key_id;
+          spec.secret_access_key = vaultCreds.secret_access_key;
+        }
+      }
+    } else {
+      const rawCreds = await fetchVaultCredentialsRaw(authHeader, specProvider);
+      if (rawCreds) {
+        if (specProvider === "oci") {
+          spec.oci_tenancy_ocid = spec.oci_tenancy_ocid || rawCreds.tenancyOcid;
+          spec.oci_user_ocid = spec.oci_user_ocid || rawCreds.userOcid;
+          spec.oci_fingerprint = spec.oci_fingerprint || rawCreds.fingerprint;
+          spec.oci_private_key = spec.oci_private_key || rawCreds.privateKey;
+          if (!spec.oci_region && rawCreds.region) spec.oci_region = rawCreds.region;
+        } else if (specProvider === "gcp") {
+          spec.gcp_service_account_json = spec.gcp_service_account_json || rawCreds.serviceAccountJson;
+          spec.gcp_project_id = spec.gcp_project_id || rawCreds.projectId;
+        } else if (specProvider === "azure") {
+          spec.azure_tenant_id = spec.azure_tenant_id || rawCreds.tenantId;
+          spec.azure_client_id = spec.azure_client_id || rawCreds.clientId;
+          spec.azure_client_secret = spec.azure_client_secret || rawCreds.clientSecret;
+          spec.azure_subscription_id = spec.azure_subscription_id || rawCreds.subscriptionId;
+        }
       }
     }
 

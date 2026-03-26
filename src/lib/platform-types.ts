@@ -4,12 +4,13 @@
 
 // ───── Cloud Providers ─────
 
-export type CloudProvider = "aws" | "gcp" | "azure";
+export type CloudProvider = "aws" | "gcp" | "azure" | "oci";
 
 export const PROVIDER_OPTIONS: { value: CloudProvider; label: string; icon: string }[] = [
   { value: "aws", label: "Amazon Web Services", icon: "☁️" },
   { value: "gcp", label: "Google Cloud Platform", icon: "🔷" },
   { value: "azure", label: "Microsoft Azure", icon: "🔶" },
+  { value: "oci", label: "Oracle Cloud Infrastructure", icon: "🔴" },
 ];
 
 // ───── User Segments ─────
@@ -41,21 +42,21 @@ export const SEGMENT_LIMITS: Record<UserSegment, {
     maxIntentsPerHour: 10,
   },
   developer: {
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     maxCredentials: 3,
     canNuke: true,
     canReconcile: true,
     maxIntentsPerHour: 100,
   },
   team: {
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     maxCredentials: 10,
     canNuke: true,
     canReconcile: true,
     maxIntentsPerHour: 500,
   },
   enterprise: {
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     maxCredentials: 50,
     canNuke: true,
     canReconcile: true,

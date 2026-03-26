@@ -392,6 +392,7 @@ export default function Index() {
             <OrchestrationPanel
               resources={detectedResources}
               region={intent.region}
+              drRegion={intent.drRegion}
               environment={intent.environment}
               workloadType={intent.workloadType}
               instanceType={config.instanceType}

@@ -17,7 +17,7 @@ import {
   FileCheck,
 } from "lucide-react";
 
-export type CloudProvider = "aws" | "gcp" | "azure";
+export type CloudProvider = "aws" | "gcp" | "azure" | "oci";
 
 export interface PreflightStep {
   id: string;
@@ -62,7 +62,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "VPC Foundation",
     description: "VPC + Subnets + IGW + NAT GW + Route Tables + SG. Multi-AZ, JIT per-layer credentials. The dependency root for all subsequent Golden Paths.",
     icon: "🌐",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Foundation",
     sloAvailability: 99.99,
     estimatedDeployMin: 4,
@@ -71,6 +71,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC", "Subnets (×4)", "IGW", "NAT-GW", "Route Tables", "Security Group"],
       gcp: ["VPC Network", "Subnets", "Cloud NAT", "Cloud Router", "Firewall Rules"],
       azure: ["VNet", "Subnets", "NAT Gateway", "NSGs", "Route Tables"],
+      oci: ["VCN", "Subnets (×4)", "IGW", "NAT Gateway", "Route Tables", "Security Lists"],
     },
     jitScope: ["ec2:CreateVpc", "ec2:CreateSubnet", "ec2:CreateNatGateway", "ec2:CreateSecurityGroup"],
     jitTtl: "1–5 min per layer",
@@ -86,7 +87,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Web Standard",
     description: "ALB + ECS Fargate + RDS Aurora Serverless v2. Auto-scaling compute with managed database.",
     icon: "🏗️",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 12,
@@ -95,6 +96,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "RDS Aurora Serverless v2", "ALB", "ECS Fargate"],
       gcp: ["Cloud LB", "Cloud Run", "Cloud SQL (HA)", "VPC (dep)"],
       azure: ["App Gateway", "Container Apps", "Azure SQL (HA)", "VNet (dep)"],
+      oci: ["VCN (dep)", "Subnets (×4)", "NSG", "Autonomous DB", "Load Balancer", "Container Instances"],
     },
     jitScope: ["ecs:CreateService", "rds:CreateDBCluster", "elasticloadbalancing:CreateLoadBalancer"],
     jitTtl: "3–8 min per layer",
@@ -110,7 +112,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Event-Driven Pipeline",
     description: "Lambda + SQS + DynamoDB. Serverless async with DLQ, retries, and exactly-once semantics.",
     icon: "📨",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 5,
@@ -119,6 +121,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["IAM Roles", "SQS", "DLQ", "DynamoDB", "EventBridge", "Lambda"],
       gcp: ["Pub/Sub", "Cloud Functions", "Firestore", "Eventarc", "DLQ"],
       azure: ["Service Bus", "Azure Functions", "Cosmos DB", "Event Grid", "DLQ"],
+      oci: ["Dynamic Groups", "Queue", "DLQ", "NoSQL DB", "Events", "Functions"],
     },
     jitScope: ["sqs:CreateQueue", "lambda:CreateFunction", "dynamodb:CreateTable"],
     jitTtl: "2–5 min per layer",
@@ -134,7 +137,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Secure Edge",
     description: "CloudFront + WAF + Intent-based API Gateway. Global CDN with edge security and TLS.",
     icon: "🛡️",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Hardened",
     sloAvailability: 99.95,
     estimatedDeployMin: 8,
@@ -143,6 +146,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["CloudFront", "WAF", "API Gateway", "ACM", "S3 Origin"],
       gcp: ["Cloud CDN", "Cloud Armor", "API Gateway", "SSL Cert", "GCS Origin"],
       azure: ["Front Door", "WAF Policy", "API Management", "App Service Cert"],
+      oci: ["CDN", "WAF", "API Gateway", "Certificates", "Object Storage Origin"],
     },
     jitScope: ["cloudfront:CreateDistribution", "wafv2:CreateWebACL"],
     jitTtl: "3–6 min per layer",
@@ -158,7 +162,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Container Platform (K8s)",
     description: "Managed Kubernetes with node pools, IRSA/Workload Identity, and ingress controller.",
     icon: "🐳",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 15,
@@ -167,6 +171,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "IRSA", "ALB", "EKS", "Node Groups", "ALB Ingress", "EBS CSI"],
       gcp: ["GKE", "Node Pools", "Ingress", "Workload Identity", "PD CSI"],
       azure: ["AKS", "Node Pools", "AGIC", "Managed Identity", "Disk CSI"],
+      oci: ["VCN (dep)", "Subnets (×4)", "NSG", "Dynamic Groups", "OKE", "Node Pools", "LB Ingress", "Block Volume CSI"],
     },
     jitScope: ["eks:CreateCluster", "ec2:RunInstances", "iam:CreateRole"],
     jitTtl: "5–15 min per layer",
@@ -182,7 +187,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Serverless API",
     description: "Functions + API Gateway + least-privilege IAM. Zero servers, auto-scaling by default.",
     icon: "⚡",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 3,
@@ -191,6 +196,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["Lambda", "API Gateway", "IAM Roles", "CloudWatch Logs"],
       gcp: ["Cloud Functions", "API Gateway", "IAM", "Cloud Logging"],
       azure: ["Azure Functions", "API Management", "Managed Identity", "App Insights"],
+      oci: ["Functions", "API Gateway", "Dynamic Groups", "Logging"],
     },
     jitScope: ["lambda:CreateFunction", "apigateway:CreateRestApi"],
     jitTtl: "2–4 min per layer",
@@ -206,7 +212,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Fintech / PCI-DSS",
     description: "Payment-grade infra: Vault integration, mTLS, zero-trust network, encryption everywhere.",
     icon: "🏦",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Hardened",
     sloAvailability: 99.99,
     estimatedDeployMin: 20,
@@ -215,6 +221,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (zero-trust)", "Subnets (×4)", "Security Group", "IAM Roles", "KMS", "Secrets Manager", "RDS", "EKS", "WAF"],
       gcp: ["GKE", "Cloud SQL", "Cloud KMS", "Secret Manager", "VPC-SC"],
       azure: ["AKS", "Azure SQL", "Key Vault", "VNet (zero-trust)", "WAF"],
+      oci: ["OKE", "Autonomous DB", "Vault (KMS)", "Secrets", "VCN (zero-trust)", "WAF"],
     },
     jitScope: ["kms:CreateKey", "secretsmanager:CreateSecret"],
     jitTtl: "3–10 min per layer",
@@ -230,7 +237,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Service Mesh",
     description: "Managed mesh with mTLS, circuit breakers, retries, and distributed tracing.",
     icon: "🕸️",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Hardened",
     sloAvailability: 99.9,
     estimatedDeployMin: 15,
@@ -239,6 +246,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "Cloud Map", "X-Ray", "ALB", "EKS", "App Mesh"],
       gcp: ["GKE", "Anthos Service Mesh", "Cloud Trace", "Cloud LB"],
       azure: ["AKS", "OSM / Istio", "App Insights", "App Gateway"],
+      oci: ["OKE", "OCI Service Mesh", "APM", "Load Balancer"],
     },
     jitScope: ["appmesh:CreateMesh", "eks:UpdateClusterConfig"],
     jitTtl: "5–12 min per layer",
@@ -254,7 +262,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "ML Training Pipeline",
     description: "GPU compute with spot/preemptible instances, checkpointing, and cost guardrails.",
     icon: "🧠",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "AI-Ops",
     sloAvailability: 95.0,
     estimatedDeployMin: 10,
@@ -263,6 +271,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "S3", "EBS", "EC2 (GPU)", "Spot Fleet", "CloudWatch GPU Metrics"],
       gcp: ["Compute (GPU)", "GCS", "Persistent Disk", "Vertex AI", "Preemptible VMs"],
       azure: ["NC-series VMs", "Blob Storage", "Managed Disks", "Azure ML", "Spot VMs"],
+      oci: ["GPU Compute", "Object Storage", "Block Volumes", "Data Science", "Preemptible VMs"],
     },
     jitScope: ["ec2:RunInstances", "s3:CreateBucket"],
     jitTtl: "5–15 min per layer",
@@ -278,7 +287,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "Multi-Region DR",
     description: "Active-passive replication with automated failover, RTO < 15min, RPO < 1min.",
     icon: "🛡️",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Hardened",
     sloAvailability: 99.999,
     estimatedDeployMin: 25,
@@ -287,6 +296,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["VPC (dep)", "Subnets (×4)", "Security Group", "IAM Roles", "RDS Global", "S3 Cross-Region", "DynamoDB Global Tables", "Route53 ARC", "EKS"],
       gcp: ["Cloud DNS", "Cloud SQL (cross-region)", "GCS Dual-Region", "GKE Multi-Cluster"],
       azure: ["Traffic Manager", "Azure SQL Geo-Replication", "Blob Geo-Redundant", "AKS Fleet"],
+      oci: ["DNS Traffic Steering", "Autonomous DB (Data Guard)", "Object Storage (Cross-Region)", "OKE Multi-Region"],
     },
     jitScope: ["route53:CreateHealthCheck", "rds:CreateGlobalCluster"],
     jitTtl: "5–20 min per layer",
@@ -302,7 +312,7 @@ const CATALOG: GoldenPathEntry[] = [
     name: "OpenClaw Cloud Deployment (GP2)",
     description: "Production topology for always-on operation: Linux VPS gateway (systemd) + macOS node (OpenClaw.app) connected over Tailscale WebSocket. No public ports. Nix-managed, reproducible, agent-first.",
     icon: "🦞",
-    providers: ["aws", "gcp", "azure"],
+    providers: ["aws", "gcp", "azure", "oci"],
     tier: "Standard",
     sloAvailability: 99.9,
     estimatedDeployMin: 10,
@@ -311,6 +321,7 @@ const CATALOG: GoldenPathEntry[] = [
       aws: ["EC2 (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
       gcp: ["Compute Engine (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
       azure: ["Linux VM (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
+      oci: ["Compute (VPS Gateway)", "Tailscale Tailnet", "Nix Flake", "systemd Service", "OpenClaw.app Node"],
     },
     jitScope: ["ec2:RunInstances", "ec2:CreateSecurityGroup"],
     jitTtl: "3–8 min per layer",
@@ -326,6 +337,7 @@ const PROVIDER_LABELS: Record<CloudProvider, { label: string; color: string }> =
   aws: { label: "AWS", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
   gcp: { label: "GCP", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
   azure: { label: "Azure", color: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
+  oci: { label: "OCI", color: "bg-red-500/10 text-red-400 border-red-500/20" },
 };
 
 const TIER_COLORS: Record<string, string> = {
@@ -392,6 +404,7 @@ export function GoldenPathCatalog({ onSelect }: GoldenPathCatalogProps) {
             <TabsTrigger value="aws" className="text-[10px] h-7 px-3 rounded-md">AWS</TabsTrigger>
             <TabsTrigger value="gcp" className="text-[10px] h-7 px-3 rounded-md">GCP</TabsTrigger>
             <TabsTrigger value="azure" className="text-[10px] h-7 px-3 rounded-md">Azure</TabsTrigger>
+            <TabsTrigger value="oci" className="text-[10px] h-7 px-3 rounded-md">OCI</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>

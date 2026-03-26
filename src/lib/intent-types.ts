@@ -99,6 +99,7 @@ export interface ParsedIntent {
   costSensitivity: CostSensitivity;
   environment: Environment;
   region: AwsRegion;
+  drRegion?: AwsRegion;
   os: OsType;
   resources?: string[];
 }
