@@ -852,12 +852,15 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
       const ami = AMI_MAP[region]?.[os];
       if (!ami) return err("compute", action, `No AMI for ${os} in ${region}. Try us-east-1.`);
 
-      // Idempotency via ClientToken — scoped per deployment session
-      // If caller provides an explicit token, honour it (true retry).
-      // Otherwise generate a session-unique token so re-deploys with changed
-      // parameters (AMI, count, tags, etc.) never collide with prior runs.
-      const clientToken = spec.client_token as string
-        || `uidi-${name}-${environment}-${instanceType}-${os}-${count}-${region}-${ami}`;
+      // Idempotency via ClientToken — deterministic hash ≤64 chars
+      // Same params → same token (idempotent retry). Changed params → new token.
+      let clientToken = spec.client_token as string;
+      if (!clientToken) {
+        const raw = `uidi:${name}:${environment}:${instanceType}:${os}:${count}:${region}:${ami}`;
+        const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+        clientToken = `uidi-${hashHex.slice(0, 59)}`; // "uidi-" (5) + 59 hex = 64 chars
+      }
 
       const params = new URLSearchParams({
         Action: "RunInstances",
