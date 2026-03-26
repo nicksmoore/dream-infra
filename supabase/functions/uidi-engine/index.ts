@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 import { dolt, DoltResource } from "./dolt-client.ts";
+import type { PreparedRequest } from "./manifest-types.ts";
 
 // ───── Raw AWS API Executor (zero SDK dependencies) ─────
 // All AWS calls use SigV4-signed HTTP requests via awsSignedRequest().
@@ -4285,6 +4286,7 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
             intent_hash: await sha256Hex(JSON.stringify(op)),
             ztai_record_index: `ztai-${Date.now()}-${op.id}`, // Mock ZTAI link
             observed_at: new Date().toISOString(),
+            manifest_version: "0",
             state_json: result || {},
           }, `Auto-commit: ${op.service}.${op.command} for ${resourceId}`);
         } catch (de) {
