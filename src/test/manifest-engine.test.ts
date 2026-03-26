@@ -16,7 +16,7 @@ describe("ManifestSchema — validation", () => {
       ...rawManifest,
       entries: [
         {
-          ...(rawManifest as any).entries[0],
+          ...(rawManifest.entries as any[])[0],
           provider: "alibaba",
         },
       ],
@@ -29,7 +29,7 @@ describe("ManifestSchema — validation", () => {
       ...rawManifest,
       entries: [
         {
-          ...(rawManifest as any).entries[0],
+          ...(rawManifest.entries as any[])[0],
           provider: "aws",
           signing: {
             strategy: "AWS_SIGV4",
@@ -48,7 +48,7 @@ describe("ManifestSchema — validation", () => {
       ...rawManifest,
       entries: [
         {
-          ...(rawManifest as any).entries[0],
+          ...(rawManifest.entries as any[])[0],
           action: "create", // not in the action enum
         },
       ],
