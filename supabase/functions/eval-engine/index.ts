@@ -103,7 +103,7 @@ serve(async (req: Request) => {
     const isNl = !templateId;
 
     const template = templateId
-      ? (GOLDEN_PATH_REGISTRY.find(t => t.id === templateId) ?? NL_SYNTHETIC_TEMPLATE)
+      ? (GOLDEN_PATH_REGISTRY.find((t: GoldenPathTemplateSubset) => t.id === templateId) ?? NL_SYNTHETIC_TEMPLATE)
       : NL_SYNTHETIC_TEMPLATE;
 
     const allIterations: EvalResult[] = [];
