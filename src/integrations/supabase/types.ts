@@ -435,7 +435,7 @@ export type Database = {
         | "logic_builder"
         | "core_architect"
         | "bounty_winner"
-      cloud_provider: "aws" | "gcp" | "azure" | "oci"
+      cloud_provider: "aws" | "gcp" | "azure"
       contributor_tier: "intent" | "logic" | "core"
       user_segment: "free" | "developer" | "team" | "enterprise"
     }
