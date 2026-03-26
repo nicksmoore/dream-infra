@@ -23,6 +23,7 @@ describe("Dolt State Layer (ADR-003)", () => {
       intent_hash: "hash-abc",
       ztai_record_index: "ztai-001",
       observed_at: new Date().toISOString(),
+      manifest_version: "0",
       state_json: { VpcId: "vpc-123", CidrBlock: "10.0.0.0/16" },
     };
 
@@ -47,6 +48,7 @@ describe("Dolt State Layer (ADR-003)", () => {
       intent_hash: "h1",
       ztai_record_index: "z1",
       observed_at: new Date().toISOString(),
+      manifest_version: "0",
       state_json: { VpcId: "vpc-123", Tags: [{ Key: "Env", Value: "dev" }] },
     };
     const hash1 = await dolt.writeResource(res1, "Create VPC");
@@ -64,5 +66,39 @@ describe("Dolt State Layer (ADR-003)", () => {
     expect(diffs[0].resource_id).toBe("vpc-123");
     expect(diffs[0].old_state.Tags[0].Value).toBe("dev");
     expect(diffs[0].new_state.Tags[0].Value).toBe("prod");
+  });
+
+  it("writeResource accepts a DoltResource with manifest_version", async () => {
+    const resource: DoltResource = {
+      resource_id: "test-vpc-001",
+      resource_type: "VPC",
+      provider: "aws",
+      region: "us-east-1",
+      intent_hash: "abc123",
+      ztai_record_index: "ztai-001",
+      observed_at: new Date().toISOString(),
+      manifest_version: "1",
+      state_json: { cidrBlock: "10.0.0.0/16" },
+    };
+    const hash = await dolt.writeResource(resource, "test commit");
+    expect(typeof hash).toBe("string");
+    expect(hash.length).toBeGreaterThan(0);
+  });
+
+  it("writeResource with manifest_version '0' represents pre-manifest rows", async () => {
+    const resource: DoltResource = {
+      resource_id: "legacy-vpc-001",
+      resource_type: "VPC",
+      provider: "aws",
+      region: "us-east-1",
+      intent_hash: "def456",
+      ztai_record_index: "ztai-002",
+      observed_at: new Date().toISOString(),
+      manifest_version: "0",
+      state_json: { cidrBlock: "10.0.0.0/16" },
+    };
+    await dolt.writeResource(resource, "legacy commit");
+    const stored = await dolt.queryResource("legacy-vpc-001");
+    expect(stored?.manifest_version).toBe("0");
   });
 });
