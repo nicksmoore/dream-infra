@@ -130,17 +130,36 @@ export function hydrate(
     resolvedBody = bodyResult;
   }
 
+  // Build signing block — region is only included when region_required
+  let signingBlock: PreparedRequest["signing"];
+  if (entry.signing.region_required) {
+    const region = finalSpec["region"];
+    if (!region || typeof region !== "string") {
+      return new ManifestError(
+        "UNRESOLVED_PLACEHOLDER",
+        `region is required for (${entry.intent}, ${entry.action}, ${entry.provider}) but was not provided`,
+      );
+    }
+    signingBlock = {
+      strategy: entry.signing.strategy,
+      signed_headers: [...entry.signing.signed_headers],
+      ...(entry.signing.service ? { service: entry.signing.service } : {}),
+      region,
+    };
+  } else {
+    signingBlock = {
+      strategy: entry.signing.strategy,
+      signed_headers: [...entry.signing.signed_headers],
+      ...(entry.signing.service ? { service: entry.signing.service } : {}),
+    };
+  }
+
   return {
     method: entry.request.method,
     url: resolvedUrl,
     headers: { ...entry.request.headers },
     body: resolvedBody,
-    signing: {
-      strategy: entry.signing.strategy,
-      signed_headers: [...entry.signing.signed_headers],
-      ...(entry.signing.service ? { service: entry.signing.service } : {}),
-      region: String(finalSpec["region"] ?? ""),
-    },
+    signing: signingBlock,
     manifest_version: MANIFEST.version,
   };
 }
