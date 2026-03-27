@@ -279,6 +279,8 @@ export default function Backstage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selectedService, setSelectedService] = useState<ServiceEntry | null>(null);
+  const [selectedManifestEntry, setSelectedManifestEntry] = useState<ManifestEntryUI | null>(null);
+  const [activeTab, setActiveTab] = useState("intent-console");
 
   const filtered = SERVICE_CATALOG.filter((s) => {
     if (!search) return true;
