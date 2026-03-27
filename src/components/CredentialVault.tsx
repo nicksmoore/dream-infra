@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { invokeFunction } from "@/lib/api-client";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ export function CredentialVault() {
     const credentialPayload: Record<string, string> = {};
     currentFields.forEach((f) => { credentialPayload[f.key] = fields[f.key].trim(); });
 
-    const { error } = await supabase.functions.invoke("credential-vault", {
+    const { error } = await invokeFunction("credential-vault", {
       body: { action: "store", provider, label, credentials: credentialPayload },
     });
 
