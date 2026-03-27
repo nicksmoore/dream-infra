@@ -11,34 +11,41 @@ describe("ManifestSchema — validation", () => {
     expect(result.success).toBe(true);
   });
 
+  it("manifest has version 2", () => {
+    const result = ManifestSchema.safeParse(rawManifest);
+    expect(result.success).toBe(true);
+    expect((result as any).data?.version).toBe("2");
+  });
+
+  it("manifest has exactly 69 entries", () => {
+    const result = ManifestSchema.safeParse(rawManifest);
+    expect(result.success).toBe(true);
+    expect((result as any).data?.entries.length).toBe(69);
+  });
+
   it("rejects a manifest with an unknown provider", () => {
     const bad = {
       ...rawManifest,
-      entries: [
-        {
-          ...(rawManifest.entries as any[])[0],
-          provider: "alibaba",
-        },
-      ],
+      entries: [{ ...(rawManifest.entries as any[])[0], provider: "alibaba" }],
     };
     expect(ManifestSchema.safeParse(bad).success).toBe(false);
   });
 
-  it("rejects a manifest entry with AWS_SIGV4 strategy but no service", () => {
+  it("rejects a rest-proxy entry missing signing block", () => {
+    const entry = (rawManifest.entries as any[]).find(e => e.execution?.type === "rest-proxy");
     const bad = {
       ...rawManifest,
-      entries: [
-        {
-          ...(rawManifest.entries as any[])[0],
-          provider: "aws",
-          signing: {
-            strategy: "AWS_SIGV4",
-            signed_headers: ["host", "x-amz-date"],
-            region_required: true,
-            // service intentionally omitted
-          },
-        },
-      ],
+      entries: [{ ...entry, signing: undefined }],
+    };
+    expect(ManifestSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("rejects a non-rest-proxy entry that has a signing block", () => {
+    const entry = (rawManifest.entries as any[]).find(e => e.execution?.type !== "rest-proxy");
+    if (!entry) return; // skip if no internal entries exist yet
+    const bad = {
+      ...rawManifest,
+      entries: [{ ...entry, signing: { strategy: "AWS_SIGV4", signed_headers: ["host"], service: "ec2", region_required: true } }],
     };
     expect(ManifestSchema.safeParse(bad).success).toBe(false);
   });
@@ -46,19 +53,21 @@ describe("ManifestSchema — validation", () => {
   it("rejects an entry with an unknown action", () => {
     const bad = {
       ...rawManifest,
-      entries: [
-        {
-          ...(rawManifest.entries as any[])[0],
-          action: "create", // not in the action enum
-        },
-      ],
+      entries: [{ ...(rawManifest.entries as any[])[0], action: "create" }],
+    };
+    expect(ManifestSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("rejects an entry with intent 'eks' (renamed to k8s)", () => {
+    const bad = {
+      ...rawManifest,
+      entries: [{ ...(rawManifest.entries as any[])[0], intent: "eks" }],
     };
     expect(ManifestSchema.safeParse(bad).success).toBe(false);
   });
 
   it("rejects a manifest with zero entries", () => {
-    const bad = { ...rawManifest, entries: [] };
-    expect(ManifestSchema.safeParse(bad).success).toBe(false);
+    expect(ManifestSchema.safeParse({ ...rawManifest, entries: [] }).success).toBe(false);
   });
 });
 
