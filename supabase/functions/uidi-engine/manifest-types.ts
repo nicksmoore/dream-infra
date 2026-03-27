@@ -157,9 +157,8 @@ export class ManifestError extends Error {
   constructor(
     public readonly code: ManifestErrorCode,
     message: string,
-    options?: ErrorOptions,
   ) {
-    super(message, options);
+    super(message);
     this.name = "ManifestError";
   }
 }

@@ -1,5 +1,6 @@
 import { ManifestEntry, ManifestError, ManifestSchema, PreparedOperation, PreparedRequest } from "./manifest-types.ts";
-import rawManifest from "./manifest.json" assert { type: "json" };
+export { ManifestError } from "./manifest-types.ts";
+import rawManifest from "./manifest.json" with { type: "json" };
 
 // ── Boot-time validation ──────────────────────────────────────────────────────
 

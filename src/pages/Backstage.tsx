@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { IntentConsole } from "@/components/IntentConsole";
+import { CapabilityMatrix } from "@/components/CapabilityMatrix";
+import { GuardrailInspector } from "@/components/GuardrailInspector";
+import type { ManifestEntryUI } from "@/lib/manifest-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -275,6 +279,8 @@ export default function Backstage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selectedService, setSelectedService] = useState<ServiceEntry | null>(null);
+  const [selectedManifestEntry, setSelectedManifestEntry] = useState<ManifestEntryUI | null>(null);
+  const [activeTab, setActiveTab] = useState("intent-console");
 
   const filtered = SERVICE_CATALOG.filter((s) => {
     if (!search) return true;
@@ -333,7 +339,7 @@ export default function Backstage() {
           />
         </div>
 
-        <Tabs defaultValue="scaffolder" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="glass-panel border-0 p-1 h-auto flex-wrap">
             <TabsTrigger value="scaffolder" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <Play className="h-3.5 w-3.5" /> Scaffolder Actions
