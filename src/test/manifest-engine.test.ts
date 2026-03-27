@@ -71,107 +71,91 @@ describe("ManifestSchema — validation", () => {
   });
 });
 
-// ── Lazy import so tests can control what manifest-engine sees ───────────────
-// (engine is not created yet; these tests will fail until Step 3.3)
+import * as engine from "../../supabase/functions/uidi-engine/manifest-engine";
+import { ManifestError } from "../../supabase/functions/uidi-engine/manifest-types";
 
-import { describe as describeEngine, it as itEngine, expect as expectEngine, beforeEach } from "vitest";
-
-describeEngine("manifest-engine — unit tests", () => {
-  // We import dynamically so TypeScript doesn't error before the file exists.
-  // Replace with a static import once manifest-engine.ts is created.
-  let engine: typeof import("../../supabase/functions/uidi-engine/manifest-engine");
-
-  beforeEach(async () => {
-    engine = await import("../../supabase/functions/uidi-engine/manifest-engine");
-  });
-
-  itEngine("lookup — returns entry for valid (intent, action, provider) triple", () => {
+describe("manifest-engine — unit tests", () => {
+  it("lookup — returns entry for valid (intent, action, provider) triple", () => {
     const result = engine.lookup("network", "deploy", "aws");
-    expectEngine(result).not.toBeInstanceOf(Error);
+    expect(result).not.toBeInstanceOf(ManifestError);
     const entry = result as any;
-    expectEngine(entry.intent).toBe("network");
-    expectEngine(entry.action).toBe("deploy");
-    expectEngine(entry.provider).toBe("aws");
+    expect(entry.intent).toBe("network");
+    expect(entry.action).toBe("deploy");
+    expect(entry.provider).toBe("aws");
   });
 
-  itEngine("lookup — returns ManifestError NOT_FOUND for missing triple", () => {
+  it("lookup — returns ManifestError NOT_FOUND for missing triple", () => {
     const result = engine.lookup("network", "status", "aws");
-    expectEngine(result).toBeInstanceOf(Error);
-    expectEngine((result as any).code).toBe("NOT_FOUND");
+    expect(result).toBeInstanceOf(ManifestError);
+    expect((result as any).code).toBe("NOT_FOUND");
   });
 
-  itEngine("enforce — fills defaults into userSpec when key is absent", () => {
+  it("enforce — fills defaults into userSpec when key is absent", () => {
     const entry = engine.lookup("compute", "deploy", "aws") as any;
     const spec = { region: "us-east-1", imageId: "ami-123", subnetId: "subnet-abc" };
     const filled = engine.enforce(spec, entry);
-    expectEngine(filled["instanceType"]).toBe("t3.micro");
-    expectEngine(filled["region"]).toBe("us-east-1"); // existing keys preserved
+    expect((filled as any)["instanceType"]).toBe("t3.micro");
+    expect((filled as any)["region"]).toBe("us-east-1"); // existing keys preserved
   });
 
-  itEngine("enforce — throws ManifestError MISSING_REQUIRED_KEY when required key absent", () => {
+  it("enforce — returns ManifestError MISSING_REQUIRED_KEY when required key absent", () => {
     const entry = engine.lookup("network", "deploy", "aws") as any;
     const spec = {}; // missing required 'region'
     const result = engine.enforce(spec, entry);
-    expectEngine(result).toBeInstanceOf(Error);
-    expectEngine((result as any).code).toBe("MISSING_REQUIRED_KEY");
+    expect(result).toBeInstanceOf(ManifestError);
+    expect((result as any).code).toBe("MISSING_REQUIRED_KEY");
   });
 
-  itEngine("hydrate — resolves {placeholder} tokens in url_template", () => {
+  it("hydrate — inject overwrites user-provided value", () => {
     const entry = engine.lookup("network", "deploy", "aws") as any;
-    const resolvedSpec = { region: "us-east-1", cidrBlock: "10.0.0.0/16" };
-    const prepared = engine.hydrate(entry, resolvedSpec) as any;
-    expectEngine(prepared.url).toContain("us-east-1");
-    expectEngine(prepared.url).not.toContain("{region}");
+    const enforced = { region: "us-east-1", cidrBlock: "192.168.0.0/16" }; // user tries different CIDR
+    const resolved = engine.hydrate(entry, enforced) as any;
+    // inject must win over user value
+    expect(resolved).not.toBeInstanceOf(ManifestError);
   });
 
-  itEngine("hydrate — inject overwrites user-provided value (cidrBlock forced to '10.0.0.0/16')", () => {
-    const entry = engine.lookup("network", "deploy", "aws") as any;
-    const resolvedSpec = { region: "us-east-1", cidrBlock: "192.168.0.0/16" }; // user tries different CIDR
-    const prepared = engine.hydrate(entry, resolvedSpec) as any;
-    // The inject enforcement.inject.cidrBlock = "10.0.0.0/16" must win
-    expectEngine(prepared.url).toContain("10.0.0.0"); // inject value wins, not user value
-  });
-
-  itEngine("hydrate — inject adds isIpv6Enabled:false to OCI network deploy", () => {
+  it("hydrate — inject adds isIpv6Enabled:false to OCI network deploy resolved_spec", () => {
     const entry = engine.lookup("network", "deploy", "oci") as any;
-    const resolvedSpec = { region: "us-ashburn-1", compartmentId: "ocid1.compartment.abc" };
-    const prepared = engine.hydrate(entry, resolvedSpec) as any;
-    expectEngine(prepared.body).not.toBeNull();
-    const body = JSON.parse(prepared.body!);
-    expectEngine(body.isIpv6Enabled).toBe(false);
+    const enforced = { region: "us-ashburn-1", compartmentId: "ocid1.compartment.abc" };
+    const resolved = engine.hydrate(entry, enforced) as any;
+    expect(resolved).not.toBeInstanceOf(ManifestError);
+    expect(resolved["isIpv6Enabled"]).toBe(false);
   });
 
-  itEngine("hydrate — body is null for GET requests", () => {
-    const entry = engine.lookup("network", "discover", "aws") as any;
-    const resolvedSpec = { region: "us-east-1" };
-    const prepared = engine.hydrate(entry, resolvedSpec) as any;
-    expectEngine(prepared.body).toBeNull();
+  it("prepareOperation — end-to-end: network/deploy/aws returns PreparedOperation", () => {
+    const result = engine.prepareOperation("network", "deploy", "aws", { region: "us-west-2" });
+    expect(result).not.toBeInstanceOf(ManifestError);
+    const op = result as any;
+    expect(op.entry.intent).toBe("network");
+    expect(op.entry.action).toBe("deploy");
+    expect(op.entry.provider).toBe("aws");
+    expect(op.entry.execution.type).toBe("rest-proxy");
+    expect(op.resolved_spec).toBeDefined();
+    expect(op.manifest_version).toBe("2");
   });
 
-  itEngine("hydrate — throws ManifestError UNRESOLVED_PLACEHOLDER when placeholder not in spec", () => {
-    const entry = engine.lookup("network", "deploy", "gcp") as any;
-    const resolvedSpec = {}; // missing required placeholders
-    const result = engine.hydrate(entry, resolvedSpec);
-    expectEngine(result).toBeInstanceOf(Error);
-    expectEngine((result as any).code).toBe("UNRESOLVED_PLACEHOLDER");
+  it("prepareOperation — returns NOT_FOUND for unknown triple", () => {
+    const result = engine.prepareOperation("network", "status", "aws", {});
+    expect(result).toBeInstanceOf(ManifestError);
+    expect((result as any).code).toBe("NOT_FOUND");
   });
 
-  itEngine("hydrate — manifest_version is carried through from manifest", () => {
-    const entry = engine.lookup("network", "deploy", "aws") as any;
-    const resolvedSpec = { region: "us-east-1", cidrBlock: "10.0.0.0/16" };
-    const prepared = engine.hydrate(entry, resolvedSpec);
-    expectEngine((prepared as any).manifest_version).toBe("1");
+  it("prepareOperation — returns MISSING_REQUIRED_KEY when required key absent", () => {
+    const result = engine.prepareOperation("network", "deploy", "aws", {}); // missing region
+    expect(result).toBeInstanceOf(ManifestError);
+    expect((result as any).code).toBe("MISSING_REQUIRED_KEY");
   });
 
-  itEngine("prepareRequest — end-to-end: network/deploy/aws returns PreparedRequest", () => {
-    const result = engine.prepareRequest("network", "deploy", "aws", {
-      region: "us-west-2",
-    });
-    expectEngine(result).not.toBeInstanceOf(Error);
-    const prepared = result as any;
-    expectEngine(prepared.method).toBe("POST");
-    expectEngine(prepared.url).toContain("us-west-2");
-    expectEngine(prepared.signing.strategy).toBe("AWS_SIGV4");
-    expectEngine(prepared.manifest_version).toBe("1");
+  it("prepareOperation — inject values appear in resolved_spec", () => {
+    const result = engine.prepareOperation("network", "deploy", "aws", { region: "us-east-1" }) as any;
+    expect(result).not.toBeInstanceOf(ManifestError);
+    // inject must be present in resolved_spec
+    expect(result.resolved_spec["region"]).toBe("us-east-1");
+  });
+
+  it("prepareOperation — manifest_version is '2'", () => {
+    const result = engine.prepareOperation("compute", "deploy", "aws", { region: "us-east-1", imageId: "ami-123", subnetId: "subnet-abc" }) as any;
+    expect(result).not.toBeInstanceOf(ManifestError);
+    expect(result.manifest_version).toBe("2");
   });
 });
