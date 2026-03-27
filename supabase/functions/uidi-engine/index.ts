@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 import { dolt, DoltResource } from "./dolt-client.ts";
-import type { PreparedRequest } from "./manifest-types.ts";
-import { prepareRequest } from "./manifest-engine.ts";
+import type { PreparedRequest, PreparedOperation } from "./manifest-types.ts";
+import { ManifestError, buildRestRequest } from "./manifest-engine.ts";
+import { prepareOperation } from "./manifest-engine.ts";
 
 // ───── Raw AWS API Executor (zero SDK dependencies) ─────
 // All AWS calls use SigV4-signed HTTP requests via awsSignedRequest().
@@ -381,23 +382,18 @@ interface EngineResponse {
 
 // ───── Manifest Engine Helper ─────
 
-/**
- * Attempts to prepare a request via the manifest engine.
- * Returns PreparedRequest on success, or null if no manifest entry exists (NOT_FOUND).
- * Throws for unexpected errors (SCHEMA_INVALID, etc.).
- */
-function tryManifestPrepare(
-  intent: string,
-  action: string,
-  provider: string,
-  spec: Record<string, unknown>,
-): PreparedRequest | null {
-  const result = prepareRequest(intent, action, provider, spec);
-  if (result instanceof Error) {
-    if ((result as any).code === "NOT_FOUND") return null;
-    throw result; // propagate unexpected errors
-  }
-  return result;
+// ── Intent name normalization ─────────────────────────────────────────────────
+function normalizeIntent(intent: string): string {
+  if (intent === "eks" || intent === "kubernetes") return "k8s";
+  return intent;
+}
+
+// ── response202 ───────────────────────────────────────────────────────────────
+function response202(op: PreparedOperation): EngineResponse {
+  return ok(op.entry.intent, op.entry.action,
+    `Guardrails validated. Worker for '${op.entry.execution.type}' is in development.`,
+    { manifest_version: op.manifest_version, resolved_spec: op.resolved_spec, execution_type: op.entry.execution.type }
+  );
 }
 
 // ───── Provider Clients ─────
@@ -813,23 +809,6 @@ async function handleCompute(action: string, spec: Record<string, unknown>): Pro
   if (provider === "gcp") return gcpCompute(action, spec);
   if (provider === "azure") return azureCompute(action, spec);
 
-  // ── Manifest-engine fast-path for discover ───────────────────────────────
-  if (action === "discover") {
-    const prepared = tryManifestPrepare("compute", "discover", provider, spec as Record<string, unknown>);
-    if (prepared) {
-      return ok("compute", action, "Manifest-prepared discover request", {
-        manifest_prepared: prepared,
-        method: prepared.method,
-        url: prepared.url,
-        headers: prepared.headers,
-        body: prepared.body,
-        signing: prepared.signing,
-        manifest_version: prepared.manifest_version,
-      });
-    }
-    // Falls through to legacy handler if no manifest entry
-  }
-
   const AWS_ACCESS_KEY_ID = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET_ACCESS_KEY = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
 
@@ -1153,23 +1132,6 @@ async function handleNetwork(action: string, spec: Record<string, unknown>): Pro
   if (provider === "oci") return ociNetwork(action, spec);
   if (provider === "gcp") return gcpNetwork(action, spec);
   if (provider === "azure") return azureNetwork(action, spec);
-
-  // ── Manifest-engine fast-path for discover ───────────────────────────────
-  if (action === "discover") {
-    const prepared = tryManifestPrepare("network", "discover", provider, spec as Record<string, unknown>);
-    if (prepared) {
-      return ok("network", action, "Manifest-prepared discover request", {
-        manifest_prepared: prepared,
-        method: prepared.method,
-        url: prepared.url,
-        headers: prepared.headers,
-        body: prepared.body,
-        signing: prepared.signing,
-        manifest_version: prepared.manifest_version,
-      });
-    }
-    // Falls through to legacy handler if no manifest entry
-  }
 
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
@@ -1664,23 +1626,6 @@ async function handleEks(action: string, spec: Record<string, unknown>): Promise
   if (provider === "oci") return ociEks(action, spec);
   if (provider === "gcp") return gcpEks(action, spec);
   if (provider === "azure") return azureEks(action, spec);
-
-  // ── Manifest-engine fast-path for discover ───────────────────────────────
-  if (action === "discover") {
-    const prepared = tryManifestPrepare("eks", "discover", provider, spec as Record<string, unknown>);
-    if (prepared) {
-      return ok("eks", action, "Manifest-prepared discover request", {
-        manifest_prepared: prepared,
-        method: prepared.method,
-        url: prepared.url,
-        headers: prepared.headers,
-        body: prepared.body,
-        signing: prepared.signing,
-        manifest_version: prepared.manifest_version,
-      });
-    }
-    // Falls through to legacy handler if no manifest entry
-  }
 
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
@@ -4359,7 +4304,7 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
             intent_hash: await sha256Hex(JSON.stringify(op)),
             ztai_record_index: `ztai-${Date.now()}-${op.id}`, // Mock ZTAI link
             observed_at: new Date().toISOString(),
-            manifest_version: "0",
+            manifest_version: (spec as any)._manifest_version ?? "0",
             state_json: result || {},
           }, `Auto-commit: ${op.service}.${op.command} for ${resourceId}`);
         } catch (de) {
@@ -4583,6 +4528,28 @@ serve(async (req) => {
     console.log(`UIDI Engine: ${intent}/${action}`, metadata ? JSON.stringify(metadata) : "", JSON.stringify(spec).slice(0, 300));
 
     let result: EngineResponse;
+
+    // ── Manifest-engine unified dispatch ────────────────────────────────────────
+    const normalizedIntent = normalizeIntent(intent);
+    const provider = ((spec.provider as string) || "aws").toLowerCase();
+    const op = prepareOperation(normalizedIntent, action, provider, spec as Record<string, unknown>);
+
+    if (!(op instanceof ManifestError)) {
+      (spec as any)._manifest_version = op.manifest_version;
+      if (op.entry.execution.type !== "rest-proxy") {
+        return new Response(JSON.stringify(response202(op)), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // rest-proxy: fall through to legacy handler
+    } else if (op.code !== "NOT_FOUND") {
+      return new Response(JSON.stringify(err(normalizedIntent, action, op.message)), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // NOT_FOUND or rest-proxy: fall through to legacy handler chain
 
     switch (intent) {
     case "kubernetes":

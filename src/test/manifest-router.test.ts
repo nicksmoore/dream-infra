@@ -63,7 +63,7 @@ describe("manifest dispatch — integration (all 9 intents)", () => {
       let found = false;
       for (const provider of providers) {
         for (const action of actions) {
-          const op = engine.prepareOperation(intent, action, provider, {});
+          const op = engine.prepareOperation(intent, action, provider, { region: "us-east-1" });
           if (!(op instanceof ManifestError)) { found = true; break; }
         }
         if (found) break;
