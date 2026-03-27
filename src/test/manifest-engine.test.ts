@@ -85,7 +85,7 @@ describe("manifest-engine — unit tests", () => {
   });
 
   it("lookup — returns ManifestError NOT_FOUND for missing triple", () => {
-    const result = engine.lookup("network", "status", "aws");
+    const result = engine.lookup("eks", "deploy", "aws");
     expect(result).toBeInstanceOf(ManifestError);
     expect((result as any).code).toBe("NOT_FOUND");
   });
@@ -135,7 +135,7 @@ describe("manifest-engine — unit tests", () => {
   });
 
   it("prepareOperation — returns NOT_FOUND for unknown triple", () => {
-    const result = engine.prepareOperation("network", "status", "aws", {});
+    const result = engine.prepareOperation("eks", "deploy", "aws", {});
     expect(result).toBeInstanceOf(ManifestError);
     expect((result as any).code).toBe("NOT_FOUND");
   });

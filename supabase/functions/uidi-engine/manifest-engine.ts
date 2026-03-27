@@ -1,4 +1,4 @@
-import { ManifestEntry, ManifestError, ManifestSchema, PreparedRequest } from "./manifest-types.ts";
+import { ManifestEntry, ManifestError, ManifestSchema, PreparedOperation, PreparedRequest } from "./manifest-types.ts";
 import rawManifest from "./manifest.json" assert { type: "json" };
 
 // ── Boot-time validation ──────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ const MANIFEST = parseResult.data;
 // ── lookup ────────────────────────────────────────────────────────────────────
 
 /**
- * Finds the manifest entry for a given (intent, action, provider) triple.
+ * Finds the manifest entry for a (intent, action, provider) triple.
  * Returns ManifestError NOT_FOUND if no entry matches.
  */
 export function lookup(
@@ -38,21 +38,16 @@ export function lookup(
 // ── enforce ───────────────────────────────────────────────────────────────────
 
 /**
- * Applies the enforcement gradient to a userSpec:
- *   1. Fills in `default` values for missing keys
- *   2. Validates that all `required_keys` are present
- *
- * Returns the enriched spec, or ManifestError MISSING_REQUIRED_KEY.
- * The caller must then pass this to `hydrate`, which applies `inject`.
+ * Applies defaults and validates required_keys.
+ * Order: default-fill → validate required_keys.
+ * Returns enriched spec or ManifestError MISSING_REQUIRED_KEY.
  */
 export function enforce(
   userSpec: Record<string, unknown>,
   entry: ManifestEntry,
 ): Record<string, unknown> | ManifestError {
-  // Step 1: default-fill
   const spec = { ...entry.enforcement.default, ...userSpec };
 
-  // Step 2: validate required_keys
   for (const key of entry.enforcement.required_keys) {
     if (!(key in spec) || spec[key] === undefined || spec[key] === null) {
       return new ManifestError(
@@ -68,36 +63,59 @@ export function enforce(
 // ── hydrate ───────────────────────────────────────────────────────────────────
 
 /**
- * Resolves placeholder tokens in url_template and body_template, then
- * deep-merges enforcement.inject (inject always wins).
- *
- * Placeholder values are typed:
- *   - string → inserted as-is
- *   - boolean → "true" / "false"
- *   - number → String(value)
- *   - array → JSON.stringify(value)
- *
- * Returns ManifestError UNRESOLVED_PLACEHOLDER if any {token} remains.
+ * Applies enforcement.inject (inject always wins) and returns the resolved spec.
+ * Template resolution is handled by buildRestRequest() in index.ts for rest-proxy entries.
  */
 export function hydrate(
   entry: ManifestEntry,
-  resolvedSpec: Record<string, unknown>,
-): PreparedRequest | ManifestError {
-  // Merge inject (inject wins over user spec)
-  const finalSpec = { ...resolvedSpec, ...entry.enforcement.inject };
+  enforced: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...enforced, ...entry.enforcement.inject };
+}
 
-  // Placeholder tokens are word-identifier only: {someKey}, {region}, {compartmentId}
-  // This regex deliberately excludes JSON structure chars so that a resolved body like
-  // {"key":"value"} is not mistaken for an unresolved placeholder.
-  const PLACEHOLDER_RE = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
-  const UNRESOLVED_RE = /\{[a-zA-Z_][a-zA-Z0-9_]*\}/;
+// ── prepareOperation ──────────────────────────────────────────────────────────
 
-  function replaceTokens(template: string): string {
-    return template.replace(PLACEHOLDER_RE, (match, key) => {
-      const value = finalSpec[key];
-      if (value === undefined) {
-        return match; // leave unresolved for detection below
-      }
+/**
+ * End-to-end: lookup → enforce → hydrate.
+ * Returns PreparedOperation containing the full entry + resolved spec.
+ */
+export function prepareOperation(
+  intent: string,
+  action: string,
+  provider: string,
+  userSpec: Record<string, unknown>,
+): PreparedOperation | ManifestError {
+  const entry = lookup(intent, action, provider);
+  if (entry instanceof ManifestError) return entry;
+
+  const enforced = enforce(userSpec, entry);
+  if (enforced instanceof ManifestError) return enforced;
+
+  const resolved_spec = hydrate(entry, enforced);
+
+  return {
+    entry,
+    resolved_spec,
+    manifest_version: MANIFEST.version,
+  };
+}
+
+// ── buildRestRequest ──────────────────────────────────────────────────────────
+// Pure function: PreparedOperation (rest-proxy) → PreparedRequest for signing.
+// Lives here (not in index.ts) so it can be imported by Vitest tests without
+// pulling in Deno-specific APIs from index.ts.
+
+export function buildRestRequest(op: PreparedOperation): PreparedRequest | ManifestError {
+  const execution = op.entry.execution as { type: "rest-proxy"; config: { method: string; url_template: string; headers: Record<string, string>; body_template?: string } };
+  const cfg = execution.config;
+  const spec = op.resolved_spec;
+  const PLACEHOLDER_RE = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g;
+  const UNRESOLVED_RE = /\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}/;
+
+  function resolveTemplate(tmpl: string): string {
+    return tmpl.replace(PLACEHOLDER_RE, (_, key) => {
+      const value = spec[key];
+      if (value === undefined) return `{{${key}}}`;
       if (Array.isArray(value)) return JSON.stringify(value);
       if (typeof value === "boolean") return value ? "true" : "false";
       if (typeof value === "number") return String(value);
@@ -105,82 +123,35 @@ export function hydrate(
     });
   }
 
-  const resolvedUrl = replaceTokens(entry.request.url_template);
-
-  // Check for unresolved placeholders
-  if (UNRESOLVED_RE.test(resolvedUrl)) {
-    const unresolved = (resolvedUrl.match(new RegExp(UNRESOLVED_RE.source, "g")) || []).join(", ");
-    return new ManifestError(
-      "UNRESOLVED_PLACEHOLDER",
-      `Unresolved placeholders in url_template: ${unresolved}`,
-    );
+  const url = resolveTemplate(cfg.url_template);
+  if (UNRESOLVED_RE.test(url)) {
+    const unresolved = url.match(/\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}/g)?.join(", ") ?? "";
+    return new ManifestError("UNRESOLVED_PLACEHOLDER", `Unresolved placeholders in url_template: ${unresolved}`);
   }
 
-  let resolvedBody: string | null = null;
-  if (entry.request.body_template) {
-    const bodyResult = replaceTokens(entry.request.body_template);
-
-    if (UNRESOLVED_RE.test(bodyResult)) {
-      const unresolved = (bodyResult.match(new RegExp(UNRESOLVED_RE.source, "g")) || []).join(", ");
-      return new ManifestError(
-        "UNRESOLVED_PLACEHOLDER",
-        `Unresolved placeholders in body_template: ${unresolved}`,
-      );
+  let body: string | null = null;
+  if (cfg.body_template) {
+    body = resolveTemplate(cfg.body_template);
+    if (UNRESOLVED_RE.test(body)) {
+      const unresolved = body.match(/\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}/g)?.join(", ") ?? "";
+      return new ManifestError("UNRESOLVED_PLACEHOLDER", `Unresolved placeholders in body_template: ${unresolved}`);
     }
-    resolvedBody = bodyResult;
   }
 
-  // Build signing block — region is only included when region_required
-  let signingBlock: PreparedRequest["signing"];
-  if (entry.signing.region_required) {
-    const region = finalSpec["region"];
-    if (!region || typeof region !== "string") {
-      return new ManifestError(
-        "UNRESOLVED_PLACEHOLDER",
-        `region is required for (${entry.intent}, ${entry.action}, ${entry.provider}) but was not provided`,
-      );
-    }
-    signingBlock = {
-      strategy: entry.signing.strategy,
-      signed_headers: [...entry.signing.signed_headers],
-      ...(entry.signing.service ? { service: entry.signing.service } : {}),
-      region,
-    };
-  } else {
-    signingBlock = {
-      strategy: entry.signing.strategy,
-      signed_headers: [...entry.signing.signed_headers],
-      ...(entry.signing.service ? { service: entry.signing.service } : {}),
-    };
-  }
+  const signing = op.entry.signing!;
+  const signingBlock: PreparedRequest["signing"] = {
+    strategy: signing.strategy,
+    signed_headers: [...signing.signed_headers],
+    ...(signing.service ? { service: signing.service } : {}),
+    ...(signing.region_required ? { region: String(spec["region"] ?? "") } : {}),
+  };
 
   return {
-    method: entry.request.method,
-    url: resolvedUrl,
-    headers: { ...entry.request.headers },
-    body: resolvedBody,
+    method: cfg.method as PreparedRequest["method"],
+    url,
+    headers: { ...cfg.headers },
+    body,
     signing: signingBlock,
-    manifest_version: MANIFEST.version,
+    manifest_version: op.manifest_version,
   };
-}
-
-// ── prepareRequest ────────────────────────────────────────────────────────────
-
-/**
- * End-to-end helper: lookup → enforce → hydrate.
- * Returns PreparedRequest or ManifestError.
- */
-export function prepareRequest(
-  intent: string,
-  action: string,
-  provider: string,
-  userSpec: Record<string, unknown>,
-): PreparedRequest | ManifestError {
-  const entry = lookup(intent, action, provider);
-  if (entry instanceof ManifestError) return entry;
-
-  const enforced = enforce(userSpec, entry);
-  if (enforced instanceof ManifestError) return enforced;
-
-  return hydrate(entry, enforced);
 }
