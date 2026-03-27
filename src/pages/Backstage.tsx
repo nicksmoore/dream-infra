@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { IntentConsole } from "@/components/IntentConsole";
+import { CapabilityMatrix } from "@/components/CapabilityMatrix";
+import { GuardrailInspector } from "@/components/GuardrailInspector";
+import type { ManifestEntryUI } from "@/lib/manifest-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
