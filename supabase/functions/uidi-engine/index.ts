@@ -4336,7 +4336,7 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
             intent_hash: await sha256Hex(JSON.stringify(op)),
             ztai_record_index: `ztai-${Date.now()}-${op.id}`, // Mock ZTAI link
             observed_at: new Date().toISOString(),
-            manifest_version: (spec as any)._manifest_version ?? "0",
+            manifest_version: "0",
             state_json: result || {},
           }, `Auto-commit: ${op.service}.${op.command} for ${resourceId}`);
         } catch (de) {
