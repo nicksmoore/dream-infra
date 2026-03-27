@@ -14,6 +14,7 @@ export interface DoltResource {
   intent_hash: string;      // SHA-256 of the intent
   ztai_record_index: string; // Link to audit log
   observed_at: string;      // Roughtime timestamp
+  manifest_version: string;  // VARCHAR(16) in Dolt; "0" for pre-manifest rows
   state_json: Record<string, any>;
 }
 

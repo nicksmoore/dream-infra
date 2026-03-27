@@ -1,3 +1,28 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "version": 2,
+  "github": {
+    "silent": false
+  },
+  "crons": [],
+  "rewrites": [
+    {
+      "source": "/api/deploy/(.*)",
+      "destination": "/api/handlers/multi-cloud-proxy",
+      "has": [
+        {
+          "type": "host",
+          "value": "*-engram-golden-paths.vercel.app"
+        }
+      ]
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "env": {
+    "ENGRAM_ENABLED": "false"
+  },
+  "build": {
+    "env": {
+      "FEATURE_FLAG_GOLDEN_PATH": "disabled"
+    }
+  }
 }

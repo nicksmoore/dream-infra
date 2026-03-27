@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { invokeFunction } from "@/lib/api-client";
 
 // ───── Types ─────
 
@@ -24,7 +24,7 @@ export interface EngineResponse {
 // ───── Client ─────
 
 export async function executeIntent(request: EngineRequest): Promise<EngineResponse> {
-  const { data, error } = await supabase.functions.invoke("uidi-engine", {
+  const { data, error } = await invokeFunction("uidi-engine", {
     body: request,
   });
 

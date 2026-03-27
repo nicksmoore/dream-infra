@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { DagOrchestrator, SdkOperation } from "./dag-orchestrator.ts";
 import { dolt, DoltResource } from "./dolt-client.ts";
+import type { PreparedRequest, PreparedOperation } from "./manifest-types.ts";
+import { ManifestError, buildRestRequest } from "./manifest-engine.ts";
+import { prepareOperation } from "./manifest-engine.ts";
 
 // ───── Raw AWS API Executor (zero SDK dependencies) ─────
 // All AWS calls use SigV4-signed HTTP requests via awsSignedRequest().
@@ -375,6 +378,22 @@ interface EngineResponse {
   error?: string;
   details?: unknown;
   timestamp: string;
+}
+
+// ───── Manifest Engine Helper ─────
+
+// ── Intent name normalization ─────────────────────────────────────────────────
+function normalizeIntent(intent: string): string {
+  if (intent === "eks" || intent === "kubernetes") return "k8s";
+  return intent;
+}
+
+// ── response202 ───────────────────────────────────────────────────────────────
+function response202(op: PreparedOperation): EngineResponse {
+  return ok(op.entry.intent, op.entry.action,
+    `Guardrails validated. Worker for '${op.entry.execution.type}' is in development.`,
+    { manifest_version: op.manifest_version, resolved_spec: op.resolved_spec, execution_type: op.entry.execution.type }
+  );
 }
 
 // ───── Provider Clients ─────
@@ -4317,6 +4336,7 @@ async function executeNaawiOps(ops: SdkOperation[], credentials: any, region: st
             intent_hash: await sha256Hex(JSON.stringify(op)),
             ztai_record_index: `ztai-${Date.now()}-${op.id}`, // Mock ZTAI link
             observed_at: new Date().toISOString(),
+            manifest_version: (spec as any)._manifest_version ?? "0",
             state_json: result || {},
           }, `Auto-commit: ${op.service}.${op.command} for ${resourceId}`);
         } catch (de) {
@@ -4540,6 +4560,28 @@ serve(async (req) => {
     console.log(`UIDI Engine: ${intent}/${action}`, metadata ? JSON.stringify(metadata) : "", JSON.stringify(spec).slice(0, 300));
 
     let result: EngineResponse;
+
+    // ── Manifest-engine unified dispatch ────────────────────────────────────────
+    const normalizedIntent = normalizeIntent(intent);
+    const provider = ((spec.provider as string) || "aws").toLowerCase();
+    const op = prepareOperation(normalizedIntent, action, provider, spec as Record<string, unknown>);
+
+    if (!(op instanceof ManifestError)) {
+      (spec as any)._manifest_version = op.manifest_version;
+      if (op.entry.execution.type !== "rest-proxy") {
+        return new Response(JSON.stringify(response202(op)), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // rest-proxy: fall through to legacy handler
+    } else if (op.code !== "NOT_FOUND") {
+      return new Response(JSON.stringify(err(normalizedIntent, action, op.message)), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    // NOT_FOUND or rest-proxy: fall through to legacy handler chain
 
     switch (intent) {
     case "kubernetes":

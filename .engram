@@ -1,0 +1,25 @@
+# DeepSeek Engram: Neural Guardrails (Golden Path Standards)
+
+# OCI Standards
+[Intent: POST /vcns]
+Inject: isIpv6Enabled: false, cidrBlock: "10.0.0.0/16"
+
+# GCP Standards
+[Intent: POST /networks]
+Inject: autoCreateSubnetworks: false, routingConfig.routingMode: "REGIONAL"
+
+# Azure Standards
+[Intent: PUT /virtualNetworks]
+Inject: properties.addressSpace.addressPrefixes: ["10.1.0.0/16"]
+
+# S3 Standards
+[Intent: resource "aws_s3_bucket"]
+Append: server_side_encryption_configuration, public_access_block
+
+# K8s Standards
+[Intent: kind: Deployment (K8s)]
+Inject: topologySpreadConstraints, securityContext: runAsNonRoot
+
+# VPC Standards
+[Intent: module "vpc"]
+Default: cidr = "10.100.0.0/16", enable_nat_gateway = true

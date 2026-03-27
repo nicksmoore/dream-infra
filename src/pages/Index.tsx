@@ -13,6 +13,7 @@ import { GoldenPathDeployment } from "@/components/GoldenPathDeployment";
 import { UserMenu } from "@/components/UserMenu";
 import { CredentialVault } from "@/components/CredentialVault";
 import { toast } from "@/hooks/use-toast";
+import { invokeFunction } from "@/lib/api-client";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ParsedIntent,
@@ -228,7 +229,7 @@ export default function Index() {
     setSelectedCatalogProvider(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke("parse-intent", {
+      const { data, error } = await invokeFunction("parse-intent", {
         body: { message: input },
       });
       if (error) throw new Error(error.message);
