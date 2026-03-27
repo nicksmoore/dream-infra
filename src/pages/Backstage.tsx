@@ -339,7 +339,7 @@ export default function Backstage() {
           />
         </div>
 
-        <Tabs defaultValue="scaffolder" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="glass-panel border-0 p-1 h-auto flex-wrap">
             <TabsTrigger value="scaffolder" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <Play className="h-3.5 w-3.5" /> Scaffolder Actions
