@@ -96,6 +96,20 @@ export const INTENT_META: Record<string, { label: string; icon: string }> = {
   "sre-supreme": { label: "SRE Supreme", icon: "🤖" },
   naawi: { label: "Naawi Agent", icon: "🧠" },
   dolt: { label: "Dolt State", icon: "🗃️" },
+  storage: { label: "Storage", icon: "💾" },
+  database: { label: "Database", icon: "🛢️" },
+  serverless: { label: "Serverless", icon: "⚙️" },
+  cdn: { label: "CDN", icon: "🌍" },
+  dns: { label: "DNS", icon: "📡" },
+  loadbalancer: { label: "Load Balancer", icon: "⚖️" },
+  security: { label: "Security", icon: "🛡️" },
+  gateway: { label: "Gateway", icon: "🚪" },
+  secrets: { label: "Secrets", icon: "🔐" },
+  observability: { label: "Observability", icon: "📊" },
+  orchestration: { label: "Orchestration", icon: "🎼" },
+  ai: { label: "AI / ML", icon: "🤖" },
+  container: { label: "Container", icon: "📦" },
+  "gap-analysis": { label: "Gap Analysis", icon: "🔍" },
 };
 
 export const ACTION_META: Record<string, { label: string; color: string }> = {
