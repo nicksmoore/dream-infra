@@ -42,6 +42,16 @@ const SERVICE_CONFIG: Record<string, ServiceConfig> = {
   KMS:           { signingService: "kms", host: r => `kms.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "TrentService", jsonVersion: "1.1" },
   SecretsManager:{ signingService: "secretsmanager", host: r => `secretsmanager.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "secretsmanager", jsonVersion: "1.1" },
   SSM:           { signingService: "ssm", host: r => `ssm.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AmazonSSM", jsonVersion: "1.1" },
+  EFS:           { signingService: "elasticfilesystem", host: r => `elasticfilesystem.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  AppRunner:     { signingService: "apprunner", host: r => `apprunner.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AppRunner", jsonVersion: "1.0" },
+  WAFV2:         { signingService: "wafv2", host: r => `wafv2.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AWSWAF_20190729", jsonVersion: "1.1" },
+  GuardDuty:     { signingService: "guardduty", host: r => `guardduty.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  SecurityHub:   { signingService: "securityhub", host: r => `securityhub.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  CloudTrail:    { signingService: "cloudtrail", host: r => `cloudtrail.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101", jsonVersion: "1.1" },
+  ConfigService: { signingService: "config", host: r => `config.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "StarlingDoveService", jsonVersion: "1.1" },
+  StepFunctions: { signingService: "states", host: r => `states.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AmazonStatesService", jsonVersion: "1.0" },
+  Bedrock:       { signingService: "bedrock", host: r => `bedrock.${r}.amazonaws.com`, apiStyle: "rest-json" },
+  ECS:           { signingService: "ecs", host: r => `ecs.${r}.amazonaws.com`, apiStyle: "json-target", targetPrefix: "AmazonEC2ContainerServiceV20141113", jsonVersion: "1.1" },
 };
 
 // REST command routing for path-based APIs
@@ -54,6 +64,7 @@ const REST_ROUTES: Record<string, Record<string, { method: string; path: (i: any
     DeleteFunction:          { method: "DELETE", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}` },
     CreateEventSourceMapping:{ method: "POST", path: () => "/2015-03-31/event-source-mappings" },
     AddPermission:           { method: "POST", path: i => `/2015-03-31/functions/${encodeURIComponent(i.FunctionName)}/policy` },
+    ListFunctions:           { method: "GET", path: () => "/2015-03-31/functions" },
   },
   EKS: {
     CreateCluster:   { method: "POST", path: () => "/clusters" },
@@ -70,6 +81,28 @@ const REST_ROUTES: Record<string, Record<string, { method: string; path: (i: any
     CreateApi:  { method: "POST", path: () => "/v2/apis" },
     DeleteApi:  { method: "DELETE", path: i => `/v2/apis/${i.ApiId}` },
     GetApis:    { method: "GET",  path: () => "/v2/apis" },
+    GetApi:     { method: "GET",  path: (i: any) => `/v2/apis/${i.ApiId}` },
+  },
+  EFS: {
+    CreateFileSystem:    { method: "POST",   path: () => "/2015-02-01/file-systems" },
+    DescribeFileSystems: { method: "GET",    path: () => "/2015-02-01/file-systems" },
+    DeleteFileSystem:    { method: "DELETE", path: (i: any) => `/2015-02-01/file-systems/${i.FileSystemId}` },
+  },
+  GuardDuty: {
+    CreateDetector: { method: "POST",   path: () => "/detector" },
+    ListDetectors:  { method: "GET",    path: () => "/detector" },
+    GetDetector:    { method: "GET",    path: (i: any) => `/detector/${i.DetectorId}` },
+    DeleteDetector: { method: "DELETE", path: (i: any) => `/detector/${i.DetectorId}` },
+  },
+  SecurityHub: {
+    EnableSecurityHub: { method: "POST", path: () => "/accounts" },
+    GetFindings:       { method: "POST", path: () => "/findings" },
+  },
+  Bedrock: {
+    CreateProvisionedModelThroughput: { method: "POST",   path: () => "/provisioned-model-throughput" },
+    ListFoundationModels:             { method: "GET",    path: () => "/foundation-models" },
+    GetProvisionedModelThroughput:    { method: "GET",    path: (i: any) => `/provisioned-model-throughput/${i.ProvisionedModelId}` },
+    DeleteProvisionedModelThroughput: { method: "DELETE", path: (i: any) => `/provisioned-model-throughput/${i.ProvisionedModelId}` },
   },
 };
 
@@ -82,6 +115,10 @@ const S3_ROUTES: Record<string, { method: string; path: (i: any) => string; quer
   PutObject:        { method: "PUT",  path: i => `/${i.Bucket}/${i.Key}` },
   DeleteObject:     { method: "DELETE", path: i => `/${i.Bucket}/${i.Key}` },
   ListObjectsV2:    { method: "GET",  path: i => `/${i.Bucket}`, queryString: "list-type=2" },
+  ListBuckets:               { method: "GET",  path: () => "/" },
+  GetBucketVersioning:       { method: "GET",  path: (i: any) => `/${i.Bucket}`, queryString: "versioning" },
+  PutBucketVersioning:       { method: "PUT",  path: (i: any) => `/${i.Bucket}`, queryString: "versioning" },
+  PutObjectLockConfiguration: { method: "PUT", path: (i: any) => `/${i.Bucket}`, queryString: "object-lock" },
 };
 
 // CloudFront XML request builder
@@ -102,6 +139,8 @@ function buildCloudFrontRequest(command: string, input: any): { method: string; 
       return { method: "PUT", path: `/2020-05-31/distribution/${input.Id}/config`, body: jsonToXml("DistributionConfig", input.DistributionConfig, xmlns) };
     case "DeleteDistribution":
       return { method: "DELETE", path: `/2020-05-31/distribution/${input.Id}` };
+    case "ListDistributions":
+      return { method: "GET", path: "/2020-05-31/distribution" };
     default:
       throw new Error(`No CloudFront mapping for ${command}`);
   }
@@ -115,6 +154,14 @@ function buildRoute53Request(command: string, input: any): { method: string; pat
       return { method: "POST", path: `/2013-04-01/hostedzone/${input.HostedZoneId}/rrset`, body: jsonToXml("ChangeResourceRecordSetsRequest", { ChangeBatch: input.ChangeBatch }, xmlns) };
     case "ListHostedZones":
       return { method: "GET", path: "/2013-04-01/hostedzone" };
+    case "CreateHostedZone":
+      return { method: "POST", path: "/2013-04-01/hostedzone", body: jsonToXml("CreateHostedZoneRequest", { Name: input.Name, CallerReference: input.CallerReference }, xmlns) };
+    case "DeleteHostedZone":
+      return { method: "DELETE", path: `/2013-04-01/hostedzone/${input.Id}` };
+    case "GetHostedZone":
+      return { method: "GET", path: `/2013-04-01/hostedzone/${input.Id}` };
+    case "ListResourceRecordSets":
+      return { method: "GET", path: `/2013-04-01/hostedzone/${input.HostedZoneId}/rrset` };
     default:
       throw new Error(`No Route53 mapping for ${command}`);
   }
@@ -310,6 +357,13 @@ async function executeAwsCommand(
         if (input.ContentType) {
           extraHeaders["Content-Type"] = input.ContentType;
         }
+      } else if (actionName === "PutBucketVersioning") {
+        const status = (input as any).VersioningConfiguration?.Status || "Enabled";
+        body = `<?xml version="1.0" encoding="UTF-8"?><VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>${status}</Status></VersioningConfiguration>`;
+        extraHeaders["Content-Type"] = "application/xml";
+      } else if (actionName === "PutObjectLockConfiguration") {
+        body = `<?xml version="1.0" encoding="UTF-8"?><ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ObjectLockEnabled>Enabled</ObjectLockEnabled></ObjectLockConfiguration>`;
+        extraHeaders["Content-Type"] = "application/xml";
       }
       break;
     }
