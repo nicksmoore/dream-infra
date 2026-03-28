@@ -417,7 +417,11 @@ const corsHeaders = {
 
 // ───── Types ─────
 interface ExecuteRequest {
-  intent: "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" | "sre-supreme" | "naawi";
+  intent: "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" |
+          "sre-supreme" | "naawi" | "dolt" |
+          "storage" | "database" | "serverless" | "cdn" | "dns" | "load-balancer" |
+          "security" | "gateway" | "secrets" | "observability" | "orchestration" |
+          "ai" | "container" | "gap";
   action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
@@ -5668,11 +5672,53 @@ serve(async (req) => {
       case "naawi":
         result = await handleNaawi(action, spec, body.approved);
         break;
-      case "dolt" as string:
+      case "dolt":
         result = await handleDoltAudit(action, spec);
         break;
+      case "storage":
+        result = await handleStorage(action, spec);
+        break;
+      case "database":
+        result = await handleDatabase(action, spec);
+        break;
+      case "serverless":
+        result = await handleServerless(action, spec);
+        break;
+      case "cdn":
+        result = await handleCdn(action, spec);
+        break;
+      case "dns":
+        result = await handleDns(action, spec);
+        break;
+      case "load-balancer":
+        result = await handleLoadBalancer(action, spec);
+        break;
+      case "security":
+        result = await handleSecurity(action, spec);
+        break;
+      case "gateway":
+        result = await handleGateway(action, spec);
+        break;
+      case "secrets":
+        result = await handleSecrets(action, spec);
+        break;
+      case "observability":
+        result = await handleObservability(action, spec);
+        break;
+      case "orchestration":
+        result = await handleOrchestration(action, spec);
+        break;
+      case "ai":
+        result = await handleAi(action, spec);
+        break;
+      case "container":
+        result = await handleContainer(action, spec);
+        break;
+      case "gap":
+        result = await handleGap(action, spec);
+        break;
       default:
-        result = err(intent, action, `Unknown intent: ${intent}. Supported: kubernetes, ansible, compute, network, eks, reconcile, sre-supreme, naawi, dolt.`);
+        result = err(intent, action, `Unknown intent: ${intent}. Supported: kubernetes, ansible, compute, network, eks, reconcile, inventory, sre-supreme, naawi, dolt, storage, database, serverless, cdn, dns, load-balancer, security, gateway, secrets, observability, orchestration, ai, container, gap.`);
     }
     return new Response(JSON.stringify(result), {
       status: 200,
