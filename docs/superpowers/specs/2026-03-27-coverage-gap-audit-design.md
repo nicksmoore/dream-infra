@@ -1,7 +1,7 @@
 # Coverage Gap Audit — Design Spec
 
 **Date:** 2026-03-27
-**Status:** Approved
+**Status:** Approved (rev 2)
 **Sub-Project:** Naawi Discovery / Gap Analysis (Sub-Project 2a)
 
 ---
@@ -21,47 +21,62 @@ This spec defines the system that discovers live AWS resources, classifies each 
 
 ## Goals
 
-- Discover live AWS resources via existing `action: discover` manifest entries
-- Determine management status by cross-referencing Dolt `resource_state` table
-- Validate compliance against `.engram` guardrail rules
-- Assign each resource to Q1–Q4 and return a structured `AuditReport`
+- Discover live AWS network resources via direct `@aws-sdk` calls (VPCs, Security Groups, Subnets)
+- Determine management status by cross-referencing the Supabase `resource_state` table (Naawi's Dolt-backed state store)
+- Validate compliance against rules derived from `manifest.json` `enforcement.inject` values
+- Assign each resource to Q1–Q4 and return a synchronous `AuditReport`
 - Render the quadrant breakdown in `AuditMatrix.tsx`
-- Starting scope: `intent: network`, `provider: aws` only
+- Starting scope: `intent: network`, `provider: aws`, single `region` per request
 
 ## Non-Goals
 
-- Real-time / streaming audit (deferred to Sub-Project 2b)
+- Async / polling audit (deferred to Sub-Project 2b — no 202+audit_id in this iteration)
 - Auto-remediation of Q2/Q4 resources (deferred)
 - Non-AWS providers on first pass
-- Audit of intents other than `network` on first pass
+- Intents other than `network` on first pass
+- Cross-region batch scanning (single region per request)
 
 ---
 
 ## Architecture
 
-Two runtimes, one manifest.
+Two runtimes, one manifest JSON file.
 
 ```
 Browser
-  └── POST /api/audit { intent: "network", provider: "aws" }
+  └── POST /api/audit { intent: "network", provider: "aws", region: "us-east-1" }
         │
         ▼
 Vercel Node.js — api/audit.ts
-  ├── 1. generate audit_id (before any AWS calls)
-  ├── 2. return HTTP 202 { audit_id } immediately (async) — OR —
-  │      return full AuditReport synchronously for small scans
-  ├── 3. resolve discover entries via prepareOperation() [shared manifest-engine]
-  ├── 4. call @aws-sdk: DescribeVpcs, DescribeSecurityGroups, DescribeSubnets
-  ├── 5. diff against Dolt resource_state → is_managed per resource
-  ├── 6. run engram-validator.ts → EngramFinding[] per resource
-  ├── 7. assign quadrant via toQuadrant(is_managed, is_compliant)
-  └── 8. write AuditReport to Dolt audit_logs; return to caller
+  ├── 1. validate request body (intent, provider, region required)
+  ├── 2. check AWS credentials env vars (fail fast if missing)
+  ├── 3. call @aws-sdk/client-ec2: DescribeVpcs, DescribeSecurityGroups, DescribeSubnets
+  ├── 4. for each resource: check Supabase resource_state table → is_managed
+  ├── 5. run engram-validator with rules from manifest.json enforcement.inject → violations[]
+  ├── 6. assign quadrant via toQuadrant(is_managed, is_compliant)
+  └── 7. return 200 AuditReport (synchronous — async path deferred to Sub-Project 2b)
 
 Deno uidi-engine (unchanged)
   └── deploy / destroy / status operations — untouched
 ```
 
-**Manifest as single source of truth:** `supabase/functions/uidi-engine/manifest.json` is imported by both runtimes. No copy, no sync needed. Vercel resolves the path at build time via `tsconfig` path alias or relative import.
+**Manifest as single source of truth:** `supabase/functions/uidi-engine/manifest.json` is the canonical data file. `api/audit.ts` imports it as raw JSON and runs a local `lookup()` to extract `enforcement.inject` values for the `engram-validator`. It does NOT import `manifest-engine.ts` (Deno TypeScript — incompatible runtime).
+
+**No shared package needed:** the only manifest data the audit handler needs is the `enforcement.inject` record for each entry. A three-line local lookup on the JSON is sufficient.
+
+---
+
+## Required Environment Variables
+
+`api/audit.ts` will fail fast (HTTP 500) if any of these are missing:
+
+| Variable | Purpose |
+|----------|---------|
+| `AWS_ACCESS_KEY_ID` | AWS credential |
+| `AWS_SECRET_ACCESS_KEY` | AWS credential |
+| `AWS_SESSION_TOKEN` | AWS credential (optional — only for assumed roles) |
+| `SUPABASE_URL` | Supabase project URL (for resource_state lookup) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase auth (server-side) |
 
 ---
 
@@ -69,13 +84,13 @@ Deno uidi-engine (unchanged)
 
 | File | Action | Responsibility |
 |------|--------|---------------|
-| `api/audit.ts` | Create | Vercel handler — orchestrates scan, returns 202 + AuditReport |
+| `api/audit.ts` | Create | Vercel handler — orchestrates scan, returns `AuditReport` |
 | `src/types/audit.ts` | Create | `ResourceFinding`, `AuditReport`, `AuditResponse`, `Quadrant` |
-| `src/lib/uidi-auditor.ts` | Create | Pure TS delta engine: AWS response + Dolt state → `ResourceFinding[]` |
-| `src/lib/engram-validator.ts` | Create | Parses `.engram`, validates a resource object → `EngramFinding[]` |
-| `src/components/AuditMatrix.tsx` | Create | 4-quadrant gap matrix UI component |
+| `src/lib/uidi-auditor.ts` | Create | Pure TS: AWS SDK responses + Supabase state → `ResourceFinding[]` |
+| `src/lib/engram-validator.ts` | Create | Pure TS: resource JSON + inject rules → `EngramViolation[]` |
+| `src/components/AuditMatrix.tsx` | Create | 4-quadrant gap matrix UI — accepts mock or real `AuditReport` |
 | `src/test/uidi-auditor.test.ts` | Create | Unit tests with mocked AWS SDK responses |
-| `src/test/engram-validator.test.ts` | Create | Unit tests for each `.engram` rule |
+| `src/test/engram-validator.test.ts` | Create | Unit tests per rule (CIDR, SG port 22, subnet containment) |
 
 ---
 
@@ -85,11 +100,11 @@ Deno uidi-engine (unchanged)
 // src/types/audit.ts
 
 export type Quadrant = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+export type FindingStatus = 'classified' | 'scan-error' | 'not-supported';
 
-export interface EngramFinding {
+export interface EngramViolation {
   rule: string;          // e.g. "cidrBlock must be 10.0.0.0/16"
-  status: 'pass' | 'fail';
-  message?: string;      // e.g. "Found 172.16.0.0/12, expected 10.0.0.0/16"
+  message: string;       // e.g. "Found 172.16.0.0/12, expected 10.0.0.0/16"
 }
 
 export interface ResourceFinding {
@@ -98,28 +113,27 @@ export interface ResourceFinding {
   intent: string;                          // network | compute | k8s
   provider: 'aws' | 'oci' | 'gcp' | 'azure';
   resource_type: string;                   // vpc | security-group | subnet
-  is_managed: boolean;                     // true if found in Dolt resource_state
-  is_compliant: boolean;                   // true if all engram findings pass
-  quadrant: Quadrant;                      // derived from is_managed × is_compliant
-  findings: EngramFinding[];
-  raw_resource?: Record<string, unknown>;  // raw AWS SDK response (optional, for diff UI)
+  region: string;                          // e.g. us-east-1
+  status: FindingStatus;                   // classified | scan-error | not-supported
+  is_managed: boolean;                     // true if found in Supabase resource_state
+  quadrant?: Quadrant;                     // absent if status !== 'classified'
+  violations: EngramViolation[];           // empty = compliant; failing rules only
+  raw_resource?: Record<string, unknown>;  // raw AWS SDK response; populated for Q2 + Q4 only
   discovered_at: string;                   // ISO 8601
 }
 
 export interface AuditReport {
-  audit_id: string;                        // UUID, generated before scan begins
   intent: string;
   provider: string;
+  region: string;
   started_at: string;
-  completed_at?: string;
+  completed_at: string;
   findings: ResourceFinding[];
-  summary: Record<Quadrant, number>;       // { Q1: 2, Q2: 1, Q3: 3, Q4: 0 }
-}
-
-export interface AuditResponse {
-  audit_id: string;
-  status: 'accepted' | 'complete';
-  report?: AuditReport;                    // present if synchronous / small scan
+  summary: {
+    Q1: number; Q2: number; Q3: number; Q4: number;
+    errors: number;        // findings with status === 'scan-error'
+    not_supported: number; // findings with status === 'not-supported'
+  };
 }
 ```
 
@@ -132,58 +146,70 @@ export function toQuadrant(managed: boolean, compliant: boolean): Quadrant {
   if (!managed && compliant)  return 'Q3';
   return 'Q4';
 }
+// is_compliant = violations.length === 0
 ```
 
 ---
 
-## Starting Scope: Network / AWS
+## Discovery: What the Manifest Backs vs. What Doesn't Need It
 
-Three resource types on first pass:
+The `network/discover/aws` manifest entry resolves the VPC DescribeVpcs URL. Security Groups and Subnets are called directly from the AWS SDK in `uidi-auditor.ts` — they have no manifest discover entry and do not need one. The manifest is the deployment router; the auditor owns its own discovery calls.
 
-| AWS API call | Resource type | `.engram` rules checked |
+| Resource type | How discovered | Manifest-backed? |
 |---|---|---|
-| `ec2:DescribeVpcs` | `vpc` | `cidrBlock === "10.0.0.0/16"` |
-| `ec2:DescribeSecurityGroups` | `security-group` | no inbound rule with `0.0.0.0/0` on port 22 |
-| `ec2:DescribeSubnets` | `subnet` | CIDR contained within VPC CIDR |
-
-All other intents (`compute`, `k8s`, etc.) return a `not_yet_supported` finding rather than erroring. This prevents a broken UI while the audit scope expands in subsequent iterations.
+| VPC | `ec2:DescribeVpcs` | Yes (URL from manifest entry) |
+| Security Group | `ec2:DescribeSecurityGroups` | No — direct SDK call |
+| Subnet | `ec2:DescribeSubnets` | No — direct SDK call |
 
 ---
 
-## `engram-validator.ts` — Interface
+## `engram-validator.ts` — Interface and Rules
 
-Pure function. No side effects. Importable by both the Vercel handler and Vitest.
+Pure function. No side effects. Rules read from `manifest.json` `enforcement.inject` — not hardcoded. This ensures the validator and the deployer use identical standards.
 
 ```typescript
-export interface EngramRule {
-  rule: string;
-  validate: (resource: Record<string, unknown>) => EngramFinding;
+// Inject values are extracted from manifest entries at validator init time
+export interface EngramRuleSet {
+  resourceType: string;
+  rules: Array<{
+    name: string;
+    validate: (resource: Record<string, unknown>, inject: Record<string, unknown>) => EngramViolation | null;
+  }>;
 }
 
 export function validateResource(
   resource: Record<string, unknown>,
   resourceType: string,
-): EngramFinding[];
+  inject: Record<string, unknown>,  // from manifest enforcement.inject for this entry
+): EngramViolation[];
 ```
 
-Rules are registered per `resourceType`. Adding a new rule = adding one entry to a registry map. No changes to the caller.
+**Rules for network/aws (first pass):**
+
+| Resource | Rule | Source of expected value |
+|---|---|---|
+| VPC | `cidrBlock` must match inject value | `manifest.json` network/deploy/aws inject.cidrBlock |
+| Security Group | No inbound rule allows `0.0.0.0/0` on port 22 | Hardcoded (no inject equivalent) |
+| Subnet | CIDR must be contained within its VPC's CIDR | Derived from VPC finding |
+
+Note: the `.engram` VPC module stanza (`cidr = "10.100.0.0/16"`) applies to Terraform module defaults and is not used by this validator. The manifest `enforcement.inject.cidrBlock` (`10.0.0.0/16`) is authoritative for the audit.
 
 ---
 
 ## `AuditMatrix.tsx` — UI Layout
 
-Four-quadrant grid, color-coded by action urgency:
+Four-quadrant grid, color-coded by action urgency. CTA buttons render as **disabled stubs** in this iteration — remediation/import wiring is deferred.
 
-| Quadrant | Color | Label | CTA |
+| Quadrant | Color | Label | CTA (stub) |
 |---|---|---|---|
 | Q1 | Green | Golden Path | — |
-| Q2 | Amber | Snowflake | Remediate |
-| Q3 | Blue | Shadow IT | Import |
-| Q4 | Red | Risk Zone | Isolate |
+| Q2 | Amber | Snowflake | Remediate (disabled) |
+| Q3 | Blue | Shadow IT | Import (disabled) |
+| Q4 | Red | Risk Zone | Isolate (disabled) |
 
-Each cell shows the count of resources in that quadrant. Clicking a cell opens a detail drawer with the `ResourceFinding[]` list, the `findings[]` for each, and (if present) a raw diff from `raw_resource`.
+Each cell shows the count of resources. Clicking opens a detail drawer with `ResourceFinding[]` for that quadrant. Q2 and Q4 findings include `raw_resource` for diff display.
 
-The component accepts a single `AuditReport` prop and is fully renderable from mock data — enabling parallel UI development before the backend is live.
+The component accepts a single `AuditReport` prop and is fully renderable from a mock fixture — enabling parallel frontend development before the backend lands.
 
 ---
 
@@ -191,15 +217,30 @@ The component accepts a single `AuditReport` prop and is fully renderable from m
 
 | Condition | Behavior |
 |---|---|
-| AWS SDK call fails | `ResourceFinding` with `findings: [{ rule: "aws-discovery", status: "fail", message: err.message }]`, quadrant omitted |
-| Dolt unreachable | `is_managed` defaults to `false`, finding flagged with `dolt-unavailable` warning |
-| `.engram` parse error | 500 returned with `{ error: "engram-parse-failed" }` — audit aborted |
-| Intent not in manifest | `not_yet_supported` finding, no quadrant assigned |
+| Missing AWS credentials env var | HTTP 500 `{ error: "missing-aws-credentials" }` — abort before any SDK call |
+| AWS SDK call fails for one resource type | `ResourceFinding` with `status: 'scan-error'`, `violations: []`, no `quadrant`; counted in `summary.errors` |
+| Supabase unreachable | `is_managed` defaults to `false`, `ResourceFinding` gains violation `{ rule: "dolt-check", message: "Supabase unavailable — managed status unverified" }`. `AuditReport` gains top-level `warning: "state-check-degraded"` |
+| Unsupported intent (e.g., compute) | `ResourceFinding` with `status: 'not-supported'`; counted in `summary.not_supported` |
+| `.engram` file unreadable | HTTP 500 `{ error: "engram-read-failed" }` — abort |
+| Manifest JSON unreadable | HTTP 500 `{ error: "manifest-read-failed" }` — abort |
 
 ---
 
 ## Testing Strategy
 
-- `engram-validator.test.ts`: one test per rule (VPC CIDR, SG port 22, subnet containment) with pass and fail cases
-- `uidi-auditor.test.ts`: mock AWS SDK responses, assert correct `ResourceFinding[]` output and quadrant assignment
-- No integration tests against real AWS in CI — use `@aws-sdk/client-ec2` mock via `vi.mock()`
+**`engram-validator.test.ts`**
+- One pass + one fail test per rule (CIDR, SG port 22, subnet containment)
+- Parse-error path: malformed resource JSON → validator returns appropriate violation
+- Inject-value-driven test: CIDR standard read from mock manifest inject, not hardcoded
+
+**`uidi-auditor.test.ts`**
+- `toQuadrant()`: all four cases (2×2 truth table)
+- Mock `DescribeVpcs` response → correct `ResourceFinding[]` output
+- Dolt-unavailable path: `is_managed` defaults to `false`, degraded warning present
+- `not_yet_supported` sentinel returned for compute intent without throwing
+- `summary` aggregation: correct Q1–Q4 counts and `errors` count from mixed findings
+- `raw_resource` populated only for Q2 + Q4 findings
+
+**`AuditMatrix.test.tsx`**
+- Render test against mock `AuditReport` fixture (snapshot or RTL assertion)
+- Confirms CTA buttons render as disabled for Q2/Q3/Q4
