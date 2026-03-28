@@ -4565,6 +4565,206 @@ async function fetchVaultCredentialsRaw(authHeader: string, provider: string, la
   }
 }
 
+async function handleStorage(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("storage", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "s3").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "s3") {
+          const bucket = spec.bucket_name as string;
+          if (!bucket) return err("storage", action, "bucket_name required");
+          await executeAwsCommand("S3", "CreateBucket", {
+            Bucket: bucket,
+            ...(region !== "us-east-1" ? { CreateBucketConfiguration: { LocationConstraint: region } } : {}),
+          }, region, creds);
+          if (spec.versioning) {
+            await executeAwsCommand("S3", "PutBucketVersioning", { Bucket: bucket, VersioningConfiguration: { Status: "Enabled" } }, region, creds);
+          }
+          if (spec.object_lock) {
+            await executeAwsCommand("S3", "PutObjectLockConfiguration", { Bucket: bucket }, region, creds);
+          }
+          return ok("storage", action, `S3 bucket ${bucket} created`, { bucket_name: bucket, region });
+        }
+        if (rt === "efs") {
+          const token = spec.creation_token as string || `efs-${Date.now()}`;
+          const result = await executeAwsCommand("EFS", "CreateFileSystem", {
+            CreationToken: token,
+            PerformanceMode: spec.performance_mode || "generalPurpose",
+            Encrypted: spec.encrypted !== false,
+          }, region, creds);
+          return ok("storage", action, `EFS filesystem created`, result);
+        }
+        return err("storage", action, `Unsupported resource_type '${rt}'. Use: s3, efs`);
+      }
+      case "discover": {
+        if (rt === "s3") {
+          const result = await executeAwsCommand("S3", "ListBuckets", {}, region, creds);
+          return ok("storage", action, "S3 buckets listed", result);
+        }
+        if (rt === "ebs") {
+          const result = await executeAwsCommand("EC2", "DescribeVolumes", {}, region, creds);
+          return ok("storage", action, "EBS volumes listed", result);
+        }
+        if (rt === "efs") {
+          const result = await executeAwsCommand("EFS", "DescribeFileSystems", {}, region, creds);
+          return ok("storage", action, "EFS filesystems listed", result);
+        }
+        return err("storage", action, `Unsupported resource_type '${rt}'. Use: s3, ebs, efs`);
+      }
+      case "destroy": {
+        if (rt === "s3") {
+          const bucket = spec.bucket_name as string;
+          if (!bucket) return err("storage", action, "bucket_name required");
+          await executeAwsCommand("S3", "DeleteBucket", { Bucket: bucket }, region, creds);
+          return ok("storage", action, `S3 bucket ${bucket} deleted`, {});
+        }
+        if (rt === "ebs") {
+          const volumeId = spec.volume_id as string;
+          if (!volumeId) return err("storage", action, "volume_id required");
+          await executeAwsCommand("EC2", "DeleteVolume", { VolumeId: volumeId }, region, creds);
+          return ok("storage", action, `EBS volume ${volumeId} deleted`, {});
+        }
+        return err("storage", action, `Unsupported resource_type '${rt}'. Use: s3, ebs`);
+      }
+      case "status": {
+        if (rt === "s3") {
+          const bucket = spec.bucket_name as string;
+          if (!bucket) return err("storage", action, "bucket_name required");
+          const versioning = await executeAwsCommand("S3", "GetBucketVersioning", { Bucket: bucket }, region, creds);
+          return ok("storage", action, `S3 bucket ${bucket} status`, { bucket_name: bucket, versioning });
+        }
+        return err("storage", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("storage", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("storage", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleDatabase(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("database", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "rds").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "rds") {
+          const id = spec.db_identifier as string;
+          if (!id) return err("database", action, "db_identifier required");
+          const result = await executeAwsCommand("RDS", "CreateDBInstance", {
+            DBInstanceIdentifier: id,
+            DBInstanceClass: spec.db_instance_class || "db.t3.micro",
+            Engine: spec.engine || "postgres",
+            MasterUsername: spec.username as string,
+            MasterUserPassword: spec.password as string,
+            AllocatedStorage: spec.allocated_storage || 20,
+            MultiAZ: spec.multi_az || false,
+          }, region, creds);
+          return ok("database", action, `RDS instance ${id} creation initiated`, result);
+        }
+        if (rt === "dynamodb") {
+          const table = spec.table_name as string;
+          const pk = spec.partition_key as string;
+          if (!table || !pk) return err("database", action, "table_name and partition_key required");
+          const result = await executeAwsCommand("DynamoDB", "CreateTable", {
+            TableName: table,
+            AttributeDefinitions: [{ AttributeName: pk, AttributeType: spec.partition_key_type || "S" }],
+            KeySchema: [{ AttributeName: pk, KeyType: "HASH" }],
+            BillingMode: spec.billing_mode || "PAY_PER_REQUEST",
+          }, region, creds);
+          return ok("database", action, `DynamoDB table ${table} created`, result);
+        }
+        if (rt === "elasticache") {
+          const groupId = spec.group_id as string;
+          if (!groupId) return err("database", action, "group_id required");
+          const result = await executeAwsCommand("ElastiCache", "CreateReplicationGroup", {
+            ReplicationGroupId: groupId,
+            ReplicationGroupDescription: spec.description || groupId,
+            CacheNodeType: spec.node_type || "cache.t3.micro",
+            Engine: "redis",
+            NumCacheClusters: spec.num_clusters || 1,
+            AutomaticFailoverEnabled: false,
+          }, region, creds);
+          return ok("database", action, `ElastiCache replication group ${groupId} created`, result);
+        }
+        return err("database", action, `Unsupported resource_type '${rt}'. Use: rds, dynamodb, elasticache`);
+      }
+      case "discover": {
+        if (rt === "rds") {
+          const result = await executeAwsCommand("RDS", "DescribeDBInstances", {}, region, creds);
+          return ok("database", action, "RDS instances listed", result);
+        }
+        if (rt === "dynamodb") {
+          const result = await executeAwsCommand("DynamoDB", "ListTables", {}, region, creds);
+          return ok("database", action, "DynamoDB tables listed", result);
+        }
+        if (rt === "elasticache") {
+          const result = await executeAwsCommand("ElastiCache", "DescribeReplicationGroups", {}, region, creds);
+          return ok("database", action, "ElastiCache replication groups listed", result);
+        }
+        return err("database", action, `Unsupported resource_type '${rt}'. Use: rds, dynamodb, elasticache`);
+      }
+      case "destroy": {
+        if (rt === "rds") {
+          const id = spec.db_identifier as string;
+          if (!id) return err("database", action, "db_identifier required");
+          const result = await executeAwsCommand("RDS", "DeleteDBInstance", {
+            DBInstanceIdentifier: id,
+            SkipFinalSnapshot: spec.skip_final_snapshot !== false,
+          }, region, creds);
+          return ok("database", action, `RDS instance ${id} deletion initiated`, result);
+        }
+        if (rt === "dynamodb") {
+          const table = spec.table_name as string;
+          if (!table) return err("database", action, "table_name required");
+          await executeAwsCommand("DynamoDB", "DeleteTable", { TableName: table }, region, creds);
+          return ok("database", action, `DynamoDB table ${table} deleted`, {});
+        }
+        if (rt === "elasticache") {
+          const groupId = spec.group_id as string;
+          if (!groupId) return err("database", action, "group_id required");
+          await executeAwsCommand("ElastiCache", "DeleteReplicationGroup", {
+            ReplicationGroupId: groupId,
+          }, region, creds);
+          return ok("database", action, `ElastiCache group ${groupId} deleted`, {});
+        }
+        return err("database", action, `Unsupported resource_type '${rt}'. Use: rds, dynamodb, elasticache`);
+      }
+      case "status": {
+        if (rt === "rds") {
+          const id = spec.db_identifier as string;
+          if (!id) return err("database", action, "db_identifier required");
+          const result = await executeAwsCommand("RDS", "DescribeDBInstances", {
+            DBInstanceIdentifier: id,
+          }, region, creds);
+          return ok("database", action, `RDS instance ${id} status`, result);
+        }
+        if (rt === "dynamodb") {
+          const table = spec.table_name as string;
+          if (!table) return err("database", action, "table_name required");
+          const result = await executeAwsCommand("DynamoDB", "DescribeTable", { TableName: table }, region, creds);
+          return ok("database", action, `DynamoDB table ${table} status`, result);
+        }
+        return err("database", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("database", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("database", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
