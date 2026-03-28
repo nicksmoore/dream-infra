@@ -4765,6 +4765,168 @@ async function handleDatabase(action: string, spec: Record<string, unknown>): Pr
   }
 }
 
+async function handleServerless(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("serverless", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "lambda").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "lambda") {
+          const name = spec.function_name as string;
+          if (!name) return err("serverless", action, "function_name required");
+          const result = await executeAwsCommand("Lambda", "CreateFunction", {
+            FunctionName: name,
+            Runtime: spec.runtime || "nodejs20.x",
+            Role: spec.role_arn as string,
+            Handler: spec.handler || "index.handler",
+            Code: { S3Bucket: spec.s3_bucket as string, S3Key: spec.s3_key as string },
+            Timeout: spec.timeout || 30,
+            MemorySize: spec.memory || 128,
+          }, region, creds);
+          return ok("serverless", action, `Lambda function ${name} created`, result);
+        }
+        if (rt === "apprunner") {
+          const name = spec.service_name as string;
+          if (!name) return err("serverless", action, "service_name required");
+          const result = await executeAwsCommand("AppRunner", "CreateService", {
+            ServiceName: name,
+            SourceConfiguration: {
+              ImageRepository: {
+                ImageIdentifier: spec.image_uri as string,
+                ImageRepositoryType: "ECR",
+              },
+            },
+          }, region, creds);
+          return ok("serverless", action, `App Runner service ${name} created`, result);
+        }
+        return err("serverless", action, `Unsupported resource_type '${rt}'. Use: lambda, apprunner`);
+      }
+      case "discover": {
+        if (rt === "lambda") {
+          const result = await executeAwsCommand("Lambda", "ListFunctions", {}, region, creds);
+          return ok("serverless", action, "Lambda functions listed", result);
+        }
+        return err("serverless", action, `Unsupported resource_type '${rt}'. Use: lambda`);
+      }
+      case "destroy": {
+        if (rt === "lambda") {
+          const name = spec.function_name as string;
+          if (!name) return err("serverless", action, "function_name required");
+          await executeAwsCommand("Lambda", "DeleteFunction", { FunctionName: name }, region, creds);
+          return ok("serverless", action, `Lambda function ${name} deleted`, {});
+        }
+        return err("serverless", action, `Unsupported resource_type '${rt}'. Use: lambda`);
+      }
+      case "status": {
+        if (rt === "lambda") {
+          const name = spec.function_name as string;
+          if (!name) return err("serverless", action, "function_name required");
+          const result = await executeAwsCommand("Lambda", "GetFunction", { FunctionName: name }, region, creds);
+          return ok("serverless", action, `Lambda function ${name} config`, result);
+        }
+        return err("serverless", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("serverless", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("serverless", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleCdn(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("cdn", action, "AWS credentials required.");
+  // CloudFront is global — signing must use us-east-1
+  const region = "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  try {
+    switch (action) {
+      case "deploy": {
+        const originDomain = spec.origin_domain as string;
+        const originId = spec.origin_id as string || "default-origin";
+        const callerRef = spec.caller_reference as string || `cf-${Date.now()}`;
+        if (!originDomain) return err("cdn", action, "origin_domain required");
+        const result = await executeAwsCommand("CloudFront", "CreateDistribution", {
+          DistributionConfig: {
+            CallerReference: callerRef,
+            Origins: { Quantity: 1, Items: [{ Id: originId, DomainName: originDomain, CustomOriginConfig: { HTTPSPort: 443, OriginProtocolPolicy: "https-only" } }] },
+            DefaultCacheBehavior: { TargetOriginId: originId, ViewerProtocolPolicy: "redirect-to-https", CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6", AllowedMethods: { Quantity: 2, Items: ["GET", "HEAD"] } },
+            Enabled: true,
+            Comment: spec.comment as string || "",
+          },
+        }, region, creds);
+        return ok("cdn", action, "CloudFront distribution created", result);
+      }
+      case "discover": {
+        const result = await executeAwsCommand("CloudFront", "ListDistributions", {}, region, creds);
+        return ok("cdn", action, "CloudFront distributions listed", result);
+      }
+      case "destroy": {
+        const distId = spec.distribution_id as string;
+        if (!distId) return err("cdn", action, "distribution_id required");
+        await executeAwsCommand("CloudFront", "DeleteDistribution", { Id: distId }, region, creds);
+        return ok("cdn", action, `CloudFront distribution ${distId} deleted`, {});
+      }
+      case "status": {
+        const distId = spec.distribution_id as string;
+        if (!distId) return err("cdn", action, "distribution_id required");
+        const result = await executeAwsCommand("CloudFront", "GetDistribution", { Id: distId }, region, creds);
+        return ok("cdn", action, `CloudFront distribution ${distId} status`, result);
+      }
+      default: return err("cdn", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("cdn", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleDns(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("dns", action, "AWS credentials required.");
+  // Route53 is global — signing must use us-east-1
+  const region = "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  try {
+    switch (action) {
+      case "deploy": {
+        const name = spec.zone_name as string;
+        const callerRef = spec.caller_reference as string || `hz-${Date.now()}`;
+        if (!name) return err("dns", action, "zone_name required");
+        const result = await executeAwsCommand("Route53", "CreateHostedZone", { Name: name, CallerReference: callerRef }, region, creds);
+        return ok("dns", action, `Hosted zone for ${name} created`, result);
+      }
+      case "discover": {
+        const result = await executeAwsCommand("Route53", "ListHostedZones", {}, region, creds);
+        return ok("dns", action, "Hosted zones listed", result);
+      }
+      case "destroy": {
+        const zoneId = spec.zone_id as string;
+        if (!zoneId) return err("dns", action, "zone_id required");
+        await executeAwsCommand("Route53", "DeleteHostedZone", { Id: zoneId }, region, creds);
+        return ok("dns", action, `Hosted zone ${zoneId} deleted`, {});
+      }
+      case "status": {
+        const zoneId = spec.zone_id as string;
+        if (!zoneId) return err("dns", action, "zone_id required");
+        const result = await executeAwsCommand("Route53", "GetHostedZone", { Id: zoneId }, region, creds);
+        return ok("dns", action, `Hosted zone ${zoneId} details`, result);
+      }
+      default: return err("dns", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("dns", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
