@@ -4927,6 +4927,181 @@ async function handleDns(action: string, spec: Record<string, unknown>): Promise
   }
 }
 
+async function handleLoadBalancer(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("load-balancer", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  try {
+    switch (action) {
+      case "deploy": {
+        const name = spec.name as string;
+        const subnets = spec.subnets as string[];
+        if (!name || !subnets?.length) return err("load-balancer", action, "name and subnets required");
+        const result = await executeAwsCommand("ELBv2", "CreateLoadBalancer", {
+          Name: name,
+          Subnets: subnets,
+          Type: spec.type || "application",
+          Scheme: spec.scheme || "internet-facing",
+        }, region, creds);
+        return ok("load-balancer", action, `Load balancer ${name} creation initiated`, result);
+      }
+      case "discover": {
+        const result = await executeAwsCommand("ELBv2", "DescribeLoadBalancers", {}, region, creds);
+        return ok("load-balancer", action, "Load balancers listed", result);
+      }
+      case "destroy": {
+        const arn = spec.load_balancer_arn as string;
+        if (!arn) return err("load-balancer", action, "load_balancer_arn required");
+        await executeAwsCommand("ELBv2", "DeleteLoadBalancer", { LoadBalancerArn: arn }, region, creds);
+        return ok("load-balancer", action, `Load balancer deleted`, {});
+      }
+      case "status": {
+        const arn = spec.load_balancer_arn as string;
+        if (!arn) return err("load-balancer", action, "load_balancer_arn required");
+        const result = await executeAwsCommand("ELBv2", "DescribeLoadBalancers", { LoadBalancerArns: [arn] }, region, creds);
+        return ok("load-balancer", action, "Load balancer status", result);
+      }
+      default: return err("load-balancer", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("load-balancer", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleSecurity(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("security", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "iam").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "iam") {
+          const roleName = spec.role_name as string;
+          if (!roleName) return err("security", action, "role_name required");
+          const result = await executeAwsCommand("IAM", "CreateRole", {
+            RoleName: roleName,
+            AssumeRolePolicyDocument: typeof spec.assume_role_policy === "string"
+              ? spec.assume_role_policy
+              : JSON.stringify(spec.assume_role_policy),
+          }, region, creds);
+          return ok("security", action, `IAM role ${roleName} created`, result);
+        }
+        if (rt === "waf") {
+          const name = spec.acl_name as string || "default-acl";
+          const result = await executeAwsCommand("WAFV2", "CreateWebACL", {
+            Name: name,
+            Scope: spec.scope || "REGIONAL",
+            DefaultAction: { Block: {} },
+            Rules: [],
+            VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: name },
+          }, region, creds);
+          return ok("security", action, `WAF Web ACL ${name} created`, result);
+        }
+        if (rt === "guardduty") {
+          const result = await executeAwsCommand("GuardDuty", "CreateDetector", {
+            Enable: true,
+            FindingPublishingFrequency: spec.finding_frequency || "FIFTEEN_MINUTES",
+          }, region, creds);
+          return ok("security", action, "GuardDuty detector enabled", result);
+        }
+        if (rt === "securityhub") {
+          await executeAwsCommand("SecurityHub", "EnableSecurityHub", {
+            EnableDefaultStandards: spec.enable_default_standards !== false,
+          }, region, creds);
+          return ok("security", action, "Security Hub enabled", {});
+        }
+        if (rt === "cloudtrail") {
+          const trailName = spec.trail_name as string;
+          const s3Bucket = spec.s3_bucket as string;
+          if (!trailName || !s3Bucket) return err("security", action, "trail_name and s3_bucket required");
+          const result = await executeAwsCommand("CloudTrail", "CreateTrail", {
+            Name: trailName,
+            S3BucketName: s3Bucket,
+            IsMultiRegionTrail: spec.multi_region !== false,
+            EnableLogFileValidation: spec.log_validation !== false,
+          }, region, creds);
+          return ok("security", action, `CloudTrail trail ${trailName} created`, result);
+        }
+        if (rt === "config") {
+          const recorderName = spec.recorder_name as string || "default-recorder";
+          const roleArn = spec.role_arn as string;
+          if (!roleArn) return err("security", action, "role_arn required for Config recorder");
+          const result = await executeAwsCommand("ConfigService", "PutConfigurationRecorder", {
+            ConfigurationRecorder: {
+              name: recorderName,
+              roleARN: roleArn,
+              recordingGroup: { allSupported: true },
+            },
+          }, region, creds);
+          return ok("security", action, `AWS Config recorder ${recorderName} configured`, result);
+        }
+        return err("security", action, `Unsupported resource_type '${rt}'. Use: iam, waf, guardduty, securityhub, cloudtrail, config`);
+      }
+      case "discover": {
+        if (rt === "iam") {
+          const result = await executeAwsCommand("IAM", "ListRoles", {}, region, creds);
+          return ok("security", action, "IAM roles listed", result);
+        }
+        if (rt === "waf") {
+          const result = await executeAwsCommand("WAFV2", "ListWebACLs", { Scope: "REGIONAL" }, region, creds);
+          return ok("security", action, "WAF Web ACLs listed", result);
+        }
+        if (rt === "guardduty") {
+          const result = await executeAwsCommand("GuardDuty", "ListDetectors", {}, region, creds);
+          return ok("security", action, "GuardDuty detectors listed", result);
+        }
+        if (rt === "securityhub") {
+          const result = await executeAwsCommand("SecurityHub", "GetFindings", { Filters: {} }, region, creds);
+          return ok("security", action, "Security Hub findings listed", result);
+        }
+        if (rt === "cloudtrail") {
+          const result = await executeAwsCommand("CloudTrail", "DescribeTrails", {}, region, creds);
+          return ok("security", action, "CloudTrail trails listed", result);
+        }
+        if (rt === "config") {
+          const result = await executeAwsCommand("ConfigService", "DescribeConfigurationRecorders", {}, region, creds);
+          return ok("security", action, "AWS Config recorders listed", result);
+        }
+        return err("security", action, `Unsupported resource_type '${rt}'. Use: iam, waf, guardduty, securityhub, cloudtrail, config`);
+      }
+      case "destroy": {
+        if (rt === "iam") {
+          const roleName = spec.role_name as string;
+          if (!roleName) return err("security", action, "role_name required");
+          await executeAwsCommand("IAM", "DeleteRole", { RoleName: roleName }, region, creds);
+          return ok("security", action, `IAM role ${roleName} deleted`, {});
+        }
+        if (rt === "guardduty") {
+          const detectorId = spec.detector_id as string;
+          if (!detectorId) return err("security", action, "detector_id required");
+          await executeAwsCommand("GuardDuty", "DeleteDetector", { DetectorId: detectorId }, region, creds);
+          return ok("security", action, `GuardDuty detector ${detectorId} deleted`, {});
+        }
+        return err("security", action, `Destroy not supported for resource_type '${rt}'`);
+      }
+      case "status": {
+        if (rt === "iam") {
+          const roleName = spec.role_name as string;
+          if (!roleName) return err("security", action, "role_name required");
+          const result = await executeAwsCommand("IAM", "GetRole", { RoleName: roleName }, region, creds);
+          return ok("security", action, `IAM role ${roleName} details`, result);
+        }
+        return err("security", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("security", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("security", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
