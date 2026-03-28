@@ -11,16 +11,16 @@ describe("ManifestSchema — validation", () => {
     expect(result.success).toBe(true);
   });
 
-  it("manifest has version 2", () => {
+  it("manifest has version 3", () => {
     const result = ManifestSchema.safeParse(rawManifest);
     expect(result.success).toBe(true);
-    expect((result as any).data?.version).toBe("2");
+    expect((result as any).data?.version).toBe("3");
   });
 
-  it("manifest has exactly 69 entries", () => {
+  it("manifest has exactly 123 entries", () => {
     const result = ManifestSchema.safeParse(rawManifest);
     expect(result.success).toBe(true);
-    expect((result as any).data?.entries.length).toBe(69);
+    expect((result as any).data?.entries.length).toBe(123);
   });
 
   it("rejects a manifest with an unknown provider", () => {
@@ -131,7 +131,7 @@ describe("manifest-engine — unit tests", () => {
     expect(op.entry.provider).toBe("aws");
     expect(op.entry.execution.type).toBe("rest-proxy");
     expect(op.resolved_spec).toBeDefined();
-    expect(op.manifest_version).toBe("2");
+    expect(op.manifest_version).toBe("3");
   });
 
   it("prepareOperation — returns NOT_FOUND for unknown triple", () => {
@@ -153,9 +153,9 @@ describe("manifest-engine — unit tests", () => {
     expect(result.resolved_spec["region"]).toBe("us-east-1");
   });
 
-  it("prepareOperation — manifest_version is '2'", () => {
+  it("prepareOperation — manifest_version is '3'", () => {
     const result = engine.prepareOperation("compute", "deploy", "aws", { region: "us-east-1", imageId: "ami-123", subnetId: "subnet-abc" }) as any;
     expect(result).not.toBeInstanceOf(ManifestError);
-    expect(result.manifest_version).toBe("2");
+    expect(result.manifest_version).toBe("3");
   });
 });
