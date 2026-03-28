@@ -14,6 +14,11 @@ export const IntentSchema = z.enum([
   "network", "compute", "k8s",
   "ansible", "reconcile", "inventory",
   "sre-supreme", "naawi", "dolt",
+  "storage", "database", "serverless",
+  "cdn", "dns", "loadbalancer",
+  "security", "gateway", "secrets",
+  "observability", "orchestration", "ai",
+  "container", "gap-analysis",
 ]);
 export type Intent = z.infer<typeof IntentSchema>;
 
