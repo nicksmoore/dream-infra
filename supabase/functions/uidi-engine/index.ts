@@ -5102,6 +5102,227 @@ async function handleSecurity(action: string, spec: Record<string, unknown>): Pr
   }
 }
 
+async function handleGateway(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("gateway", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "api-gateway").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "api-gateway") {
+          const name = spec.api_name as string;
+          if (!name) return err("gateway", action, "api_name required");
+          const result = await executeAwsCommand("ApiGatewayV2", "CreateApi", {
+            Name: name,
+            ProtocolType: spec.protocol || "HTTP",
+          }, region, creds);
+          return ok("gateway", action, `API Gateway ${name} created`, result);
+        }
+        if (rt === "vpc-endpoint") {
+          const serviceId = spec.service_name as string;
+          const vpcId = spec.vpc_id as string;
+          if (!serviceId || !vpcId) return err("gateway", action, "service_name and vpc_id required");
+          const result = await executeAwsCommand("EC2", "CreateVpcEndpoint", {
+            ServiceName: serviceId,
+            VpcId: vpcId,
+            VpcEndpointType: spec.endpoint_type || "Interface",
+          }, region, creds);
+          return ok("gateway", action, `VPC endpoint created`, result);
+        }
+        return err("gateway", action, `Unsupported resource_type '${rt}'. Use: api-gateway, vpc-endpoint`);
+      }
+      case "discover": {
+        if (rt === "api-gateway") {
+          const result = await executeAwsCommand("ApiGatewayV2", "GetApis", {}, region, creds);
+          return ok("gateway", action, "API Gateways listed", result);
+        }
+        if (rt === "vpc-endpoint") {
+          const result = await executeAwsCommand("EC2", "DescribeVpcEndpoints", {}, region, creds);
+          return ok("gateway", action, "VPC endpoints listed", result);
+        }
+        return err("gateway", action, `Unsupported resource_type '${rt}'. Use: api-gateway, vpc-endpoint`);
+      }
+      case "destroy": {
+        if (rt === "api-gateway") {
+          const apiId = spec.api_id as string;
+          if (!apiId) return err("gateway", action, "api_id required");
+          await executeAwsCommand("ApiGatewayV2", "DeleteApi", { ApiId: apiId }, region, creds);
+          return ok("gateway", action, `API Gateway ${apiId} deleted`, {});
+        }
+        if (rt === "vpc-endpoint") {
+          const endpointId = spec.endpoint_id as string;
+          if (!endpointId) return err("gateway", action, "endpoint_id required");
+          await executeAwsCommand("EC2", "DeleteVpcEndpoints", { VpcEndpointIds: [endpointId] }, region, creds);
+          return ok("gateway", action, `VPC endpoint ${endpointId} deleted`, {});
+        }
+        return err("gateway", action, `Unsupported resource_type '${rt}'.`);
+      }
+      case "status": {
+        if (rt === "api-gateway") {
+          const apiId = spec.api_id as string;
+          if (!apiId) return err("gateway", action, "api_id required");
+          const result = await executeAwsCommand("ApiGatewayV2", "GetApi", { ApiId: apiId }, region, creds);
+          return ok("gateway", action, `API Gateway ${apiId} status`, result);
+        }
+        return err("gateway", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("gateway", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("gateway", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleSecrets(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("secrets", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "secrets-manager").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "secrets-manager") {
+          const name = spec.secret_name as string;
+          if (!name) return err("secrets", action, "secret_name required");
+          const result = await executeAwsCommand("SecretsManager", "CreateSecret", {
+            Name: name,
+            SecretString: spec.secret_value as string,
+          }, region, creds);
+          return ok("secrets", action, `Secret ${name} created`, result);
+        }
+        if (rt === "kms") {
+          const result = await executeAwsCommand("KMS", "CreateKey", {
+            Description: spec.description as string || "Created by Naawi",
+            KeyUsage: spec.key_usage || "ENCRYPT_DECRYPT",
+            KeySpec: spec.key_spec || "SYMMETRIC_DEFAULT",
+          }, region, creds);
+          return ok("secrets", action, "KMS key created", result);
+        }
+        return err("secrets", action, `Unsupported resource_type '${rt}'. Use: secrets-manager, kms`);
+      }
+      case "discover": {
+        if (rt === "secrets-manager") {
+          const result = await executeAwsCommand("SecretsManager", "ListSecrets", {}, region, creds);
+          return ok("secrets", action, "Secrets listed", result);
+        }
+        if (rt === "kms") {
+          const result = await executeAwsCommand("KMS", "ListKeys", {}, region, creds);
+          return ok("secrets", action, "KMS keys listed", result);
+        }
+        return err("secrets", action, `Unsupported resource_type '${rt}'. Use: secrets-manager, kms`);
+      }
+      case "destroy": {
+        if (rt === "secrets-manager") {
+          const name = spec.secret_name as string;
+          if (!name) return err("secrets", action, "secret_name required");
+          await executeAwsCommand("SecretsManager", "DeleteSecret", {
+            SecretId: name,
+            RecoveryWindowInDays: spec.recovery_window_days || 30,
+          }, region, creds);
+          return ok("secrets", action, `Secret ${name} scheduled for deletion`, {});
+        }
+        return err("secrets", action, `Destroy not supported for resource_type '${rt}'`);
+      }
+      case "status": {
+        if (rt === "secrets-manager") {
+          const name = spec.secret_name as string;
+          if (!name) return err("secrets", action, "secret_name required");
+          const result = await executeAwsCommand("SecretsManager", "DescribeSecret", { SecretId: name }, region, creds);
+          return ok("secrets", action, `Secret ${name} details`, result);
+        }
+        return err("secrets", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("secrets", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("secrets", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleObservability(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("observability", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "alarm").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "alarm") {
+          const name = spec.alarm_name as string;
+          if (!name) return err("observability", action, "alarm_name required");
+          const result = await executeAwsCommand("CloudWatch", "PutMetricAlarm", {
+            AlarmName: name,
+            MetricName: spec.metric_name as string,
+            Namespace: spec.namespace as string,
+            Period: spec.period || 300,
+            EvaluationPeriods: spec.evaluation_periods || 1,
+            Threshold: spec.threshold as number,
+            ComparisonOperator: spec.comparison_operator as string || "GreaterThanThreshold",
+            Statistic: spec.statistic || "Average",
+            ActionsEnabled: true,
+          }, region, creds);
+          return ok("observability", action, `CloudWatch alarm ${name} created`, result);
+        }
+        if (rt === "log-group") {
+          const logGroupName = spec.log_group_name as string;
+          if (!logGroupName) return err("observability", action, "log_group_name required");
+          await executeAwsCommand("CloudWatchLogs", "CreateLogGroup", { logGroupName }, region, creds);
+          if (spec.retention_days) {
+            await executeAwsCommand("CloudWatchLogs", "PutRetentionPolicy", {
+              logGroupName,
+              retentionInDays: spec.retention_days,
+            }, region, creds);
+          }
+          return ok("observability", action, `Log group ${logGroupName} created`, { log_group_name: logGroupName });
+        }
+        return err("observability", action, `Unsupported resource_type '${rt}'. Use: alarm, log-group`);
+      }
+      case "discover": {
+        if (rt === "alarm") {
+          const result = await executeAwsCommand("CloudWatch", "DescribeAlarms", {}, region, creds);
+          return ok("observability", action, "CloudWatch alarms listed", result);
+        }
+        if (rt === "log-group") {
+          const result = await executeAwsCommand("CloudWatchLogs", "DescribeLogGroups", {}, region, creds);
+          return ok("observability", action, "CloudWatch log groups listed", result);
+        }
+        return err("observability", action, `Unsupported resource_type '${rt}'. Use: alarm, log-group`);
+      }
+      case "destroy": {
+        if (rt === "alarm") {
+          const name = spec.alarm_name as string;
+          if (!name) return err("observability", action, "alarm_name required");
+          await executeAwsCommand("CloudWatch", "DeleteAlarms", { AlarmNames: [name] }, region, creds);
+          return ok("observability", action, `CloudWatch alarm ${name} deleted`, {});
+        }
+        return err("observability", action, `Destroy not supported for resource_type '${rt}'`);
+      }
+      case "status": {
+        if (rt === "alarm") {
+          const name = spec.alarm_name as string;
+          if (!name) return err("observability", action, "alarm_name required");
+          const result = await executeAwsCommand("CloudWatch", "DescribeAlarms", { AlarmNames: [name] }, region, creds);
+          return ok("observability", action, `CloudWatch alarm ${name} status`, result);
+        }
+        return err("observability", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("observability", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("observability", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
