@@ -5323,6 +5323,251 @@ async function handleObservability(action: string, spec: Record<string, unknown>
   }
 }
 
+async function handleOrchestration(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("orchestration", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "step-functions").toLowerCase();
+
+  try {
+    switch (action) {
+      case "deploy": {
+        if (rt === "step-functions") {
+          const name = spec.state_machine_name as string;
+          const roleArn = spec.role_arn as string;
+          const definition = typeof spec.definition === "string" ? spec.definition : JSON.stringify(spec.definition);
+          if (!name || !roleArn || !definition) return err("orchestration", action, "state_machine_name, role_arn, and definition required");
+          const result = await executeAwsCommand("StepFunctions", "CreateStateMachine", {
+            name,
+            roleArn,
+            definition,
+            type: spec.type || "STANDARD",
+          }, region, creds);
+          return ok("orchestration", action, `Step Functions state machine ${name} created`, result);
+        }
+        if (rt === "eventbridge") {
+          const busName = spec.event_bus_name as string;
+          if (!busName) return err("orchestration", action, "event_bus_name required");
+          const result = await executeAwsCommand("EventBridge", "CreateEventBus", { Name: busName }, region, creds);
+          return ok("orchestration", action, `EventBridge bus ${busName} created`, result);
+        }
+        if (rt === "ssm") {
+          const paramName = spec.parameter_name as string;
+          const paramValue = spec.parameter_value as string;
+          if (!paramName || !paramValue) return err("orchestration", action, "parameter_name and parameter_value required");
+          const result = await executeAwsCommand("SSM", "PutParameter", {
+            Name: paramName,
+            Value: paramValue,
+            Type: spec.parameter_type || "SecureString",
+            Overwrite: true,
+          }, region, creds);
+          return ok("orchestration", action, `SSM parameter ${paramName} stored`, result);
+        }
+        return err("orchestration", action, `Unsupported resource_type '${rt}'. Use: step-functions, eventbridge, ssm`);
+      }
+      case "discover": {
+        if (rt === "step-functions") {
+          const result = await executeAwsCommand("StepFunctions", "ListStateMachines", {}, region, creds);
+          return ok("orchestration", action, "Step Functions state machines listed", result);
+        }
+        if (rt === "eventbridge") {
+          const result = await executeAwsCommand("EventBridge", "ListEventBuses", {}, region, creds);
+          return ok("orchestration", action, "EventBridge event buses listed", result);
+        }
+        if (rt === "ssm") {
+          const result = await executeAwsCommand("SSM", "DescribeParameters", {}, region, creds);
+          return ok("orchestration", action, "SSM parameters listed", result);
+        }
+        return err("orchestration", action, `Unsupported resource_type '${rt}'. Use: step-functions, eventbridge, ssm`);
+      }
+      case "destroy": {
+        if (rt === "step-functions") {
+          const arn = spec.state_machine_arn as string;
+          if (!arn) return err("orchestration", action, "state_machine_arn required");
+          await executeAwsCommand("StepFunctions", "DeleteStateMachine", { stateMachineArn: arn }, region, creds);
+          return ok("orchestration", action, `State machine ${arn} deleted`, {});
+        }
+        if (rt === "eventbridge") {
+          const busName = spec.event_bus_name as string;
+          if (!busName) return err("orchestration", action, "event_bus_name required");
+          await executeAwsCommand("EventBridge", "DeleteEventBus", { Name: busName }, region, creds);
+          return ok("orchestration", action, `EventBridge bus ${busName} deleted`, {});
+        }
+        if (rt === "ssm") {
+          const paramName = spec.parameter_name as string;
+          if (!paramName) return err("orchestration", action, "parameter_name required");
+          await executeAwsCommand("SSM", "DeleteParameter", { Name: paramName }, region, creds);
+          return ok("orchestration", action, `SSM parameter ${paramName} deleted`, {});
+        }
+        return err("orchestration", action, `Destroy not supported for resource_type '${rt}'`);
+      }
+      case "status": {
+        if (rt === "step-functions") {
+          const arn = spec.state_machine_arn as string;
+          if (!arn) return err("orchestration", action, "state_machine_arn required");
+          const result = await executeAwsCommand("StepFunctions", "DescribeStateMachine", { stateMachineArn: arn }, region, creds);
+          return ok("orchestration", action, `State machine ${arn} details`, result);
+        }
+        return err("orchestration", action, `Status not supported for resource_type '${rt}'`);
+      }
+      default: return err("orchestration", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("orchestration", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleAi(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("ai", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  try {
+    switch (action) {
+      case "deploy": {
+        const modelId = spec.model_id as string;
+        const name = spec.provisioned_model_name as string;
+        const units = spec.model_units as number || 1;
+        if (!modelId || !name) return err("ai", action, "model_id and provisioned_model_name required");
+        const result = await executeAwsCommand("Bedrock", "CreateProvisionedModelThroughput", {
+          modelId,
+          provisionedModelName: name,
+          modelUnits: units,
+        }, region, creds);
+        return ok("ai", action, `Bedrock provisioned throughput ${name} created`, result);
+      }
+      case "discover": {
+        const result = await executeAwsCommand("Bedrock", "ListFoundationModels", {}, region, creds);
+        return ok("ai", action, "Bedrock foundation models listed", result);
+      }
+      case "destroy": {
+        const provisionedModelId = spec.provisioned_model_id as string;
+        if (!provisionedModelId) return err("ai", action, "provisioned_model_id required");
+        await executeAwsCommand("Bedrock", "DeleteProvisionedModelThroughput", { ProvisionedModelId: provisionedModelId }, region, creds);
+        return ok("ai", action, `Provisioned model ${provisionedModelId} deleted`, {});
+      }
+      case "status": {
+        const provisionedModelId = spec.provisioned_model_id as string;
+        if (!provisionedModelId) return err("ai", action, "provisioned_model_id required");
+        const result = await executeAwsCommand("Bedrock", "GetProvisionedModelThroughput", { ProvisionedModelId: provisionedModelId }, region, creds);
+        return ok("ai", action, `Provisioned model ${provisionedModelId} status`, result);
+      }
+      default: return err("ai", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("ai", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleContainer(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("container", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+
+  try {
+    switch (action) {
+      case "deploy": {
+        const clusterName = spec.cluster_name as string;
+        if (!clusterName) return err("container", action, "cluster_name required");
+        const result = await executeAwsCommand("ECS", "CreateCluster", {
+          clusterName,
+          capacityProviders: spec.capacity_providers || ["FARGATE"],
+          settings: spec.container_insights ? [{ name: "containerInsights", value: "enabled" }] : [],
+        }, region, creds);
+        return ok("container", action, `ECS cluster ${clusterName} created`, result);
+      }
+      case "discover": {
+        const result = await executeAwsCommand("ECS", "ListClusters", {}, region, creds);
+        return ok("container", action, "ECS clusters listed", result);
+      }
+      case "destroy": {
+        const clusterArn = spec.cluster_arn as string || spec.cluster_name as string;
+        if (!clusterArn) return err("container", action, "cluster_arn or cluster_name required");
+        await executeAwsCommand("ECS", "DeleteCluster", { cluster: clusterArn }, region, creds);
+        return ok("container", action, `ECS cluster ${clusterArn} deleted`, {});
+      }
+      case "status": {
+        const clusterArn = spec.cluster_arn as string || spec.cluster_name as string;
+        if (!clusterArn) return err("container", action, "cluster_arn or cluster_name required");
+        const result = await executeAwsCommand("ECS", "DescribeClusters", { clusters: [clusterArn] }, region, creds);
+        return ok("container", action, `ECS cluster status`, result);
+      }
+      default: return err("container", action, `Unknown action: ${action}`);
+    }
+  } catch (e) {
+    return err("container", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function handleGap(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
+  const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
+  const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
+  if (!AWS_KEY || !AWS_SECRET) return err("gap", action, "AWS credentials required.");
+  const region = spec.region as string || "us-east-1";
+  const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
+  const rt = (spec.resource_type as string || "snapshots").toLowerCase();
+
+  if (action !== "discover" && action !== "destroy") {
+    return err("gap", action, "Gap analysis supports discover and destroy only.");
+  }
+
+  try {
+    if (action === "discover") {
+      if (rt === "snapshots") {
+        const result = await executeAwsCommand("EC2", "DescribeSnapshots", {
+          Filters: [{ Name: "status", Values: ["completed"] }],
+          OwnerIds: ["self"],
+        }, region, creds);
+        return ok("gap", action, "Orphaned EBS snapshots discovered", result);
+      }
+      if (rt === "elastic-ips") {
+        const result = await executeAwsCommand("EC2", "DescribeAddresses", {}, region, creds);
+        return ok("gap", action, "Elastic IPs discovered", result);
+      }
+      if (rt === "security-groups") {
+        const result = await executeAwsCommand("EC2", "DescribeSecurityGroups", {}, region, creds);
+        return ok("gap", action, "Security groups audited", result);
+      }
+      if (rt === "unattached-volumes") {
+        const result = await executeAwsCommand("EC2", "DescribeVolumes", {
+          Filters: [{ Name: "status", Values: ["available"] }],
+        }, region, creds);
+        return ok("gap", action, "Unattached EBS volumes discovered", result);
+      }
+      if (rt === "route53-records") {
+        const zoneId = spec.zone_id as string;
+        if (!zoneId) return err("gap", action, "zone_id required for route53-records discovery");
+        const result = await executeAwsCommand("Route53", "ListResourceRecordSets", { HostedZoneId: zoneId }, region, creds);
+        return ok("gap", action, "Route53 records listed", result);
+      }
+      return err("gap", action, `Unsupported resource_type '${rt}'. Use: snapshots, elastic-ips, security-groups, unattached-volumes, route53-records`);
+    }
+
+    // action === "destroy"
+    if (rt === "elastic-ips") {
+      const allocationId = spec.allocation_id as string;
+      if (!allocationId) return err("gap", action, "allocation_id required");
+      await executeAwsCommand("EC2", "ReleaseAddress", { AllocationId: allocationId }, region, creds);
+      return ok("gap", action, `Elastic IP ${allocationId} released`, {});
+    }
+    if (rt === "snapshots") {
+      const snapshotId = spec.snapshot_id as string;
+      if (!snapshotId) return err("gap", action, "snapshot_id required");
+      await executeAwsCommand("EC2", "DeleteSnapshot", { SnapshotId: snapshotId }, region, creds);
+      return ok("gap", action, `EBS snapshot ${snapshotId} deleted`, {});
+    }
+    return err("gap", action, `Destroy not supported for resource_type '${rt}'`);
+  } catch (e) {
+    return err("gap", action, e instanceof Error ? e.message : String(e));
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
