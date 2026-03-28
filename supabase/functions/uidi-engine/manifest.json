@@ -1,694 +1,4717 @@
 {
-  "version": "2",
-  "generated_at": "2026-03-26T00:00:00.000Z",
+  "version": "3",
+  "generated_at": "2026-03-28T00:00:00.000Z",
   "entries": [
     {
-      "intent": "network", "action": "deploy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=CreateVpc&CidrBlock={{cidrBlock}}&Version=2016-11-15",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": { "cidrBlock": "10.0.0.0/16" }, "default": {}, "required_keys": ["region"] }
-    },
-    {
-      "intent": "network", "action": "deploy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"cidrBlock\":\"{{cidrBlock}}\",\"isIpv6Enabled\":{{isIpv6Enabled}}}"
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date", "x-content-sha256"], "region_required": true },
-      "enforcement": { "inject": { "isIpv6Enabled": false, "cidrBlock": "10.0.0.0/16" }, "default": {}, "required_keys": ["region", "compartmentId"] }
-    },
-    {
-      "intent": "network", "action": "deploy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"name\":\"{{networkName}}\",\"autoCreateSubnetworks\":{{autoCreateSubnetworks}},\"routingConfig\":{\"routingMode\":\"{{routingMode}}\"}}"
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": { "autoCreateSubnetworks": false, "routingMode": "REGIONAL" }, "default": {}, "required_keys": ["projectId", "networkName"] }
-    },
-    {
-      "intent": "network", "action": "deploy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "PUT",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"addressSpace\":{\"addressPrefixes\":{{addressPrefixes}}}}}"
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": { "addressPrefixes": ["10.1.0.0/16"] }, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "vnetName", "location"] }
-    },
-    {
-      "intent": "network", "action": "discover", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVpcs&Version=2016-11-15",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region"] }
-    },
-    {
-      "intent": "network", "action": "discover", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns?compartmentId={{compartmentId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "compartmentId"] }
-    },
-    {
-      "intent": "network", "action": "discover", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId"] }
-    },
-    {
-      "intent": "network", "action": "discover", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.Network/virtualNetworks?api-version=2023-05-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId"] }
-    },
-    {
-      "intent": "network", "action": "destroy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DeleteVpc&VpcId={{vpcId}}&Version=2016-11-15",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "vpcId"] }
-    },
-    {
-      "intent": "network", "action": "destroy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns/{{vcnId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "vcnId"] }
-    },
-    {
-      "intent": "network", "action": "destroy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks/{{networkName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "networkName"] }
-    },
-    {
-      "intent": "network", "action": "destroy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "vnetName"] }
-    },
-    {
-      "intent": "network", "action": "status", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVpcs&VpcId={{vpcId}}&Version=2016-11-15",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "vpcId"] }
-    },
-    {
-      "intent": "network", "action": "status", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns/{{vcnId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "vcnId"] }
-    },
-    {
-      "intent": "network", "action": "status", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks/{{networkName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "networkName"] }
-    },
-    {
-      "intent": "network", "action": "status", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "vnetName"] }
-    },
-    {
-      "intent": "compute", "action": "deploy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=RunInstances&Version=2016-11-15",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" },
-        "body_template": "ImageId={{imageId}}&InstanceType={{instanceType}}&MinCount=1&MaxCount=1&SubnetId={{subnetId}}"
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date", "content-type"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": { "instanceType": "t3.micro" }, "required_keys": ["region", "imageId", "subnetId"] }
-    },
-    {
-      "intent": "compute", "action": "deploy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"shape\":\"{{shape}}\",\"availabilityDomain\":\"{{availabilityDomain}}\",\"sourceDetails\":{\"sourceType\":\"image\",\"imageId\":\"{{imageId}}\"}}"
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date", "x-content-sha256"], "region_required": true },
-      "enforcement": { "inject": {}, "default": { "shape": "VM.Standard.E4.Flex" }, "required_keys": ["region", "compartmentId", "availabilityDomain", "imageId"] }
-    },
-    {
-      "intent": "compute", "action": "deploy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"name\":\"{{instanceName}}\",\"machineType\":\"zones/{{zone}}/machineTypes/{{machineType}}\",\"disks\":[{\"boot\":true,\"initializeParams\":{\"sourceImage\":\"{{sourceImage}}\"}}],\"networkInterfaces\":[{\"network\":\"{{network}}\"}]}"
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": { "machineType": "n2-standard-2" }, "required_keys": ["projectId", "zone", "instanceName", "sourceImage", "network"] }
-    },
-    {
-      "intent": "compute", "action": "deploy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "PUT",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}?api-version=2023-07-01",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"hardwareProfile\":{\"vmSize\":\"{{vmSize}}\"},\"storageProfile\":{\"imageReference\":{\"id\":\"{{imageId}}\"}},\"networkProfile\":{\"networkInterfaces\":[{\"id\":\"{{nicId}}\"}]}}}"
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": { "vmSize": "Standard_D2s_v3" }, "required_keys": ["subscriptionId", "resourceGroup", "vmName", "location", "imageId", "nicId"] }
-    },
-    {
-      "intent": "compute", "action": "discover", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeInstances&Version=2016-11-15",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region"] }
-    },
-    {
-      "intent": "compute", "action": "discover", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances?compartmentId={{compartmentId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "compartmentId"] }
-    },
-    {
-      "intent": "compute", "action": "discover", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone"] }
-    },
-    {
-      "intent": "compute", "action": "discover", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.Compute/virtualMachines?api-version=2023-07-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId"] }
-    },
-    {
-      "intent": "compute", "action": "destroy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=TerminateInstances&InstanceId.1={{instanceId}}&Version=2016-11-15",
-        "headers": { "Content-Type": "application/x-www-form-urlencoded" }
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "instanceId"] }
-    },
-    {
-      "intent": "compute", "action": "destroy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances/{{instanceId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "instanceId"] }
-    },
-    {
-      "intent": "compute", "action": "destroy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances/{{instanceName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone", "instanceName"] }
-    },
-    {
-      "intent": "compute", "action": "destroy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}?api-version=2023-07-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "vmName"] }
-    },
-    {
-      "intent": "compute", "action": "status", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeInstanceStatus&InstanceId.1={{instanceId}}&Version=2016-11-15",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "ec2", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "instanceId"] }
-    },
-    {
-      "intent": "compute", "action": "status", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances/{{instanceId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "instanceId"] }
-    },
-    {
-      "intent": "compute", "action": "status", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances/{{instanceName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone", "instanceName"] }
-    },
-    {
-      "intent": "compute", "action": "status", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}/instanceView?api-version=2023-07-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "vmName"] }
-    },
-    {
-      "intent": "k8s", "action": "deploy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://eks.{{region}}.amazonaws.com/clusters",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"name\":\"{{clusterName}}\",\"roleArn\":\"{{roleArn}}\",\"resourcesVpcConfig\":{\"subnetIds\":{{subnetIds}},\"securityGroupIds\":{{securityGroupIds}}}}"
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date", "content-type"], "service": "eks", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "clusterName", "roleArn", "subnetIds", "securityGroupIds"] }
-    },
-    {
-      "intent": "k8s", "action": "deploy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"name\":\"{{clusterName}}\",\"vcnId\":\"{{vcnId}}\",\"kubernetesVersion\":\"{{kubernetesVersion}}\"}"
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date", "x-content-sha256"], "region_required": true },
-      "enforcement": { "inject": {}, "default": { "kubernetesVersion": "v1.29.1" }, "required_keys": ["region", "compartmentId", "clusterName", "vcnId"] }
-    },
-    {
-      "intent": "k8s", "action": "deploy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "POST",
-        "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"cluster\":{\"name\":\"{{clusterName}}\",\"nodePools\":[{\"name\":\"default-pool\",\"config\":{\"machineType\":\"{{machineType}}\"},\"initialNodeCount\":{{initialNodeCount}}}]}}"
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": { "machineType": "n2-standard-4", "initialNodeCount": 3 }, "required_keys": ["projectId", "zone", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "deploy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "PUT",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
-        "headers": { "Content-Type": "application/json" },
-        "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"kubernetesVersion\":\"{{kubernetesVersion}}\",\"dnsPrefix\":\"{{dnsPrefix}}\",\"agentPoolProfiles\":[{\"name\":\"agentpool\",\"count\":{{nodeCount}},\"vmSize\":\"{{vmSize}}\"}]}}"
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": { "vmSize": "Standard_D4s_v3", "nodeCount": 3, "kubernetesVersion": "1.29" }, "required_keys": ["subscriptionId", "resourceGroup", "clusterName", "location", "dnsPrefix"] }
-    },
-    {
-      "intent": "k8s", "action": "discover", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://eks.{{region}}.amazonaws.com/clusters",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "eks", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region"] }
-    },
-    {
-      "intent": "k8s", "action": "discover", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters?compartmentId={{compartmentId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "compartmentId"] }
-    },
-    {
-      "intent": "k8s", "action": "discover", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone"] }
-    },
-    {
-      "intent": "k8s", "action": "discover", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.ContainerService/managedClusters?api-version=2024-01-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId"] }
-    },
-    {
-      "intent": "k8s", "action": "destroy", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://eks.{{region}}.amazonaws.com/clusters/{{clusterName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "eks", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "destroy", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters/{{clusterId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "clusterId"] }
-    },
-    {
-      "intent": "k8s", "action": "destroy", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters/{{clusterName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "destroy", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "DELETE",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "status", "provider": "aws",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://eks.{{region}}.amazonaws.com/clusters/{{clusterName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AWS_SIGV4", "signed_headers": ["host", "x-amz-date"], "service": "eks", "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "status", "provider": "oci",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters/{{clusterId}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "OCI_RSA_V1", "signed_headers": ["host", "date"], "region_required": true },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["region", "clusterId"] }
-    },
-    {
-      "intent": "k8s", "action": "status", "provider": "gcp",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters/{{clusterName}}",
-        "headers": {}
-      }},
-      "signing": { "strategy": "GCP_OAUTH2", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["projectId", "zone", "clusterName"] }
-    },
-    {
-      "intent": "k8s", "action": "status", "provider": "azure",
-      "execution": { "type": "rest-proxy", "config": {
-        "method": "GET",
-        "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
-        "headers": {}
-      }},
-      "signing": { "strategy": "AZURE_BEARER", "signed_headers": ["authorization"], "region_required": false },
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["subscriptionId", "resourceGroup", "clusterName"] }
-    },
-    {
-      "intent": "ansible", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "ssm-ansible", "config": {
-        "playbook_path": "playbooks/deploy.yml",
-        "extra_vars_template": "{\"target_host\":\"{{target_host}}\",\"env\":\"{{env}}\"}"
-      }},
-      "enforcement": { "inject": { "ansible_user": "naawi_admin" }, "default": { "env": "production" }, "required_keys": ["target_host"] }
-    },
-    {
-      "intent": "ansible", "action": "destroy", "provider": "naawi-internal",
-      "execution": { "type": "ssm-ansible", "config": {
-        "playbook_path": "playbooks/destroy.yml",
-        "extra_vars_template": "{\"target_host\":\"{{target_host}}\"}"
-      }},
-      "enforcement": { "inject": { "ansible_user": "naawi_admin" }, "default": {}, "required_keys": ["target_host"] }
-    },
-    {
-      "intent": "ansible", "action": "status", "provider": "naawi-internal",
-      "execution": { "type": "ssm-ansible", "config": {
-        "playbook_path": "playbooks/status.yml",
-        "extra_vars_template": "{\"target_host\":\"{{target_host}}\"}"
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": ["target_host"] }
-    },
-    {
-      "intent": "ansible", "action": "discover", "provider": "naawi-internal",
-      "execution": { "type": "ssm-ansible", "config": {
-        "playbook_path": "playbooks/discover.yml",
-        "extra_vars_template": "{\"scan_pattern\":\"{{scan_pattern}}\"}"
-      }},
-      "enforcement": { "inject": {}, "default": { "scan_pattern": "*" }, "required_keys": [] }
-    },
-    {
-      "intent": "reconcile", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "meta-reconcile", "config": {
-        "sub_intents": ["network", "compute", "k8s"],
-        "drift_tolerance_seconds": 300,
-        "auto_remediate": false
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "reconcile", "action": "discover", "provider": "naawi-internal",
-      "execution": { "type": "meta-reconcile", "config": {
-        "sub_intents": ["network", "compute", "k8s"],
-        "drift_tolerance_seconds": 600,
-        "auto_remediate": false
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "reconcile", "action": "status", "provider": "naawi-internal",
-      "execution": { "type": "meta-reconcile", "config": {
-        "sub_intents": ["network", "compute", "k8s"],
-        "drift_tolerance_seconds": 60,
-        "auto_remediate": false
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "sre-supreme", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "agent-coordinator", "config": {
-        "autonomy_level": "request-approval",
-        "allowed_tools": ["prepareOperation", "dolt.writeResource", "dolt.queryResource"],
-        "max_actions_per_run": 10,
-        "forbidden_patterns": ["DELETE.*production", "DROP TABLE"]
-      }},
-      "enforcement": { "inject": { "max_tokens_per_run": 5000 }, "default": { "autonomy_level": "request-approval" }, "required_keys": [] }
-    },
-    {
-      "intent": "sre-supreme", "action": "discover", "provider": "naawi-internal",
-      "execution": { "type": "agent-coordinator", "config": {
-        "autonomy_level": "full-auto",
-        "allowed_tools": ["prepareOperation", "dolt.queryResource"],
-        "max_actions_per_run": 50,
-        "forbidden_patterns": []
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "sre-supreme", "action": "status", "provider": "naawi-internal",
-      "execution": { "type": "agent-coordinator", "config": {
-        "autonomy_level": "full-auto",
-        "allowed_tools": ["dolt.queryResource", "dolt.getHistory"],
-        "max_actions_per_run": 20,
-        "forbidden_patterns": []
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "naawi", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "agent-coordinator", "config": {
-        "autonomy_level": "request-approval",
-        "allowed_tools": ["prepareOperation", "dolt.writeResource"],
-        "max_actions_per_run": 5,
-        "forbidden_patterns": ["rm -rf", "DROP TABLE", "DELETE.*main"]
-      }},
-      "enforcement": { "inject": { "require_engram_alignment": true }, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "naawi", "action": "status", "provider": "naawi-internal",
-      "execution": { "type": "agent-coordinator", "config": {
-        "autonomy_level": "full-auto",
-        "allowed_tools": ["dolt.queryResource", "dolt.getHistory"],
-        "max_actions_per_run": 10,
-        "forbidden_patterns": []
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "dolt", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "state-manager", "config": {
-        "branch": "main",
-        "table": "resources",
-        "operation": "write"
-      }},
-      "enforcement": { "inject": {}, "default": { "branch": "main" }, "required_keys": ["resource_id"] }
-    },
-    {
-      "intent": "dolt", "action": "discover", "provider": "naawi-internal",
-      "execution": { "type": "state-manager", "config": {
-        "branch": "main",
-        "table": "resources",
-        "operation": "read"
-      }},
-      "enforcement": { "inject": {}, "default": { "branch": "main" }, "required_keys": [] }
-    },
-    {
-      "intent": "dolt", "action": "status", "provider": "naawi-internal",
-      "execution": { "type": "state-manager", "config": {
-        "branch": "main",
-        "table": "resources",
-        "operation": "diff"
-      }},
-      "enforcement": { "inject": {}, "default": { "branch": "main" }, "required_keys": [] }
-    },
-    {
-      "intent": "inventory", "action": "discover", "provider": "naawi-internal",
-      "execution": { "type": "internal-query", "config": {
-        "scan_providers": ["aws", "oci", "gcp", "azure"],
-        "scan_regions": [],
-        "resource_types": ["vpc", "instance", "cluster"]
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "inventory", "action": "discover", "provider": "aws",
-      "execution": { "type": "internal-query", "config": {
-        "scan_providers": ["aws"],
-        "scan_regions": [],
-        "resource_types": ["vpc", "instance", "cluster", "s3", "lambda"]
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "inventory", "action": "discover", "provider": "oci",
-      "execution": { "type": "internal-query", "config": {
-        "scan_providers": ["oci"],
-        "scan_regions": [],
-        "resource_types": ["vcn", "instance", "cluster"]
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "inventory", "action": "discover", "provider": "gcp",
-      "execution": { "type": "internal-query", "config": {
-        "scan_providers": ["gcp"],
-        "scan_regions": [],
-        "resource_types": ["network", "instance", "cluster", "bucket"]
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "inventory", "action": "discover", "provider": "azure",
-      "execution": { "type": "internal-query", "config": {
-        "scan_providers": ["azure"],
-        "scan_regions": [],
-        "resource_types": ["vnet", "vm", "aks", "storage"]
-      }},
-      "enforcement": { "inject": {}, "default": {}, "required_keys": [] }
-    },
-    {
-      "intent": "k8s", "action": "deploy", "provider": "naawi-internal",
-      "execution": { "type": "k8s-api", "config": {
-        "api_version": "apps/v1",
-        "resource_kind": "Deployment",
-        "namespace_template": "{{namespace}}",
-        "resource_template": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"name\":\"{{deploymentName}}\",\"namespace\":\"{{namespace}}\"},\"spec\":{\"replicas\":{{replicas}},\"selector\":{\"matchLabels\":{\"app\":\"{{deploymentName}}\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"{{deploymentName}}\"}},\"spec\":{\"containers\":[{\"name\":\"{{deploymentName}}\",\"image\":\"{{image}}\"}]}}}}"
-      }},
+      "intent": "network",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=CreateVpc&CidrBlock={{cidrBlock}}&Version=2016-11-15",
+          "headers": {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
       "enforcement": {
         "inject": {
-          "topologySpreadConstraints": [{"maxSkew": 1, "topologyKey": "kubernetes.io/hostname", "whenUnsatisfiable": "DoNotSchedule"}],
-          "securityContext": {"runAsNonRoot": true}
+          "cidrBlock": "10.0.0.0/16"
         },
-        "default": { "replicas": 2 },
-        "required_keys": ["namespace", "deploymentName", "image"]
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"cidrBlock\":\"{{cidrBlock}}\",\"isIpv6Enabled\":{{isIpv6Enabled}}}"
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date",
+          "x-content-sha256"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "isIpv6Enabled": false,
+          "cidrBlock": "10.0.0.0/16"
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "compartmentId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"name\":\"{{networkName}}\",\"autoCreateSubnetworks\":{{autoCreateSubnetworks}},\"routingConfig\":{\"routingMode\":\"{{routingMode}}\"}}"
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {
+          "autoCreateSubnetworks": false,
+          "routingMode": "REGIONAL"
+        },
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "networkName"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "deploy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "PUT",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"addressSpace\":{\"addressPrefixes\":{{addressPrefixes}}}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {
+          "addressPrefixes": [
+            "10.1.0.0/16"
+          ]
+        },
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vnetName",
+          "location"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVpcs&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns?compartmentId={{compartmentId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "compartmentId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "discover",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.Network/virtualNetworks?api-version=2023-05-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DeleteVpc&VpcId={{vpcId}}&Version=2016-11-15",
+          "headers": {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "vpcId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns/{{vcnId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "vcnId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks/{{networkName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "networkName"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "destroy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vnetName"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVpcs&VpcId={{vpcId}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "vpcId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "status",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/vcns/{{vcnId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "vcnId"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "status",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/global/networks/{{networkName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "networkName"
+        ]
+      }
+    },
+    {
+      "intent": "network",
+      "action": "status",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Network/virtualNetworks/{{vnetName}}?api-version=2023-05-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vnetName"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=RunInstances&Version=2016-11-15",
+          "headers": {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          "body_template": "ImageId={{imageId}}&InstanceType={{instanceType}}&MinCount=1&MaxCount=1&SubnetId={{subnetId}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date",
+          "content-type"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "instanceType": "t3.micro"
+        },
+        "required_keys": [
+          "region",
+          "imageId",
+          "subnetId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"shape\":\"{{shape}}\",\"availabilityDomain\":\"{{availabilityDomain}}\",\"sourceDetails\":{\"sourceType\":\"image\",\"imageId\":\"{{imageId}}\"}}"
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date",
+          "x-content-sha256"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "shape": "VM.Standard.E4.Flex"
+        },
+        "required_keys": [
+          "region",
+          "compartmentId",
+          "availabilityDomain",
+          "imageId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"name\":\"{{instanceName}}\",\"machineType\":\"zones/{{zone}}/machineTypes/{{machineType}}\",\"disks\":[{\"boot\":true,\"initializeParams\":{\"sourceImage\":\"{{sourceImage}}\"}}],\"networkInterfaces\":[{\"network\":\"{{network}}\"}]}"
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "machineType": "n2-standard-2"
+        },
+        "required_keys": [
+          "projectId",
+          "zone",
+          "instanceName",
+          "sourceImage",
+          "network"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "deploy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "PUT",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}?api-version=2023-07-01",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"hardwareProfile\":{\"vmSize\":\"{{vmSize}}\"},\"storageProfile\":{\"imageReference\":{\"id\":\"{{imageId}}\"}},\"networkProfile\":{\"networkInterfaces\":[{\"id\":\"{{nicId}}\"}]}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "vmSize": "Standard_D2s_v3"
+        },
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vmName",
+          "location",
+          "imageId",
+          "nicId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeInstances&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances?compartmentId={{compartmentId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "compartmentId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "discover",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.Compute/virtualMachines?api-version=2023-07-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=TerminateInstances&InstanceId.1={{instanceId}}&Version=2016-11-15",
+          "headers": {
+            "Content-Type": "application/x-www-form-urlencoded"
+          }
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "instanceId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "destroy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances/{{instanceId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "instanceId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "destroy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances/{{instanceName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone",
+          "instanceName"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "destroy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}?api-version=2023-07-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vmName"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeInstanceStatus&InstanceId.1={{instanceId}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "instanceId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "status",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://iaas.{{region}}.oraclecloud.com/20160918/instances/{{instanceId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "instanceId"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "status",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://compute.googleapis.com/compute/v1/projects/{{projectId}}/zones/{{zone}}/instances/{{instanceName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone",
+          "instanceName"
+        ]
+      }
+    },
+    {
+      "intent": "compute",
+      "action": "status",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.Compute/virtualMachines/{{vmName}}/instanceView?api-version=2023-07-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "vmName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://eks.{{region}}.amazonaws.com/clusters",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"name\":\"{{clusterName}}\",\"roleArn\":\"{{roleArn}}\",\"resourcesVpcConfig\":{\"subnetIds\":{{subnetIds}},\"securityGroupIds\":{{securityGroupIds}}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date",
+          "content-type"
+        ],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterName",
+          "roleArn",
+          "subnetIds",
+          "securityGroupIds"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "deploy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"compartmentId\":\"{{compartmentId}}\",\"name\":\"{{clusterName}}\",\"vcnId\":\"{{vcnId}}\",\"kubernetesVersion\":\"{{kubernetesVersion}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date",
+          "x-content-sha256"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "kubernetesVersion": "v1.29.1"
+        },
+        "required_keys": [
+          "region",
+          "compartmentId",
+          "clusterName",
+          "vcnId"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "deploy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"cluster\":{\"name\":\"{{clusterName}}\",\"nodePools\":[{\"name\":\"default-pool\",\"config\":{\"machineType\":\"{{machineType}}\"},\"initialNodeCount\":{{initialNodeCount}}}]}}"
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "machineType": "n2-standard-4",
+          "initialNodeCount": 3
+        },
+        "required_keys": [
+          "projectId",
+          "zone",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "deploy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "PUT",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"location\":\"{{location}}\",\"properties\":{\"kubernetesVersion\":\"{{kubernetesVersion}}\",\"dnsPrefix\":\"{{dnsPrefix}}\",\"agentPoolProfiles\":[{\"name\":\"agentpool\",\"count\":{{nodeCount}},\"vmSize\":\"{{vmSize}}\"}]}}"
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "vmSize": "Standard_D4s_v3",
+          "nodeCount": 3,
+          "kubernetesVersion": "1.29"
+        },
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "clusterName",
+          "location",
+          "dnsPrefix"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://eks.{{region}}.amazonaws.com/clusters",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "discover",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters?compartmentId={{compartmentId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "compartmentId"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "discover",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "discover",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/providers/Microsoft.ContainerService/managedClusters?api-version=2024-01-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://eks.{{region}}.amazonaws.com/clusters/{{clusterName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "destroy",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters/{{clusterId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterId"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "destroy",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters/{{clusterName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "destroy",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://eks.{{region}}.amazonaws.com/clusters/{{clusterName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "eks",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "status",
+      "provider": "oci",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://containerengine.{{region}}.oraclecloud.com/20180222/clusters/{{clusterId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "OCI_RSA_V1",
+        "signed_headers": [
+          "host",
+          "date"
+        ],
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterId"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "status",
+      "provider": "gcp",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://container.googleapis.com/v1/projects/{{projectId}}/zones/{{zone}}/clusters/{{clusterName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "GCP_OAUTH2",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "projectId",
+          "zone",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "status",
+      "provider": "azure",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://management.azure.com/subscriptions/{{subscriptionId}}/resourceGroups/{{resourceGroup}}/providers/Microsoft.ContainerService/managedClusters/{{clusterName}}?api-version=2024-01-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AZURE_BEARER",
+        "signed_headers": [
+          "authorization"
+        ],
+        "region_required": false
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "subscriptionId",
+          "resourceGroup",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "ansible",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "ssm-ansible",
+        "config": {
+          "playbook_path": "playbooks/deploy.yml",
+          "extra_vars_template": "{\"target_host\":\"{{target_host}}\",\"env\":\"{{env}}\"}"
+        }
+      },
+      "enforcement": {
+        "inject": {
+          "ansible_user": "naawi_admin"
+        },
+        "default": {
+          "env": "production"
+        },
+        "required_keys": [
+          "target_host"
+        ]
+      }
+    },
+    {
+      "intent": "ansible",
+      "action": "destroy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "ssm-ansible",
+        "config": {
+          "playbook_path": "playbooks/destroy.yml",
+          "extra_vars_template": "{\"target_host\":\"{{target_host}}\"}"
+        }
+      },
+      "enforcement": {
+        "inject": {
+          "ansible_user": "naawi_admin"
+        },
+        "default": {},
+        "required_keys": [
+          "target_host"
+        ]
+      }
+    },
+    {
+      "intent": "ansible",
+      "action": "status",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "ssm-ansible",
+        "config": {
+          "playbook_path": "playbooks/status.yml",
+          "extra_vars_template": "{\"target_host\":\"{{target_host}}\"}"
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "target_host"
+        ]
+      }
+    },
+    {
+      "intent": "ansible",
+      "action": "discover",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "ssm-ansible",
+        "config": {
+          "playbook_path": "playbooks/discover.yml",
+          "extra_vars_template": "{\"scan_pattern\":\"{{scan_pattern}}\"}"
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "scan_pattern": "*"
+        },
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "reconcile",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "meta-reconcile",
+        "config": {
+          "sub_intents": [
+            "network",
+            "compute",
+            "k8s"
+          ],
+          "drift_tolerance_seconds": 300,
+          "auto_remediate": false
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "reconcile",
+      "action": "discover",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "meta-reconcile",
+        "config": {
+          "sub_intents": [
+            "network",
+            "compute",
+            "k8s"
+          ],
+          "drift_tolerance_seconds": 600,
+          "auto_remediate": false
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "reconcile",
+      "action": "status",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "meta-reconcile",
+        "config": {
+          "sub_intents": [
+            "network",
+            "compute",
+            "k8s"
+          ],
+          "drift_tolerance_seconds": 60,
+          "auto_remediate": false
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "sre-supreme",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "agent-coordinator",
+        "config": {
+          "autonomy_level": "request-approval",
+          "allowed_tools": [
+            "prepareOperation",
+            "dolt.writeResource",
+            "dolt.queryResource"
+          ],
+          "max_actions_per_run": 10,
+          "forbidden_patterns": [
+            "DELETE.*production",
+            "DROP TABLE"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {
+          "max_tokens_per_run": 5000
+        },
+        "default": {
+          "autonomy_level": "request-approval"
+        },
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "sre-supreme",
+      "action": "discover",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "agent-coordinator",
+        "config": {
+          "autonomy_level": "full-auto",
+          "allowed_tools": [
+            "prepareOperation",
+            "dolt.queryResource"
+          ],
+          "max_actions_per_run": 50,
+          "forbidden_patterns": []
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "sre-supreme",
+      "action": "status",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "agent-coordinator",
+        "config": {
+          "autonomy_level": "full-auto",
+          "allowed_tools": [
+            "dolt.queryResource",
+            "dolt.getHistory"
+          ],
+          "max_actions_per_run": 20,
+          "forbidden_patterns": []
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "naawi",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "agent-coordinator",
+        "config": {
+          "autonomy_level": "request-approval",
+          "allowed_tools": [
+            "prepareOperation",
+            "dolt.writeResource"
+          ],
+          "max_actions_per_run": 5,
+          "forbidden_patterns": [
+            "rm -rf",
+            "DROP TABLE",
+            "DELETE.*main"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {
+          "require_engram_alignment": true
+        },
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "naawi",
+      "action": "status",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "agent-coordinator",
+        "config": {
+          "autonomy_level": "full-auto",
+          "allowed_tools": [
+            "dolt.queryResource",
+            "dolt.getHistory"
+          ],
+          "max_actions_per_run": 10,
+          "forbidden_patterns": []
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "dolt",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "state-manager",
+        "config": {
+          "branch": "main",
+          "table": "resources",
+          "operation": "write"
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "branch": "main"
+        },
+        "required_keys": [
+          "resource_id"
+        ]
+      }
+    },
+    {
+      "intent": "dolt",
+      "action": "discover",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "state-manager",
+        "config": {
+          "branch": "main",
+          "table": "resources",
+          "operation": "read"
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "branch": "main"
+        },
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "dolt",
+      "action": "status",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "state-manager",
+        "config": {
+          "branch": "main",
+          "table": "resources",
+          "operation": "diff"
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "branch": "main"
+        },
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "inventory",
+      "action": "discover",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "internal-query",
+        "config": {
+          "scan_providers": [
+            "aws",
+            "oci",
+            "gcp",
+            "azure"
+          ],
+          "scan_regions": [],
+          "resource_types": [
+            "vpc",
+            "instance",
+            "cluster"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "inventory",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "internal-query",
+        "config": {
+          "scan_providers": [
+            "aws"
+          ],
+          "scan_regions": [],
+          "resource_types": [
+            "vpc",
+            "instance",
+            "cluster",
+            "s3",
+            "lambda"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "inventory",
+      "action": "discover",
+      "provider": "oci",
+      "execution": {
+        "type": "internal-query",
+        "config": {
+          "scan_providers": [
+            "oci"
+          ],
+          "scan_regions": [],
+          "resource_types": [
+            "vcn",
+            "instance",
+            "cluster"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "inventory",
+      "action": "discover",
+      "provider": "gcp",
+      "execution": {
+        "type": "internal-query",
+        "config": {
+          "scan_providers": [
+            "gcp"
+          ],
+          "scan_regions": [],
+          "resource_types": [
+            "network",
+            "instance",
+            "cluster",
+            "bucket"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "inventory",
+      "action": "discover",
+      "provider": "azure",
+      "execution": {
+        "type": "internal-query",
+        "config": {
+          "scan_providers": [
+            "azure"
+          ],
+          "scan_regions": [],
+          "resource_types": [
+            "vnet",
+            "vm",
+            "aks",
+            "storage"
+          ]
+        }
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "k8s",
+      "action": "deploy",
+      "provider": "naawi-internal",
+      "execution": {
+        "type": "k8s-api",
+        "config": {
+          "api_version": "apps/v1",
+          "resource_kind": "Deployment",
+          "namespace_template": "{{namespace}}",
+          "resource_template": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"name\":\"{{deploymentName}}\",\"namespace\":\"{{namespace}}\"},\"spec\":{\"replicas\":{{replicas}},\"selector\":{\"matchLabels\":{\"app\":\"{{deploymentName}}\"}},\"template\":{\"metadata\":{\"labels\":{\"app\":\"{{deploymentName}}\"}},\"spec\":{\"containers\":[{\"name\":\"{{deploymentName}}\",\"image\":\"{{image}}\"}]}}}}"
+        }
+      },
+      "enforcement": {
+        "inject": {
+          "topologySpreadConstraints": [
+            {
+              "maxSkew": 1,
+              "topologyKey": "kubernetes.io/hostname",
+              "whenUnsatisfiable": "DoNotSchedule"
+            }
+          ],
+          "securityContext": {
+            "runAsNonRoot": true
+          }
+        },
+        "default": {
+          "replicas": 2
+        },
+        "required_keys": [
+          "namespace",
+          "deploymentName",
+          "image"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "PUT",
+          "url_template": "https://{{bucketName}}.s3.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/xml"
+          },
+          "body_template": "<CreateBucketConfiguration><LocationConstraint>{{region}}</LocationConstraint></CreateBucketConfiguration>"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "s3",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "x-amz-bucket-object-lock-enabled": "true"
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "bucketName"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://s3.{{region}}.amazonaws.com/",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "s3",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://{{bucketName}}.s3.{{region}}.amazonaws.com/",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "s3",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "bucketName"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://{{bucketName}}.s3.{{region}}.amazonaws.com/?versioning",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "s3",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "bucketName"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVolumes&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DeleteVolume&VolumeId={{volumeId}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "volumeId"
+        ]
+      }
+    },
+    {
+      "intent": "storage",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticfilesystem.{{region}}.amazonaws.com/2015-02-01/file-systems",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"CreationToken\":\"{{creationToken}}\",\"Encrypted\":{{encrypted}},\"PerformanceMode\":\"{{performanceMode}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticfilesystem",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "encrypted": true
+        },
+        "default": {
+          "performanceMode": "generalPurpose"
+        },
+        "required_keys": [
+          "region",
+          "creationToken"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://rds.{{region}}.amazonaws.com/?Action=CreateDBInstance&DBInstanceIdentifier={{dbInstanceId}}&DBInstanceClass={{dbInstanceClass}}&Engine={{engine}}&MasterUsername={{masterUsername}}&MasterUserPassword={{masterPassword}}&AllocatedStorage={{allocatedStorage}}&Version=2014-10-31",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "rds",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "StorageEncrypted": true,
+          "DeletionProtection": true,
+          "MultiAZ": true
+        },
+        "default": {
+          "dbInstanceClass": "db.t3.medium",
+          "engine": "postgres",
+          "allocatedStorage": 20
+        },
+        "required_keys": [
+          "region",
+          "dbInstanceId",
+          "masterUsername",
+          "masterPassword"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://rds.{{region}}.amazonaws.com/?Action=DescribeDBInstances&Version=2014-10-31",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "rds",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://rds.{{region}}.amazonaws.com/?Action=DeleteDBInstance&DBInstanceIdentifier={{dbInstanceId}}&SkipFinalSnapshot={{skipFinalSnapshot}}&Version=2014-10-31",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "rds",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "skipFinalSnapshot": false
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "dbInstanceId"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://rds.{{region}}.amazonaws.com/?Action=DescribeDBInstances&DBInstanceIdentifier={{dbInstanceId}}&Version=2014-10-31",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "rds",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "dbInstanceId"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://dynamodb.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "DynamoDB_20120810.CreateTable"
+          },
+          "body_template": "{\"TableName\":\"{{tableName}}\",\"KeySchema\":[{\"AttributeName\":\"{{partitionKey}}\",\"KeyType\":\"HASH\"}],\"AttributeDefinitions\":[{\"AttributeName\":\"{{partitionKey}}\",\"AttributeType\":\"S\"}],\"BillingMode\":\"PAY_PER_REQUEST\",\"SSESpecification\":{\"Enabled\":true}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "dynamodb",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "SSESpecification": {
+            "Enabled": true
+          },
+          "PointInTimeRecoverySpecification": {
+            "PointInTimeRecoveryEnabled": true
+          }
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "tableName",
+          "partitionKey"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://dynamodb.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "DynamoDB_20120810.ListTables"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "dynamodb",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticache.{{region}}.amazonaws.com/?Action=CreateReplicationGroup&ReplicationGroupId={{replicationGroupId}}&ReplicationGroupDescription={{description}}&Engine=redis&CacheNodeType={{cacheNodeType}}&NumCacheClusters={{numCacheClusters}}&AtRestEncryptionEnabled=true&TransitEncryptionEnabled=true&Version=2015-02-02",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticache",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "AtRestEncryptionEnabled": true,
+          "TransitEncryptionEnabled": true
+        },
+        "default": {
+          "cacheNodeType": "cache.t3.medium",
+          "numCacheClusters": 2
+        },
+        "required_keys": [
+          "region",
+          "replicationGroupId",
+          "description"
+        ]
+      }
+    },
+    {
+      "intent": "database",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticache.{{region}}.amazonaws.com/?Action=DescribeReplicationGroups&Version=2015-02-02",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticache",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "serverless",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://lambda.{{region}}.amazonaws.com/2015-03-31/functions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"FunctionName\":\"{{functionName}}\",\"Runtime\":\"{{runtime}}\",\"Role\":\"{{roleArn}}\",\"Handler\":\"{{handler}}\",\"Code\":{\"S3Bucket\":\"{{codeBucket}}\",\"S3Key\":\"{{codeKey}}\"},\"Timeout\":{{timeout}},\"MemorySize\":{{memorySize}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "lambda",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "TracingConfig": {
+            "Mode": "Active"
+          }
+        },
+        "default": {
+          "runtime": "nodejs20.x",
+          "handler": "index.handler",
+          "timeout": 30,
+          "memorySize": 256
+        },
+        "required_keys": [
+          "region",
+          "functionName",
+          "roleArn",
+          "codeBucket",
+          "codeKey"
+        ]
+      }
+    },
+    {
+      "intent": "serverless",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://lambda.{{region}}.amazonaws.com/2015-03-31/functions",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "lambda",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "serverless",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://lambda.{{region}}.amazonaws.com/2015-03-31/functions/{{functionName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "lambda",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "functionName"
+        ]
+      }
+    },
+    {
+      "intent": "serverless",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://lambda.{{region}}.amazonaws.com/2015-03-31/functions/{{functionName}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "lambda",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "functionName"
+        ]
+      }
+    },
+    {
+      "intent": "serverless",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://apprunner.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "AppRunner.CreateService"
+          },
+          "body_template": "{\"ServiceName\":\"{{serviceName}}\",\"SourceConfiguration\":{\"ImageRepository\":{\"ImageIdentifier\":\"{{imageUri}}\",\"ImageRepositoryType\":\"ECR\",\"ImageConfiguration\":{\"Port\":\"{{port}}\"}}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "apprunner",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "EncryptionConfiguration": {
+            "KmsKey": "aws/apprunner"
+          }
+        },
+        "default": {
+          "port": "8080"
+        },
+        "required_keys": [
+          "region",
+          "serviceName",
+          "imageUri"
+        ]
+      }
+    },
+    {
+      "intent": "cdn",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://cloudfront.amazonaws.com/2020-05-31/distribution",
+          "headers": {
+            "Content-Type": "application/xml"
+          },
+          "body_template": "<DistributionConfig><Origins><Quantity>1</Quantity><Items><Origin><DomainName>{{originDomain}}</DomainName><Id>{{originId}}</Id><S3OriginConfig><OriginAccessIdentity></OriginAccessIdentity></S3OriginConfig></Origin></Items></Origins><DefaultCacheBehavior><TargetOriginId>{{originId}}</TargetOriginId><ViewerProtocolPolicy>redirect-to-https</ViewerProtocolPolicy><ForwardedValues><QueryString>false</QueryString><Cookies><Forward>none</Forward></Cookies></ForwardedValues></DefaultCacheBehavior><Enabled>true</Enabled><CallerReference>{{callerReference}}</CallerReference></DistributionConfig>"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudfront",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "ViewerProtocolPolicy": "redirect-to-https"
+        },
+        "default": {},
+        "required_keys": [
+          "originDomain",
+          "originId",
+          "callerReference"
+        ]
+      }
+    },
+    {
+      "intent": "cdn",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://cloudfront.amazonaws.com/2020-05-31/distribution",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudfront",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "cdn",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://cloudfront.amazonaws.com/2020-05-31/distribution/{{distributionId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudfront",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "distributionId"
+        ]
+      }
+    },
+    {
+      "intent": "cdn",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://cloudfront.amazonaws.com/2020-05-31/distribution/{{distributionId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudfront",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "distributionId"
+        ]
+      }
+    },
+    {
+      "intent": "dns",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://route53.amazonaws.com/2013-04-01/hostedzone",
+          "headers": {
+            "Content-Type": "application/xml"
+          },
+          "body_template": "<CreateHostedZoneRequest xmlns=\"https://route53.amazonaws.com/doc/2013-04-01/\"><Name>{{domainName}}</Name><CallerReference>{{callerReference}}</CallerReference></CreateHostedZoneRequest>"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "route53",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "domainName",
+          "callerReference"
+        ]
+      }
+    },
+    {
+      "intent": "dns",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://route53.amazonaws.com/2013-04-01/hostedzone",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "route53",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "dns",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://route53.amazonaws.com/2013-04-01/hostedzone/{{hostedZoneId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "route53",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "hostedZoneId"
+        ]
+      }
+    },
+    {
+      "intent": "dns",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://route53.amazonaws.com/2013-04-01/hostedzone/{{hostedZoneId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "route53",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "hostedZoneId"
+        ]
+      }
+    },
+    {
+      "intent": "loadbalancer",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticloadbalancing.{{region}}.amazonaws.com/?Action=CreateLoadBalancer&Name={{lbName}}&Subnets.member.1={{subnet1}}&Subnets.member.2={{subnet2}}&Type={{lbType}}&Version=2015-12-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticloadbalancing",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "lbType": "application"
+        },
+        "required_keys": [
+          "region",
+          "lbName",
+          "subnet1",
+          "subnet2"
+        ]
+      }
+    },
+    {
+      "intent": "loadbalancer",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticloadbalancing.{{region}}.amazonaws.com/?Action=DescribeLoadBalancers&Version=2015-12-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticloadbalancing",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "loadbalancer",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticloadbalancing.{{region}}.amazonaws.com/?Action=DeleteLoadBalancer&LoadBalancerArn={{lbArn}}&Version=2015-12-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticloadbalancing",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "lbArn"
+        ]
+      }
+    },
+    {
+      "intent": "loadbalancer",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://elasticloadbalancing.{{region}}.amazonaws.com/?Action=DescribeLoadBalancers&LoadBalancerArns.member.1={{lbArn}}&Version=2015-12-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "elasticloadbalancing",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "lbArn"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iam.amazonaws.com/?Action=CreateRole&RoleName={{roleName}}&AssumeRolePolicyDocument={{assumeRolePolicy}}&Path={{path}}&Version=2010-05-08",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "iam",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "MaxSessionDuration": 3600
+        },
+        "default": {
+          "path": "/"
+        },
+        "required_keys": [
+          "roleName",
+          "assumeRolePolicy"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iam.amazonaws.com/?Action=ListRoles&Version=2010-05-08",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "iam",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": []
+      }
+    },
+    {
+      "intent": "security",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iam.amazonaws.com/?Action=DeleteRole&RoleName={{roleName}}&Version=2010-05-08",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "iam",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "roleName"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://iam.amazonaws.com/?Action=GetRole&RoleName={{roleName}}&Version=2010-05-08",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "iam",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "roleName"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://wafv2.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AWSWAF_20190729.CreateWebACL"
+          },
+          "body_template": "{\"Name\":\"{{aclName}}\",\"Scope\":\"{{scope}}\",\"DefaultAction\":{\"Block\":{}},\"VisibilityConfig\":{\"SampledRequestsEnabled\":true,\"CloudWatchMetricsEnabled\":true,\"MetricName\":\"{{aclName}}\"}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "wafv2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "DefaultAction": {
+            "Block": {}
+          }
+        },
+        "default": {
+          "scope": "REGIONAL"
+        },
+        "required_keys": [
+          "region",
+          "aclName"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://wafv2.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AWSWAF_20190729.ListWebACLs"
+          },
+          "body_template": "{\"Scope\":\"{{scope}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "wafv2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "scope": "REGIONAL"
+        },
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://guardduty.{{region}}.amazonaws.com/detector",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"enable\":true,\"findingPublishingFrequency\":\"FIFTEEN_MINUTES\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "guardduty",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "enable": true
+        },
+        "default": {
+          "findingPublishingFrequency": "FIFTEEN_MINUTES"
+        },
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://guardduty.{{region}}.amazonaws.com/detector",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "guardduty",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://securityhub.{{region}}.amazonaws.com/accounts",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"EnableDefaultStandards\":true}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "securityhub",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "EnableDefaultStandards": true
+        },
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://securityhub.{{region}}.amazonaws.com/findings",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "securityhub",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://cloudtrail.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.CreateTrail"
+          },
+          "body_template": "{\"Name\":\"{{trailName}}\",\"S3BucketName\":\"{{s3BucketName}}\",\"IsMultiRegionTrail\":true,\"EnableLogFileValidation\":true,\"IsOrganizationTrail\":{{isOrganizationTrail}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudtrail",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "IsMultiRegionTrail": true,
+          "EnableLogFileValidation": true
+        },
+        "default": {
+          "isOrganizationTrail": false
+        },
+        "required_keys": [
+          "region",
+          "trailName",
+          "s3BucketName"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://cloudtrail.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.DescribeTrails"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "cloudtrail",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "security",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://config.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "StarlingDoveService.PutConfigurationRecorder"
+          },
+          "body_template": "{\"ConfigurationRecorder\":{\"name\":\"{{recorderName}}\",\"roleARN\":\"{{roleArn}}\",\"recordingGroup\":{\"allSupported\":true,\"includeGlobalResourceTypes\":true}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "config",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "allSupported": true,
+          "includeGlobalResourceTypes": true
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "recorderName",
+          "roleArn"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://apigateway.{{region}}.amazonaws.com/v2/apis",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"Name\":\"{{apiName}}\",\"ProtocolType\":\"{{protocolType}}\",\"Description\":\"{{description}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "apigateway",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "protocolType": "HTTP"
+        },
+        "required_keys": [
+          "region",
+          "apiName"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://apigateway.{{region}}.amazonaws.com/v2/apis",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "apigateway",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "DELETE",
+          "url_template": "https://apigateway.{{region}}.amazonaws.com/v2/apis/{{apiId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "apigateway",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "apiId"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://apigateway.{{region}}.amazonaws.com/v2/apis/{{apiId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "apigateway",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "apiId"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=CreateVpcEndpoint&VpcId={{vpcId}}&ServiceName={{serviceName}}&VpcEndpointType={{endpointType}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "endpointType": "Interface"
+        },
+        "required_keys": [
+          "region",
+          "vpcId",
+          "serviceName"
+        ]
+      }
+    },
+    {
+      "intent": "gateway",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVpcEndpoints&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://secretsmanager.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "secretsmanager.CreateSecret"
+          },
+          "body_template": "{\"Name\":\"{{secretName}}\",\"SecretString\":\"{{secretValue}}\",\"KmsKeyId\":\"{{kmsKeyId}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "secretsmanager",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "secretName",
+          "secretValue"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://secretsmanager.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "secretsmanager.ListSecrets"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "secretsmanager",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://secretsmanager.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "secretsmanager.DeleteSecret"
+          },
+          "body_template": "{\"SecretId\":\"{{secretId}}\",\"RecoveryWindowInDays\":{{recoveryDays}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "secretsmanager",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "recoveryDays": 30
+        },
+        "required_keys": [
+          "region",
+          "secretId"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://secretsmanager.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "secretsmanager.DescribeSecret"
+          },
+          "body_template": "{\"SecretId\":\"{{secretId}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "secretsmanager",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "secretId"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://kms.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "TrentService.CreateKey"
+          },
+          "body_template": "{\"Description\":\"{{description}}\",\"KeyUsage\":\"ENCRYPT_DECRYPT\",\"Origin\":\"AWS_KMS\",\"KeySpec\":\"{{keySpec}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "kms",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "EnableKeyRotation": true
+        },
+        "default": {
+          "keySpec": "SYMMETRIC_DEFAULT"
+        },
+        "required_keys": [
+          "region",
+          "description"
+        ]
+      }
+    },
+    {
+      "intent": "secrets",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://kms.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "TrentService.ListKeys"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "kms",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "observability",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://monitoring.{{region}}.amazonaws.com/?Action=PutMetricAlarm&AlarmName={{alarmName}}&Namespace={{namespace}}&MetricName={{metricName}}&ComparisonOperator={{comparisonOperator}}&Threshold={{threshold}}&Period={{period}}&EvaluationPeriods={{evaluationPeriods}}&Statistic={{statistic}}&Version=2010-08-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "monitoring",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "ActionsEnabled": true
+        },
+        "default": {
+          "period": 300,
+          "evaluationPeriods": 3,
+          "statistic": "Average"
+        },
+        "required_keys": [
+          "region",
+          "alarmName",
+          "namespace",
+          "metricName",
+          "comparisonOperator",
+          "threshold"
+        ]
+      }
+    },
+    {
+      "intent": "observability",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://monitoring.{{region}}.amazonaws.com/?Action=DescribeAlarms&Version=2010-08-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "monitoring",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "observability",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://monitoring.{{region}}.amazonaws.com/?Action=DeleteAlarms&AlarmNames.member.1={{alarmName}}&Version=2010-08-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "monitoring",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "alarmName"
+        ]
+      }
+    },
+    {
+      "intent": "observability",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://monitoring.{{region}}.amazonaws.com/?Action=DescribeAlarms&AlarmNames.member.1={{alarmName}}&Version=2010-08-01",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "monitoring",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "alarmName"
+        ]
+      }
+    },
+    {
+      "intent": "observability",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://logs.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "Logs_20140328.CreateLogGroup"
+          },
+          "body_template": "{\"logGroupName\":\"{{logGroupName}}\",\"retentionInDays\":{{retentionDays}},\"kmsKeyId\":\"{{kmsKeyId}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "logs",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "retentionDays": 90
+        },
+        "required_keys": [
+          "region",
+          "logGroupName"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://states.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "AWSStepFunctions.CreateStateMachine"
+          },
+          "body_template": "{\"name\":\"{{stateMachineName}}\",\"definition\":\"{{definition}}\",\"roleArn\":\"{{roleArn}}\",\"type\":\"{{type}}\",\"tracingConfiguration\":{\"enabled\":true}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "states",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "tracingConfiguration": {
+            "enabled": true
+          }
+        },
+        "default": {
+          "type": "STANDARD"
+        },
+        "required_keys": [
+          "region",
+          "stateMachineName",
+          "definition",
+          "roleArn"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://states.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "AWSStepFunctions.ListStateMachines"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "states",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://states.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "AWSStepFunctions.DeleteStateMachine"
+          },
+          "body_template": "{\"stateMachineArn\":\"{{stateMachineArn}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "states",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "stateMachineArn"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://states.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.0",
+            "X-Amz-Target": "AWSStepFunctions.DescribeStateMachine"
+          },
+          "body_template": "{\"stateMachineArn\":\"{{stateMachineArn}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "states",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "stateMachineArn"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://events.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AWSEvents.CreateEventBus"
+          },
+          "body_template": "{\"Name\":\"{{eventBusName}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "events",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "eventBusName"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://events.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AWSEvents.ListEventBuses"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "events",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ssm.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonSSM.PutParameter"
+          },
+          "body_template": "{\"Name\":\"{{parameterName}}\",\"Value\":\"{{parameterValue}}\",\"Type\":\"{{parameterType}}\",\"Overwrite\":true}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ssm",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "parameterType": "SecureString"
+        },
+        "required_keys": [
+          "region",
+          "parameterName",
+          "parameterValue"
+        ]
+      }
+    },
+    {
+      "intent": "orchestration",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ssm.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonSSM.DescribeParameters"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ssm",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "ai",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://bedrock.{{region}}.amazonaws.com/provisioned-model-throughput",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body_template": "{\"modelId\":\"{{modelId}}\",\"provisionedModelName\":\"{{provisionedModelName}}\",\"modelUnits\":{{modelUnits}}}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "bedrock",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {
+          "modelUnits": 1
+        },
+        "required_keys": [
+          "region",
+          "modelId",
+          "provisionedModelName"
+        ]
+      }
+    },
+    {
+      "intent": "ai",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://bedrock.{{region}}.amazonaws.com/foundation-models",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "bedrock",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "ai",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://bedrock.{{region}}.amazonaws.com/provisioned-model-throughput/{{provisionedModelId}}",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "bedrock",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "provisionedModelId"
+        ]
+      }
+    },
+    {
+      "intent": "container",
+      "action": "deploy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ecs.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.CreateCluster"
+          },
+          "body_template": "{\"clusterName\":\"{{clusterName}}\",\"capacityProviders\":[\"FARGATE\",\"FARGATE_SPOT\"],\"settings\":[{\"name\":\"containerInsights\",\"value\":\"enabled\"}]}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ecs",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {
+          "containerInsights": "enabled"
+        },
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterName"
+        ]
+      }
+    },
+    {
+      "intent": "container",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ecs.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.ListClusters"
+          },
+          "body_template": "{}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ecs",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "container",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ecs.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.DeleteCluster"
+          },
+          "body_template": "{\"cluster\":\"{{clusterArn}}\"}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ecs",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterArn"
+        ]
+      }
+    },
+    {
+      "intent": "container",
+      "action": "status",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ecs.{{region}}.amazonaws.com/",
+          "headers": {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.DescribeClusters"
+          },
+          "body_template": "{\"clusters\":[\"{{clusterArn}}\"]}"
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ecs",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "clusterArn"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeSnapshots&Owner.1=self&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeAddresses&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=ReleaseAddress&AllocationId={{allocationId}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "allocationId"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "destroy",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "POST",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DeleteSnapshot&SnapshotId={{snapshotId}}&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region",
+          "snapshotId"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeSecurityGroups&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://route53.amazonaws.com/2013-04-01/hostedzone/{{hostedZoneId}}/rrset",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "route53",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "hostedZoneId"
+        ]
+      }
+    },
+    {
+      "intent": "gap-analysis",
+      "action": "discover",
+      "provider": "aws",
+      "execution": {
+        "type": "rest-proxy",
+        "config": {
+          "method": "GET",
+          "url_template": "https://ec2.{{region}}.amazonaws.com/?Action=DescribeVolumes&Filter.1.Name=status&Filter.1.Value.1=available&Version=2016-11-15",
+          "headers": {}
+        }
+      },
+      "signing": {
+        "strategy": "AWS_SIGV4",
+        "signed_headers": [
+          "host",
+          "x-amz-date"
+        ],
+        "service": "ec2",
+        "region_required": true
+      },
+      "enforcement": {
+        "inject": {},
+        "default": {},
+        "required_keys": [
+          "region"
+        ]
       }
     }
   ]
