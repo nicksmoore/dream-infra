@@ -110,23 +110,23 @@ describe("buildRestRequest — template resolution", () => {
 
 test("all 14 new intents have at least one manifest entry", () => {
   const newIntents = [
-    "storage", "database", "serverless", "cdn", "dns", "load-balancer",
+    "storage", "database", "serverless", "cdn", "dns", "loadbalancer",
     "security", "gateway", "secrets", "observability", "orchestration",
-    "ai", "container", "gap",
+    "ai", "container", "gap-analysis",
   ];
   for (const intent of newIntents) {
     const entry = MANIFEST.entries.find(e => e.intent === intent);
-    expect(entry).toBeDefined();
+    expect(entry, `Intent "${intent}" must have at least one manifest entry`).toBeDefined();
   }
 });
 
-test("storage/deploy/aws entry requires region", () => {
-  const op = prepareOperation("storage", "deploy", "aws", { region: "us-east-1", resource_type: "s3", bucket_name: "test-bucket" });
+test("storage/deploy/aws entry resolves with required bucketName", () => {
+  const op = prepareOperation("storage", "deploy", "aws", { region: "us-east-1", bucketName: "test-bucket" });
   expect(op).not.toBeInstanceOf(ManifestError);
 });
 
-test("gap/discover/aws entry requires region and resource_type", () => {
-  const missing = prepareOperation("gap", "discover", "aws", {});
+test("gap-analysis/discover/aws entry requires region", () => {
+  const missing = prepareOperation("gap-analysis", "discover", "aws", {});
   expect(missing).toBeInstanceOf(ManifestError);
   expect((missing as ManifestError).code).toBe("MISSING_REQUIRED_KEY");
 });

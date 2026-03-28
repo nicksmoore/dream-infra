@@ -419,9 +419,9 @@ const corsHeaders = {
 interface ExecuteRequest {
   intent: "kubernetes" | "ansible" | "compute" | "network" | "eks" | "reconcile" | "inventory" |
           "sre-supreme" | "naawi" | "dolt" |
-          "storage" | "database" | "serverless" | "cdn" | "dns" | "load-balancer" |
+          "storage" | "database" | "serverless" | "cdn" | "dns" | "loadbalancer" | "load-balancer" |
           "security" | "gateway" | "secrets" | "observability" | "orchestration" |
-          "ai" | "container" | "gap";
+          "ai" | "container" | "gap-analysis" | "gap";
   action: "deploy" | "update" | "destroy" | "plan" | "apply" | "status" | "discover" | "dry_run" | "add_nodegroup" | "reconcile" | "scan" | "nuke" | "execute" | "wait";
   spec: Record<string, unknown>;
   metadata?: { user?: string; project?: string };
@@ -443,6 +443,8 @@ interface EngineResponse {
 // ── Intent name normalization ─────────────────────────────────────────────────
 function normalizeIntent(intent: string): string {
   if (intent === "eks" || intent === "kubernetes") return "k8s";
+  if (intent === "load-balancer") return "loadbalancer";
+  if (intent === "gap") return "gap-analysis";
   return intent;
 }
 
@@ -4934,7 +4936,7 @@ async function handleDns(action: string, spec: Record<string, unknown>): Promise
 async function handleLoadBalancer(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
-  if (!AWS_KEY || !AWS_SECRET) return err("load-balancer", action, "AWS credentials required.");
+  if (!AWS_KEY || !AWS_SECRET) return err("loadbalancer", action, "AWS credentials required.");
   const region = spec.region as string || "us-east-1";
   const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
 
@@ -4943,35 +4945,35 @@ async function handleLoadBalancer(action: string, spec: Record<string, unknown>)
       case "deploy": {
         const name = spec.name as string;
         const subnets = spec.subnets as string[];
-        if (!name || !subnets?.length) return err("load-balancer", action, "name and subnets required");
+        if (!name || !subnets?.length) return err("loadbalancer", action, "name and subnets required");
         const result = await executeAwsCommand("ELBv2", "CreateLoadBalancer", {
           Name: name,
           Subnets: subnets,
           Type: spec.type || "application",
           Scheme: spec.scheme || "internet-facing",
         }, region, creds);
-        return ok("load-balancer", action, `Load balancer ${name} creation initiated`, result);
+        return ok("loadbalancer", action, `Load balancer ${name} creation initiated`, result);
       }
       case "discover": {
         const result = await executeAwsCommand("ELBv2", "DescribeLoadBalancers", {}, region, creds);
-        return ok("load-balancer", action, "Load balancers listed", result);
+        return ok("loadbalancer", action, "Load balancers listed", result);
       }
       case "destroy": {
         const arn = spec.load_balancer_arn as string;
-        if (!arn) return err("load-balancer", action, "load_balancer_arn required");
+        if (!arn) return err("loadbalancer", action, "load_balancer_arn required");
         await executeAwsCommand("ELBv2", "DeleteLoadBalancer", { LoadBalancerArn: arn }, region, creds);
-        return ok("load-balancer", action, `Load balancer deleted`, {});
+        return ok("loadbalancer", action, `Load balancer deleted`, {});
       }
       case "status": {
         const arn = spec.load_balancer_arn as string;
-        if (!arn) return err("load-balancer", action, "load_balancer_arn required");
+        if (!arn) return err("loadbalancer", action, "load_balancer_arn required");
         const result = await executeAwsCommand("ELBv2", "DescribeLoadBalancers", { LoadBalancerArns: [arn] }, region, creds);
-        return ok("load-balancer", action, "Load balancer status", result);
+        return ok("loadbalancer", action, "Load balancer status", result);
       }
-      default: return err("load-balancer", action, `Unknown action: ${action}`);
+      default: return err("loadbalancer", action, `Unknown action: ${action}`);
     }
   } catch (e) {
-    return err("load-balancer", action, e instanceof Error ? e.message : String(e));
+    return err("loadbalancer", action, e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -5512,13 +5514,13 @@ async function handleContainer(action: string, spec: Record<string, unknown>): P
 async function handleGap(action: string, spec: Record<string, unknown>): Promise<EngineResponse> {
   const AWS_KEY = Deno.env.get("AWS_ACCESS_KEY_ID") || spec.access_key_id as string;
   const AWS_SECRET = Deno.env.get("AWS_SECRET_ACCESS_KEY") || spec.secret_access_key as string;
-  if (!AWS_KEY || !AWS_SECRET) return err("gap", action, "AWS credentials required.");
+  if (!AWS_KEY || !AWS_SECRET) return err("gap-analysis", action, "AWS credentials required.");
   const region = spec.region as string || "us-east-1";
   const creds = { accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET };
   const rt = (spec.resource_type as string || "snapshots").toLowerCase();
 
   if (action !== "discover" && action !== "destroy") {
-    return err("gap", action, "Gap analysis supports discover and destroy only.");
+    return err("gap-analysis", action, "Gap analysis supports discover and destroy only.");
   }
 
   try {
@@ -5528,47 +5530,47 @@ async function handleGap(action: string, spec: Record<string, unknown>): Promise
           Filters: [{ Name: "status", Values: ["completed"] }],
           OwnerIds: ["self"],
         }, region, creds);
-        return ok("gap", action, "Orphaned EBS snapshots discovered", result);
+        return ok("gap-analysis", action, "Orphaned EBS snapshots discovered", result);
       }
       if (rt === "elastic-ips") {
         const result = await executeAwsCommand("EC2", "DescribeAddresses", {}, region, creds);
-        return ok("gap", action, "Elastic IPs discovered", result);
+        return ok("gap-analysis", action, "Elastic IPs discovered", result);
       }
       if (rt === "security-groups") {
         const result = await executeAwsCommand("EC2", "DescribeSecurityGroups", {}, region, creds);
-        return ok("gap", action, "Security groups audited", result);
+        return ok("gap-analysis", action, "Security groups audited", result);
       }
       if (rt === "unattached-volumes") {
         const result = await executeAwsCommand("EC2", "DescribeVolumes", {
           Filters: [{ Name: "status", Values: ["available"] }],
         }, region, creds);
-        return ok("gap", action, "Unattached EBS volumes discovered", result);
+        return ok("gap-analysis", action, "Unattached EBS volumes discovered", result);
       }
       if (rt === "route53-records") {
         const zoneId = spec.zone_id as string;
-        if (!zoneId) return err("gap", action, "zone_id required for route53-records discovery");
+        if (!zoneId) return err("gap-analysis", action, "zone_id required for route53-records discovery");
         const result = await executeAwsCommand("Route53", "ListResourceRecordSets", { HostedZoneId: zoneId }, region, creds);
-        return ok("gap", action, "Route53 records listed", result);
+        return ok("gap-analysis", action, "Route53 records listed", result);
       }
-      return err("gap", action, `Unsupported resource_type '${rt}'. Use: snapshots, elastic-ips, security-groups, unattached-volumes, route53-records`);
+      return err("gap-analysis", action, `Unsupported resource_type '${rt}'. Use: snapshots, elastic-ips, security-groups, unattached-volumes, route53-records`);
     }
 
     // action === "destroy"
     if (rt === "elastic-ips") {
       const allocationId = spec.allocation_id as string;
-      if (!allocationId) return err("gap", action, "allocation_id required");
+      if (!allocationId) return err("gap-analysis", action, "allocation_id required");
       await executeAwsCommand("EC2", "ReleaseAddress", { AllocationId: allocationId }, region, creds);
-      return ok("gap", action, `Elastic IP ${allocationId} released`, {});
+      return ok("gap-analysis", action, `Elastic IP ${allocationId} released`, {});
     }
     if (rt === "snapshots") {
       const snapshotId = spec.snapshot_id as string;
-      if (!snapshotId) return err("gap", action, "snapshot_id required");
+      if (!snapshotId) return err("gap-analysis", action, "snapshot_id required");
       await executeAwsCommand("EC2", "DeleteSnapshot", { SnapshotId: snapshotId }, region, creds);
-      return ok("gap", action, `EBS snapshot ${snapshotId} deleted`, {});
+      return ok("gap-analysis", action, `EBS snapshot ${snapshotId} deleted`, {});
     }
-    return err("gap", action, `Destroy not supported for resource_type '${rt}'`);
+    return err("gap-analysis", action, `Destroy not supported for resource_type '${rt}'`);
   } catch (e) {
-    return err("gap", action, e instanceof Error ? e.message : String(e));
+    return err("gap-analysis", action, e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -5690,6 +5692,7 @@ serve(async (req) => {
       case "dns":
         result = await handleDns(action, spec);
         break;
+      case "loadbalancer":
       case "load-balancer":
         result = await handleLoadBalancer(action, spec);
         break;
@@ -5714,6 +5717,7 @@ serve(async (req) => {
       case "container":
         result = await handleContainer(action, spec);
         break;
+      case "gap-analysis":
       case "gap":
         result = await handleGap(action, spec);
         break;

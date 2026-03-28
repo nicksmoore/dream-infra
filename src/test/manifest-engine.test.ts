@@ -17,10 +17,10 @@ describe("ManifestSchema — validation", () => {
     expect((result as any).data?.version).toBe("3");
   });
 
-  it("manifest has exactly 123 entries", () => {
+  it("manifest has exactly 201 entries", () => {
     const result = ManifestSchema.safeParse(rawManifest);
     expect(result.success).toBe(true);
-    expect((result as any).data?.entries.length).toBe(123);
+    expect((result as any).data?.entries.length).toBe(201);
   });
 
   it("rejects a manifest with an unknown provider", () => {
@@ -162,9 +162,9 @@ describe("manifest-engine — unit tests", () => {
 
 test("new intents pass IntentSchema validation", () => {
   const newIntents = [
-    "storage", "database", "serverless", "cdn", "dns", "load-balancer",
+    "storage", "database", "serverless", "cdn", "dns", "loadbalancer",
     "security", "gateway", "secrets", "observability", "orchestration",
-    "ai", "container", "gap",
+    "ai", "container", "gap-analysis",
   ];
   for (const intent of newIntents) {
     expect(() => IntentSchema.parse(intent)).not.toThrow();
