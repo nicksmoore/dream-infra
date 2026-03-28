@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { ManifestSchema } from "../../supabase/functions/uidi-engine/manifest-types";
+import { describe, it, expect, test } from "vitest";
+import { ManifestSchema, IntentSchema } from "../../supabase/functions/uidi-engine/manifest-types";
 import rawManifest from "../../supabase/functions/uidi-engine/manifest.json";
 
 describe("ManifestSchema — validation", () => {
@@ -158,4 +158,15 @@ describe("manifest-engine — unit tests", () => {
     expect(result).not.toBeInstanceOf(ManifestError);
     expect(result.manifest_version).toBe("3");
   });
+});
+
+test("new intents pass IntentSchema validation", () => {
+  const newIntents = [
+    "storage", "database", "serverless", "cdn", "dns", "load-balancer",
+    "security", "gateway", "secrets", "observability", "orchestration",
+    "ai", "container", "gap",
+  ];
+  for (const intent of newIntents) {
+    expect(() => IntentSchema.parse(intent)).not.toThrow();
+  }
 });

@@ -1,8 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import { ManifestError } from "../../supabase/functions/uidi-engine/manifest-types";
 import * as engine from "../../supabase/functions/uidi-engine/manifest-engine";
 // buildRestRequest is exported from manifest-engine.ts (added in Task 5)
-import { buildRestRequest } from "../../supabase/functions/uidi-engine/manifest-engine";
+import { buildRestRequest, prepareOperation } from "../../supabase/functions/uidi-engine/manifest-engine";
+import rawManifest from "../../supabase/functions/uidi-engine/manifest.json";
+
+const MANIFEST = rawManifest as { version: string; entries: Array<{ intent: string; action: string; provider: string; [key: string]: unknown }> };
 
 describe("manifest dispatch — integration (all 9 intents)", () => {
   it("prepareOperation returns rest-proxy entry for network/deploy/aws", () => {
@@ -103,4 +106,27 @@ describe("buildRestRequest — template resolution", () => {
     expect(req).not.toBeInstanceOf(ManifestError);
     expect((req as any).body).toBeNull();
   });
+});
+
+test("all 14 new intents have at least one manifest entry", () => {
+  const newIntents = [
+    "storage", "database", "serverless", "cdn", "dns", "load-balancer",
+    "security", "gateway", "secrets", "observability", "orchestration",
+    "ai", "container", "gap",
+  ];
+  for (const intent of newIntents) {
+    const entry = MANIFEST.entries.find(e => e.intent === intent);
+    expect(entry).toBeDefined();
+  }
+});
+
+test("storage/deploy/aws entry requires region", () => {
+  const op = prepareOperation("storage", "deploy", "aws", { region: "us-east-1", resource_type: "s3", bucket_name: "test-bucket" });
+  expect(op).not.toBeInstanceOf(ManifestError);
+});
+
+test("gap/discover/aws entry requires region and resource_type", () => {
+  const missing = prepareOperation("gap", "discover", "aws", {});
+  expect(missing).toBeInstanceOf(ManifestError);
+  expect((missing as ManifestError).code).toBe("MISSING_REQUIRED_KEY");
 });
