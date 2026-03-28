@@ -579,7 +579,7 @@ const CATALOG: GoldenPathEntry[] = [
     sloAvailability: 99.9,
     estimatedDeployMin: 1,
     estimatedMonthlyCost: "$0",
-    resources: { aws: ["Elastic IP", "EBS Snapshot", "Security Group", "EBS Volume", "Route 53 Record"], gcp: [], azure: [], oci: [] },
+    resources: { aws: ["VPC", "Elastic IP", "EBS Snapshot", "Security Group", "EBS Volume", "Route 53 Record"], gcp: [], azure: [], oci: [] },
     jitScope: ["ec2:DescribeAddresses", "ec2:DescribeSnapshots", "ec2:DescribeVolumes", "ec2:ReleaseAddress"],
     jitTtl: "1–2 min",
     rmcmThreshold: 85,
