@@ -161,7 +161,7 @@ export function GoldenPathDeployment({
     setIsRunning(true);
     setFoundationStatus("checking");
 
-    const l0Resources = analysis.executionOrder.filter(r => r.level === 0);
+    const l0Resources = analysis.executionOrder.filter(r => r.level === 0 && r.category === "networking");
     if (l0Resources.length === 0) {
       // No L0 deps to verify — proceed directly
       setFoundationStatus("healthy");
