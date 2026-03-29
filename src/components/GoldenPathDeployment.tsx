@@ -96,62 +96,291 @@ export function GoldenPathDeployment({
   // Map catalog resources to UIDI engine intents
   const mapResourceToIntent = useCallback((resource: string): { intent: string; action: string; spec: Record<string, unknown> } | null => {
     const lower = resource.toLowerCase();
+    const svcName = `${entry.id}-${environment}`;
 
+    // ── Markers / handled-by-parent resources ─────────────────────────────
+    if (lower.includes("(dep)") || lower.includes("(zero-trust)")) return null;
+    if (lower.includes("subnet") || lower.includes("igw") || lower.includes("nat gateway") || lower.includes("route table")) return null; // VPC sub-resources
+    if (lower.includes("security group") || lower === "sg" || lower.includes("nsg")) return null; // VPC stack
+    if (lower.includes("iam") || lower.includes("irsa") || lower.includes("service account")) return null; // auto-resolved
+    if (lower.includes("placement group")) return null; // provisioned with EC2
+
+    // ── Networking ─────────────────────────────────────────────────────────
     if (lower.includes("vpc") || lower.includes("vnet") || lower.includes("vpc network")) {
-      // "(dep)" suffix = dependency on another path's VPC — do not deploy a new one
-      if (lower.includes("(dep)") || lower.includes("(zero-trust)")) return null;
-      return {
-        intent: "network",
-        action: "deploy",
-        spec: { provider, region, environment, name: `${entry.id}-${environment}`, vpc_cidr: "10.0.0.0/16", az_count: 2 },
-      };
+      return { intent: "network", action: "deploy", spec: { provider, region, environment, name: svcName, vpc_cidr: "10.0.0.0/16", az_count: 2 } };
     }
-    if (lower.includes("subnet")) return null; // handled by VPC
+    if (lower.includes("load balancer") || lower.includes("alb") || lower.includes("nlb") || lower.includes("elb") || lower.includes("application gateway")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "load-balancer", resource: resource } };
+    }
+    if (lower.includes("cloudfront") || lower.includes("cdn") || lower.includes("front door")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "cdn", resource: resource } };
+    }
+    if (lower.includes("route 53") || lower.includes("hosted zone") || lower.includes("dns zone") || lower.includes("cloud dns")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "dns", resource: resource } };
+    }
+    if (lower.includes("api gateway") || lower.includes("apigw")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "api-gateway", resource: resource } };
+    }
+    if (lower.includes("transit gateway") || lower.includes("direct connect") || lower.includes("vpn")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "network-connectivity", resource: resource } };
+    }
+    if (lower.includes("nat") && lower.includes("instance")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "nat-instance", resource: resource } };
+    }
+
+    // ── Compute ────────────────────────────────────────────────────────────
     if (lower.includes("ec2") || lower.includes("compute engine") || lower.includes("linux vm") || lower.includes("vps")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { provider, instance_type: "t3.medium", os: "amazon-linux-2023", region, environment, name: `${entry.id}-${environment}`, count: 1 },
-      };
-    }
-    if (lower.includes("eks") || lower.includes("gke") || lower.includes("aks")) {
-      return {
-        intent: "eks",
-        action: "deploy",
-        spec: { provider, cluster_name: `${entry.id}-${environment}`, region, environment, kubernetes_version: "1.29" },
-      };
-    }
-    if (lower.includes("security group") || lower === "sg" || lower.includes("nsg") || lower.includes("firewall")) {
-      return null; // provisioned as part of VPC stack by handleNetwork("deploy")
-    }
-    if (lower.includes("igw") || lower.includes("nat") || lower.includes("route table")) {
-      return null; // provisioned as part of VPC foundation
-    }
-    if (lower.includes("iam") || lower.includes("irsa")) {
-      return null; // auto-resolved by EKS role resolver during deploy
-    }
-    if (lower.includes("s3") || lower.includes("gcs") || lower.includes("blob")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { provider, region, environment, name: `${entry.id}-bucket`, bucket: true },
-      };
+      return { intent: "compute", action: "deploy", spec: { provider, instance_type: "t3.medium", os: "amazon-linux-2023", region, environment, name: svcName, count: 1 } };
     }
     if (lower.includes("lambda") || lower.includes("cloud function") || lower.includes("azure function")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { provider, region, environment, name: `${entry.id}-fn`, lambda: true },
-      };
+      return { intent: "compute", action: "deploy", spec: { provider, region, environment, name: `${svcName}-fn`, lambda: true } };
     }
-    if (lower.includes("rds") || lower.includes("cloud sql") || lower.includes("azure sql") || lower.includes("aurora")) {
-      return {
-        intent: "compute",
-        action: "deploy",
-        spec: { provider, region, environment, name: `${entry.id}-db`, database: true },
-      };
+    if (lower.includes("batch job queue") || lower.includes("batch compute") || lower.includes("batch job")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "batch", resource: resource } };
     }
-    return null;
+    if (lower.includes("fargate") || lower.includes("ecs service") || lower.includes("ecs task") || lower.includes("ecs cluster") || lower.includes("container instance")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "ecs", resource: resource } };
+    }
+    if (lower.includes("lightsail") || lower.includes("outpost")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "compute-specialty", resource: resource } };
+    }
+
+    // ── Containers / Kubernetes ────────────────────────────────────────────
+    if (lower.includes("eks") || lower.includes("gke") || lower.includes("aks") || lower.includes("kubernetes cluster")) {
+      return { intent: "eks", action: "deploy", spec: { provider, cluster_name: svcName, region, environment, kubernetes_version: "1.29" } };
+    }
+    if (lower.includes("ecr") || lower.includes("container registry") || lower.includes("artifact registry")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "container-registry", resource: resource } };
+    }
+    if (lower.includes("node group") || lower.includes("nodegroup")) {
+      return { intent: "eks", action: "add_nodegroup", spec: { provider, cluster_name: svcName, region, environment } };
+    }
+    if (lower.includes("rosa") || lower.includes("openshift")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "openshift", resource: resource } };
+    }
+    if (lower.includes("app mesh") || lower.includes("service mesh")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "service-mesh", resource: resource } };
+    }
+
+    // ── Storage ────────────────────────────────────────────────────────────
+    if (lower.includes("s3") || lower.includes("gcs") || lower.includes("blob storage") || lower.includes("object lambda")) {
+      return { intent: "compute", action: "deploy", spec: { provider, region, environment, name: `${svcName}-bucket`, bucket: true } };
+    }
+    if (lower.includes("ebs") || lower.includes("managed disk") || lower.includes("persistent disk")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "block-storage", resource: resource } };
+    }
+    if (lower.includes("efs") || lower.includes("elastic file") || lower.includes("azure files") || lower.includes("filestore")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "file-storage", resource: resource } };
+    }
+    if (lower.includes("fsx") || lower.includes("data repository") || lower.includes("file system")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "fsx", resource: resource } };
+    }
+    if (lower.includes("storage gateway") || lower.includes("datasync") || lower.includes("snow")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "storage-gateway", resource: resource } };
+    }
+
+    // ── Databases ──────────────────────────────────────────────────────────
+    if (lower.includes("rds") || lower.includes("aurora") || lower.includes("cloud sql") || lower.includes("azure sql") || lower.includes("db instance")) {
+      return { intent: "compute", action: "deploy", spec: { provider, region, environment, name: `${svcName}-db`, database: true } };
+    }
+    if (lower.includes("dynamodb") || lower.includes("cosmos db") || lower.includes("firestore") || lower.includes("bigtable")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "nosql-db", resource: resource } };
+    }
+    if (lower.includes("elasticache") || lower.includes("memorydb") || lower.includes("azure cache") || lower.includes("memcached") || lower.includes("valkey")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "in-memory-db", resource: resource } };
+    }
+    if (lower.includes("neptune") || lower.includes("graph") || lower.includes("janusgraph")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "graph-db", resource: resource } };
+    }
+    if (lower.includes("documentdb") || lower.includes("mongodb") || lower.includes("cosmos")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "document-db", resource: resource } };
+    }
+    if (lower.includes("redshift") || lower.includes("bigquery") || lower.includes("synapse") || lower.includes("warehouse")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "data-warehouse", resource: resource } };
+    }
+    if (lower.includes("keyspace") || lower.includes("cassandra") || lower.includes("timestream")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "specialty-db", resource: resource } };
+    }
+    if (lower.includes("subnet group") || lower.includes("parameter group") || lower.includes("cluster subnet")) {
+      return null; // provisioned as part of their parent database
+    }
+    if (lower.includes("db cluster") || lower.includes("db instance") || lower.includes("replica")) {
+      return { intent: "compute", action: "deploy", spec: { provider, region, environment, name: `${svcName}-db`, database: true } };
+    }
+
+    // ── Serverless / Eventing ──────────────────────────────────────────────
+    if (lower.includes("step function") || lower.includes("state machine") || lower.includes("workflow")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "step-functions", resource: resource } };
+    }
+    if (lower.includes("eventbridge") || lower.includes("event bus") || lower.includes("event grid")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "event-bus", resource: resource } };
+    }
+    if (lower.includes("sns") || lower.includes("notification") || lower.includes("pub/sub") || lower.includes("pubsub")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "messaging", resource: resource } };
+    }
+    if (lower.includes("sqs") || lower.includes("queue") || lower.includes("service bus")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "queue", resource: resource } };
+    }
+    if (lower.includes("kinesis") || lower.includes("firehose") || lower.includes("data stream") || lower.includes("event hub")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "data-stream", resource: resource } };
+    }
+    if (lower.includes("msk") || lower.includes("kafka") || lower.includes("confluent")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "kafka", resource: resource } };
+    }
+    if (lower.includes("app runner") || lower.includes("amplify") || lower.includes("elastic beanstalk") || lower.includes("beanstalk")) {
+      return { intent: "sre-supreme", action: "deploy", spec: { provider, region, environment, name: svcName, workload_type: "internal-api", service_type: "paas", resource: resource } };
+    }
+
+    // ── Analytics / Data ───────────────────────────────────────────────────
+    if (lower.includes("emr") || lower.includes("dataproc") || lower.includes("hdinsight")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "big-data", resource: resource } };
+    }
+    if (lower.includes("athena") || lower.includes("glue") || lower.includes("data catalog") || lower.includes("lake formation")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "analytics", resource: resource } };
+    }
+    if (lower.includes("opensearch") || lower.includes("elasticsearch") || lower.includes("elastic cloud")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "search", resource: resource } };
+    }
+    if (lower.includes("quicksight") || lower.includes("looker") || lower.includes("power bi") || lower.includes("grafana")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "bi-dashboard", resource: resource } };
+    }
+    if (lower.includes("prometheus") || lower.includes("amp workspace") || lower.includes("workspace") && lower.includes("monitoring")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "metrics", resource: resource } };
+    }
+
+    // ── ML / AI ────────────────────────────────────────────────────────────
+    if (lower.includes("sagemaker") || lower.includes("vertex ai") || lower.includes("azure ml")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "ml-platform", resource: resource } };
+    }
+    if (lower.includes("model") || lower.includes("training job") || lower.includes("inference") || lower.includes("endpoint")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "ml-workload", resource: resource } };
+    }
+    if (lower.includes("bedrock") || lower.includes("rekognition") || lower.includes("comprehend") || lower.includes("textract") || lower.includes("translate")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "ai-service", resource: resource } };
+    }
+
+    // ── Security / Identity ────────────────────────────────────────────────
+    if (lower.includes("kms") || lower.includes("key vault") || lower.includes("cloud kms") || lower.includes("encryption key")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "kms", resource: resource } };
+    }
+    if (lower.includes("secrets manager") || lower.includes("parameter store") || lower.includes("secret") || lower.includes("vault")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "secrets", resource: resource } };
+    }
+    if (lower.includes("cognito") || lower.includes("identity pool") || lower.includes("user pool") || lower.includes("azure ad") || lower.includes("entra")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "identity", resource: resource } };
+    }
+    if (lower.includes("waf") || lower.includes("shield") || lower.includes("guardduty") || lower.includes("macie") || lower.includes("detective") || lower.includes("inspector")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "security", resource: resource } };
+    }
+    if (lower.includes("acm") || lower.includes("certificate") || lower.includes("tls cert")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "certificate", resource: resource } };
+    }
+    if (lower.includes("organizations") || lower.includes("control tower") || lower.includes("scp") || lower.includes("permission") || lower.includes("policy")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "governance", resource: resource } };
+    }
+
+    // ── Observability ──────────────────────────────────────────────────────
+    if (lower.includes("cloudwatch") || lower.includes("azure monitor") || lower.includes("cloud monitoring")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "monitoring", resource: resource } };
+    }
+    if (lower.includes("x-ray") || lower.includes("jaeger") || lower.includes("zipkin") || lower.includes("tracing") || lower.includes("otel")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "tracing", resource: resource } };
+    }
+    if (lower.includes("log group") || lower.includes("log stream") || lower.includes("log analytics") || lower.includes("cloud logging")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "logging", resource: resource } };
+    }
+    if (lower.includes("alarm") || lower.includes("alert") || lower.includes("rule group")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "alerting", resource: resource } };
+    }
+    if (lower.includes("resilience") || lower.includes("application") && lower.includes("hub")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "resilience", resource: resource } };
+    }
+
+    // ── DevTools / CI/CD ───────────────────────────────────────────────────
+    if (lower.includes("codepipeline") || lower.includes("codebuild") || lower.includes("codedeploy") || lower.includes("github actions") || lower.includes("ci/cd")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "cicd", resource: resource } };
+    }
+    if (lower.includes("codecommit") || lower.includes("codeartifact") || lower.includes("artifact")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "artifact-registry", resource: resource } };
+    }
+    if (lower.includes("cloud9") || lower.includes("ide") || lower.includes("workstation")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "dev-environment", resource: resource } };
+    }
+
+    // ── Management / Governance ────────────────────────────────────────────
+    if (lower.includes("config") || lower.includes("cloudtrail") || lower.includes("audit log") || lower.includes("activity log")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "audit", resource: resource } };
+    }
+    if (lower.includes("cost") || lower.includes("budget") || lower.includes("billing")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "cost-management", resource: resource } };
+    }
+    if (lower.includes("service catalog") || lower.includes("landing zone") || lower.includes("blueprint")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "catalog", resource: resource } };
+    }
+    if (lower.includes("systems manager") || lower.includes("ssm") || lower.includes("ops center") || lower.includes("incident")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "ops-management", resource: resource } };
+    }
+    if (lower.includes("contact") || lower.includes("connect")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "contact-center", resource: resource } };
+    }
+
+    // ── Blockchain ────────────────────────────────────────────────────────
+    if (lower.includes("blockchain") || lower.includes("managed blockchain") || lower.includes("hyperledger") || lower.includes("ethereum")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "blockchain", resource: resource } };
+    }
+    if (lower.includes("blockchain network") || lower.includes("blockchain member") || lower.includes("blockchain node") || lower.includes("amb access")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "blockchain", resource: resource } };
+    }
+
+    // ── Quantum / Braket ───────────────────────────────────────────────────
+    if (lower.includes("braket") || lower.includes("quantum") || lower.includes("quantum task") || lower.includes("hybrid job")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "quantum", resource: resource } };
+    }
+
+    // ── IoT ────────────────────────────────────────────────────────────────
+    if (lower.includes("iot") || lower.includes("greengrass") || lower.includes("iot core") || lower.includes("iot sitewise") || lower.includes("iot events") || lower.includes("iot fleet") || lower.includes("iot thing")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "iot", resource: resource } };
+    }
+    if (lower.includes("device") || lower.includes("thing group") || lower.includes("certificate") && lower.includes("iot")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "iot-device", resource: resource } };
+    }
+
+    // ── Media ──────────────────────────────────────────────────────────────
+    if (lower.includes("media") || lower.includes("elemental") || lower.includes("ivs") || lower.includes("transcribe") || lower.includes("polly")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "media", resource: resource } };
+    }
+
+    // ── Migration ─────────────────────────────────────────────────────────
+    if (lower.includes("dms") || lower.includes("database migration") || lower.includes("migration hub") || lower.includes("server migration")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "migration", resource: resource } };
+    }
+
+    // ── Healthcare / FHIR ─────────────────────────────────────────────────
+    if (lower.includes("healthlake") || lower.includes("fhir") || lower.includes("health") || lower.includes("medical")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "healthcare", resource: resource } };
+    }
+
+    // ── GameTech ──────────────────────────────────────────────────────────
+    if (lower.includes("gamelift") || lower.includes("realtime server") || lower.includes("matchmaking") || lower.includes("fleet")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "gaming", resource: resource } };
+    }
+
+    // ── End User Computing ────────────────────────────────────────────────
+    if (lower.includes("workspaces") || lower.includes("appstream") || lower.includes("virtual desktop") || lower.includes("euc")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "euc", resource: resource } };
+    }
+
+    // ── Nix / Tailscale / Edge ────────────────────────────────────────────
+    if (lower.includes("nix flake") || lower.includes("tailscale") || lower.includes("tailnet")) {
+      return { intent: "naawi", action: "deploy", spec: { provider, region, environment, name: svcName, service_type: "edge-infra", resource: resource } };
+    }
+
+    // ── Generic catch-all: any remaining catalog resource ─────────────────
+    return {
+      intent: "naawi",
+      action: "deploy",
+      spec: { provider, region, environment, name: svcName, resource: resource, service_type: "aws-managed" },
+    };
   }, [entry.id, region, environment, provider]);
 
   // ─── FOUNDATION PRE-CHECK: Verify L0 stack exists before preflight ───
