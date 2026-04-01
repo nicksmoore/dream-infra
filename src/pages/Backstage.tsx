@@ -2,6 +2,9 @@ import { useState } from "react";
 import { IntentConsole } from "@/components/IntentConsole";
 import { CapabilityMatrix } from "@/components/CapabilityMatrix";
 import { GuardrailInspector } from "@/components/GuardrailInspector";
+import { GitLineagePanel } from "@/components/github/GitLineagePanel";
+import { ActionGenerator } from "@/components/github/ActionGenerator";
+import { StatusReporter } from "@/components/github/StatusReporter";
 import type { ManifestEntryUI } from "@/lib/manifest-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +35,10 @@ import {
   CheckCircle2,
   Clock,
   Hash,
+  Github,
+  GitCommit,
+  Workflow,
+  Radio,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -358,6 +365,16 @@ export default function Backstage() {
             <TabsTrigger value="adrs" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <GitBranch className="h-3.5 w-3.5" /> ADRs
             </TabsTrigger>
+            <TabsTrigger value="git-lineage" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <GitCommit className="h-3.5 w-3.5" /> Git Lineage
+              <Badge variant="secondary" className="text-[8px] ml-1">New</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="action-gen" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <Workflow className="h-3.5 w-3.5" /> Action Generator
+            </TabsTrigger>
+            <TabsTrigger value="status-reporter" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <Radio className="h-3.5 w-3.5" /> Status Reporter
+            </TabsTrigger>
           </TabsList>
 
           {/* ═══════════ SCAFFOLDER ACTIONS (Phase 1) ═══════════ */}
@@ -627,6 +644,21 @@ export default function Backstage() {
                   </CardContent>
                 </Card>
               ))}
+          </TabsContent>
+
+          {/* ═══════════ GIT LINEAGE ═══════════ */}
+          <TabsContent value="git-lineage" className="space-y-4 mt-4">
+            <GitLineagePanel />
+          </TabsContent>
+
+          {/* ═══════════ ACTION GENERATOR ═══════════ */}
+          <TabsContent value="action-gen" className="space-y-4 mt-4">
+            <ActionGenerator />
+          </TabsContent>
+
+          {/* ═══════════ STATUS REPORTER ═══════════ */}
+          <TabsContent value="status-reporter" className="space-y-4 mt-4">
+            <StatusReporter />
           </TabsContent>
         </Tabs>
       </main>
