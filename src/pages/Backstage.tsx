@@ -375,6 +375,7 @@ export default function Backstage() {
             <TabsTrigger value="status-reporter" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <Radio className="h-3.5 w-3.5" /> Status Reporter
             </TabsTrigger>
+          </TabsList>
 
           {/* ═══════════ SCAFFOLDER ACTIONS (Phase 1) ═══════════ */}
           <TabsContent value="scaffolder" className="space-y-4 mt-4">
