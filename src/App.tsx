@@ -30,6 +30,7 @@ const App = () => (
             <Route path="/brand" element={<ProtectedRoute><BrandHub /></ProtectedRoute>} />
             <Route path="/golden-path" element={<ProtectedRoute><GoldenPath /></ProtectedRoute>} />
             <Route path="/backstage" element={<ProtectedRoute><Backstage /></ProtectedRoute>} />
+            <Route path="/migrate" element={<ProtectedRoute><Migrate /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
