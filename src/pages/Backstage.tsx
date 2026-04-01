@@ -645,6 +645,21 @@ export default function Backstage() {
                 </Card>
               ))}
           </TabsContent>
+
+          {/* ═══════════ GIT LINEAGE ═══════════ */}
+          <TabsContent value="git-lineage" className="space-y-4 mt-4">
+            <GitLineagePanel />
+          </TabsContent>
+
+          {/* ═══════════ ACTION GENERATOR ═══════════ */}
+          <TabsContent value="action-gen" className="space-y-4 mt-4">
+            <ActionGenerator />
+          </TabsContent>
+
+          {/* ═══════════ STATUS REPORTER ═══════════ */}
+          <TabsContent value="status-reporter" className="space-y-4 mt-4">
+            <StatusReporter />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
