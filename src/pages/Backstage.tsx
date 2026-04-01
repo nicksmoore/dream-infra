@@ -35,6 +35,10 @@ import {
   CheckCircle2,
   Clock,
   Hash,
+  Github,
+  GitCommit,
+  Workflow,
+  Radio,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
