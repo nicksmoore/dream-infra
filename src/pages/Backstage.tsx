@@ -365,7 +365,16 @@ export default function Backstage() {
             <TabsTrigger value="adrs" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <GitBranch className="h-3.5 w-3.5" /> ADRs
             </TabsTrigger>
-          </TabsList>
+            <TabsTrigger value="git-lineage" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <GitCommit className="h-3.5 w-3.5" /> Git Lineage
+              <Badge variant="secondary" className="text-[8px] ml-1">New</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="action-gen" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <Workflow className="h-3.5 w-3.5" /> Action Generator
+            </TabsTrigger>
+            <TabsTrigger value="status-reporter" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
+              <Radio className="h-3.5 w-3.5" /> Status Reporter
+            </TabsTrigger>
 
           {/* ═══════════ SCAFFOLDER ACTIONS (Phase 1) ═══════════ */}
           <TabsContent value="scaffolder" className="space-y-4 mt-4">
