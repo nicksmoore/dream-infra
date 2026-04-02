@@ -100,7 +100,7 @@ export function GoldenPathDeployment({
 
     // ── Markers / handled-by-parent resources ─────────────────────────────
     if (lower.includes("(dep)") || lower.includes("(zero-trust)")) return null;
-    if (lower.includes("subnet") || lower.includes("igw") || lower.includes("nat gateway") || lower.includes("route table")) return null; // VPC sub-resources
+    if (lower.includes("subnet") || lower.includes("igw") || lower.includes("nat gateway") || lower.includes("nat-gw") || lower.includes("nat gw") || lower.includes("route table")) return null; // VPC sub-resources
     if (lower.includes("security group") || lower === "sg" || lower.includes("nsg")) return null; // VPC stack
     if (lower.includes("iam") || lower.includes("irsa") || lower.includes("service account")) return null; // auto-resolved
     if (lower.includes("placement group")) return null; // provisioned with EC2
