@@ -204,6 +204,7 @@ export default function Auth() {
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupName, setSignupName] = useState("");
+  const [forgotEmail, setForgotEmail] = useState("");
 
   const typedText = useTypingEffect([
     "Deploy a production EKS cluster",
