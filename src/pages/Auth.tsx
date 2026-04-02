@@ -248,6 +248,21 @@ export default function Auth() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (error) {
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Check your email", description: "We sent a password reset link to your email." });
+      setMode("login");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Node-edge background */}
