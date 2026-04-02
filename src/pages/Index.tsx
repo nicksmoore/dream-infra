@@ -37,7 +37,7 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight } from "lucide-react";
+import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight, GitBranch, ArrowRightLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
