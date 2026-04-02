@@ -37,7 +37,7 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight } from "lucide-react";
+import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight, GitBranch, ArrowRightLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
@@ -323,15 +323,21 @@ export default function Index() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-3">
-            <NavLink to="/backstage" className="hidden sm:flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-              <BookOpen className="h-3.5 w-3.5" />
-              Backstage
-            </NavLink>
-            <NavLink to="/golden-path" className="hidden sm:flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
-              <Map className="h-3.5 w-3.5" />
-              VPC
-            </NavLink>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/backstage"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 hover:border-violet-500/40"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Git Lineage
+            </Link>
+            <Link
+              to="/migrate"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/40"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Brownfield Migration
+            </Link>
             <div className="w-px h-5 bg-border/50" />
             <ThemeToggle />
             <UserMenu />
