@@ -473,16 +473,25 @@ export default function Auth() {
             )}
 
             {/* Toggle mode */}
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => setMode(mode === "login" ? "signup" : "login")}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-                <span className="text-primary font-medium">
-                  {mode === "login" ? "Create one" : "Sign in"}
-                </span>
-              </button>
+            <div className="mt-6 text-center space-y-2">
+              {mode === "forgot" ? (
+                <button
+                  onClick={() => setMode("login")}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Back to <span className="text-primary font-medium">Sign in</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {mode === "login" ? "Don't have an account? " : "Already have an account? "}
+                  <span className="text-primary font-medium">
+                    {mode === "login" ? "Create one" : "Sign in"}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
