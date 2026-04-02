@@ -12,6 +12,7 @@ import BrandHub from "./pages/BrandHub.tsx";
 import GoldenPath from "./pages/GoldenPath.tsx";
 import Backstage from "./pages/Backstage.tsx";
 import Migrate from "./pages/Migrate.tsx";
+import ResetPassword from "./pages/ResetPassword.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/console" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/brand" element={<ProtectedRoute><BrandHub /></ProtectedRoute>} />
             <Route path="/golden-path" element={<ProtectedRoute><GoldenPath /></ProtectedRoute>} />
