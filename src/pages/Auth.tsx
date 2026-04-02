@@ -348,11 +348,13 @@ export default function Auth() {
           <div className="w-full max-w-sm">
             <div className="mb-8">
               <h2 className="text-2xl font-bold tracking-tight font-display text-foreground">
-                {mode === "login" ? "Welcome back" : "Create your account"}
+                {mode === "login" ? "Welcome back" : mode === "forgot" ? "Reset your password" : "Create your account"}
               </h2>
               <p className="text-sm text-muted-foreground mt-1.5">
                 {mode === "login"
                   ? "Sign in to access the intent-driven console."
+                  : mode === "forgot"
+                  ? "Enter your email and we'll send you a reset link."
                   : "Get started with infrastructure as intent."}
               </p>
             </div>
