@@ -390,6 +390,35 @@ export default function Auth() {
                 <Button type="submit" className="w-full h-12 rounded-xl text-sm font-semibold gap-2" disabled={loading}>
                   {loading ? "Signing in…" : <>Sign In <ArrowRight className="h-4 w-4" /></>}
                 </Button>
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => { setMode("forgot"); setForgotEmail(loginEmail); }}
+                    className="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              </form>
+            ) : mode === "forgot" ? (
+              <form onSubmit={handleForgotPassword} className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-email" className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                    <Mail className="h-3 w-3" /> Email
+                  </Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="h-12 rounded-xl bg-card border-border/60 focus:border-primary/50 text-sm"
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full h-12 rounded-xl text-sm font-semibold gap-2" disabled={loading}>
+                  {loading ? "Sending…" : <>Send Reset Link <ArrowRight className="h-4 w-4" /></>}
+                </Button>
               </form>
             ) : (
               <form onSubmit={handleSignup} className="space-y-5">
