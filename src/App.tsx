@@ -12,6 +12,7 @@ import BrandHub from "./pages/BrandHub.tsx";
 import GoldenPath from "./pages/GoldenPath.tsx";
 import Backstage from "./pages/Backstage.tsx";
 import Migrate from "./pages/Migrate.tsx";
+import ResetPassword from "./pages/ResetPassword.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
