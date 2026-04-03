@@ -666,6 +666,11 @@ export default function Backstage() {
           <TabsContent value="status-reporter" className="space-y-4 mt-4">
             <StatusReporter />
           </TabsContent>
+
+          {/* ═══════════ GITHUB PIPELINE ═══════════ */}
+          <TabsContent value="github-connect" className="space-y-4 mt-4">
+            <GitHubConnectionManager />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
