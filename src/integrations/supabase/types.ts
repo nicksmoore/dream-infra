@@ -174,6 +174,63 @@ export type Database = {
         }
         Relationships: []
       }
+      deployment_prs: {
+        Row: {
+          created_at: string
+          deployment_id: string | null
+          github_connection_id: string | null
+          head_branch: string
+          id: string
+          plan_summary: Json | null
+          pr_number: number
+          pr_status: string
+          pr_url: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deployment_id?: string | null
+          github_connection_id?: string | null
+          head_branch: string
+          id?: string
+          plan_summary?: Json | null
+          pr_number: number
+          pr_status?: string
+          pr_url: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deployment_id?: string | null
+          github_connection_id?: string | null
+          head_branch?: string
+          id?: string
+          plan_summary?: Json | null
+          pr_number?: number
+          pr_status?: string
+          pr_url?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deployment_prs_deployment_id_fkey"
+            columns: ["deployment_id"]
+            isOneToOne: false
+            referencedRelation: "deployments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deployment_prs_github_connection_id_fkey"
+            columns: ["github_connection_id"]
+            isOneToOne: false
+            referencedRelation: "github_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deployments: {
         Row: {
           created_at: string
@@ -218,6 +275,53 @@ export type Database = {
           workload_type?: string
         }
         Relationships: []
+      }
+      github_connections: {
+        Row: {
+          auto_pr: boolean
+          created_at: string
+          default_branch: string
+          github_pat_credential_id: string | null
+          id: string
+          repo_name: string
+          repo_owner: string
+          require_approval: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_pr?: boolean
+          created_at?: string
+          default_branch?: string
+          github_pat_credential_id?: string | null
+          id?: string
+          repo_name: string
+          repo_owner: string
+          require_approval?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_pr?: boolean
+          created_at?: string
+          default_branch?: string
+          github_pat_credential_id?: string | null
+          id?: string
+          repo_name?: string
+          repo_owner?: string
+          require_approval?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "github_connections_github_pat_credential_id_fkey"
+            columns: ["github_pat_credential_id"]
+            isOneToOne: false
+            referencedRelation: "user_credentials"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       metadata_cache: {
         Row: {
