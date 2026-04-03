@@ -5,6 +5,7 @@ import { GuardrailInspector } from "@/components/GuardrailInspector";
 import { GitLineagePanel } from "@/components/github/GitLineagePanel";
 import { ActionGenerator } from "@/components/github/ActionGenerator";
 import { StatusReporter } from "@/components/github/StatusReporter";
+import { GitHubConnectionManager } from "@/components/github/GitHubConnectionManager";
 import type { ManifestEntryUI } from "@/lib/manifest-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -375,6 +376,10 @@ export default function Backstage() {
             <TabsTrigger value="status-reporter" className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-lg text-xs">
               <Radio className="h-3.5 w-3.5" /> Status Reporter
             </TabsTrigger>
+            <TabsTrigger value="github-connect" className="gap-1.5 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400 rounded-lg text-xs">
+              <Github className="h-3.5 w-3.5" /> GitHub Pipeline
+              <Badge variant="secondary" className="text-[8px] ml-1 bg-emerald-500/10 text-emerald-400">Live</Badge>
+            </TabsTrigger>
           </TabsList>
 
           {/* ═══════════ SCAFFOLDER ACTIONS (Phase 1) ═══════════ */}
@@ -659,6 +664,11 @@ export default function Backstage() {
           {/* ═══════════ STATUS REPORTER ═══════════ */}
           <TabsContent value="status-reporter" className="space-y-4 mt-4">
             <StatusReporter />
+          </TabsContent>
+
+          {/* ═══════════ GITHUB PIPELINE ═══════════ */}
+          <TabsContent value="github-connect" className="space-y-4 mt-4">
+            <GitHubConnectionManager />
           </TabsContent>
         </Tabs>
       </main>
