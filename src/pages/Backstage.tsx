@@ -5,6 +5,8 @@ import { GuardrailInspector } from "@/components/GuardrailInspector";
 import { GitLineagePanel } from "@/components/github/GitLineagePanel";
 import { ActionGenerator } from "@/components/github/ActionGenerator";
 import { StatusReporter } from "@/components/github/StatusReporter";
+import { GitHubConnectionManager } from "@/components/github/GitHubConnectionManager";
+import { StatusReporter } from "@/components/github/StatusReporter";
 import type { ManifestEntryUI } from "@/lib/manifest-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
