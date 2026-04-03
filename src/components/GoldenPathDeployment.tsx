@@ -62,6 +62,21 @@ export function GoldenPathDeployment({
   const [foundationStatus, setFoundationStatus] = useState<"unknown" | "checking" | "healthy" | "missing">("unknown");
   const [foundationCheckResults, setFoundationCheckResults] = useState<StepResult[]>([]);
 
+  // GitHub PR Gate
+  const { hasGitHubGate, requiresMerge, createPR, checkPR, connection } = useGitHubPRGate();
+  const [prState, setPrState] = useState<{
+    pr_number: number;
+    pr_url: string;
+    status: string;
+    merged: boolean;
+  } | null>(null);
+  const [prCreating, setPrCreating] = useState(false);
+  const [prPolling, setPrPolling] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
+
+  // Cleanup polling on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
   const resources = entry.resources[provider];
 
   // ─── PRD §3.1: Run dependency analysis on mount ───
