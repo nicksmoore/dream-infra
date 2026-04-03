@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,12 @@ import { toast } from "@/hooks/use-toast";
 import { executeIntent, type EngineResponse } from "@/lib/uidi-engine";
 import { analyzeDependencies, getRemediationSteps, type DependencyAnalysis, type DependencyLevel, type Provider } from "@/lib/dependency-dag";
 import type { GoldenPathEntry, CloudProvider } from "@/components/GoldenPathCatalog";
+import { useGitHubPRGate } from "@/components/github/GitHubConnectionManager";
 import {
   Rocket, FlaskConical, Eye, CheckCircle2, XCircle, Loader2,
   Shield, AlertTriangle, ChevronDown, ChevronUp, ArrowLeft,
   Layers, Network, Database, Server, AlertCircle, Wrench,
+  GitPullRequest, ExternalLink,
 } from "lucide-react";
 
 type Phase = "analyzing" | "foundation-check" | "preflight" | "deploying" | "validating" | "complete" | "failed";
