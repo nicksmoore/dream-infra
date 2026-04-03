@@ -844,7 +844,72 @@ export function GoldenPathDeployment({
               <FlaskConical className="h-4 w-4" /> Retry Preflight
             </Button>
           )}
-          {phase === "preflight" && preflightPassed && (
+          {phase === "preflight" && preflightPassed && !prState && hasGitHubGate && (
+            <Button
+              onClick={async () => {
+                setPrCreating(true);
+                try {
+                  const result = await createPR({
+                    golden_path: entry.intentId,
+                    provider,
+                    region,
+                    environment,
+                    resources: resources,
+                    preflight_passed: true,
+                  });
+                  if (result) {
+                    setPrState({ ...result, status: "open", merged: false });
+                    toast({
+                      title: "📋 PR Created",
+                      description: `PR #${result.pr_number} opened. ${requiresMerge ? "Merge to unlock deployment." : ""}`,
+                    });
+                    // Start polling for merge status
+                    if (requiresMerge) {
+                      setPrPolling(true);
+                      pollRef.current = setInterval(async () => {
+                        try {
+                          const status = await checkPR(result.pr_number);
+                          if (status?.merged) {
+                            setPrState(prev => prev ? { ...prev, status: "merged", merged: true } : null);
+                            setPrPolling(false);
+                            clearInterval(pollRef.current);
+                            toast({ title: "✅ PR Merged", description: "Deployment unlocked. Click Deploy to proceed." });
+                          }
+                        } catch {}
+                      }, 10000);
+                    }
+                  }
+                } catch (e) {
+                  toast({
+                    title: "PR creation failed",
+                    description: e instanceof Error ? e.message : "Error",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setPrCreating(false);
+                }
+              }}
+              disabled={prCreating}
+              className="gap-2"
+            >
+              {prCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+              Create PR for Review
+            </Button>
+          )}
+          {phase === "preflight" && preflightPassed && prState && !prState.merged && requiresMerge && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/20 bg-amber-500/10 gap-1.5">
+                {prPolling && <Loader2 className="h-3 w-3 animate-spin" />}
+                PR #{prState.pr_number} — awaiting merge
+              </Badge>
+              <Button variant="ghost" size="sm" asChild>
+                <a href={prState.pr_url} target="_blank" rel="noopener noreferrer" className="gap-1.5 text-xs">
+                  <ExternalLink className="h-3.5 w-3.5" /> View PR
+                </a>
+              </Button>
+            </div>
+          )}
+          {phase === "preflight" && preflightPassed && (!hasGitHubGate || (prState?.merged) || (prState && !requiresMerge)) && (
             <Button onClick={runDeploy} disabled={isRunning} className="gap-2">
               {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               Apply — Deploy via SDK
