@@ -844,57 +844,77 @@ export function GoldenPathDeployment({
               <FlaskConical className="h-4 w-4" /> Retry Preflight
             </Button>
           )}
-          {phase === "preflight" && preflightPassed && !prState && hasGitHubGate && (
-            <Button
-              onClick={async () => {
-                setPrCreating(true);
-                try {
-                  const result = await createPR({
-                    golden_path: entry.intentId,
-                    provider,
-                    region,
-                    environment,
-                    resources: resources,
-                    preflight_passed: true,
-                  });
-                  if (result) {
-                    setPrState({ ...result, status: "open", merged: false });
-                    toast({
-                      title: "📋 PR Created",
-                      description: `PR #${result.pr_number} opened. ${requiresMerge ? "Merge to unlock deployment." : ""}`,
+          {phase === "preflight" && preflightPassed && !prState && (
+            hasGitHubGate ? (
+              <Button
+                onClick={async () => {
+                  setPrCreating(true);
+                  try {
+                    const result = await createPR({
+                      golden_path: entry.intentId,
+                      provider,
+                      region,
+                      environment,
+                      resources: resources,
+                      preflight_passed: true,
                     });
-                    // Start polling for merge status
-                    if (requiresMerge) {
-                      setPrPolling(true);
-                      pollRef.current = setInterval(async () => {
-                        try {
-                          const status = await checkPR(result.pr_number);
-                          if (status?.merged) {
-                            setPrState(prev => prev ? { ...prev, status: "merged", merged: true } : null);
-                            setPrPolling(false);
-                            clearInterval(pollRef.current);
-                            toast({ title: "✅ PR Merged", description: "Deployment unlocked. Click Deploy to proceed." });
-                          }
-                        } catch {}
-                      }, 10000);
+                    if (result) {
+                      setPrState({ ...result, status: "open", merged: false });
+                      toast({
+                        title: "📋 PR Created",
+                        description: `PR #${result.pr_number} opened. ${requiresMerge ? "Merge to unlock deployment." : ""}`,
+                      });
+                      if (requiresMerge) {
+                        setPrPolling(true);
+                        pollRef.current = setInterval(async () => {
+                          try {
+                            const status = await checkPR(result.pr_number);
+                            if (status?.merged) {
+                              setPrState(prev => prev ? { ...prev, status: "merged", merged: true } : null);
+                              setPrPolling(false);
+                              clearInterval(pollRef.current);
+                              toast({ title: "✅ PR Merged", description: "Deployment unlocked. Click Deploy to proceed." });
+                            }
+                          } catch {}
+                        }, 10000);
+                      }
                     }
+                  } catch (e) {
+                    toast({
+                      title: "PR creation failed",
+                      description: e instanceof Error ? e.message : "Error",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setPrCreating(false);
                   }
-                } catch (e) {
-                  toast({
-                    title: "PR creation failed",
-                    description: e instanceof Error ? e.message : "Error",
-                    variant: "destructive",
-                  });
-                } finally {
-                  setPrCreating(false);
-                }
-              }}
-              disabled={prCreating}
-              className="gap-2"
-            >
-              {prCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
-              Create PR for Review
-            </Button>
+                }}
+                disabled={prCreating}
+                className="gap-2"
+              >
+                {prCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitPullRequest className="h-4 w-4" />}
+                Create PR for Review
+              </Button>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => {
+                    toast({
+                      title: "🔗 Connect GitHub First",
+                      description: "Go to Backstage → GitHub Pipeline tab to connect a repository for PR-based deployments.",
+                    });
+                  }}
+                >
+                  <GitPullRequest className="h-4 w-4" />
+                  Create PR for Review
+                </Button>
+                <span className="text-[10px] text-muted-foreground">
+                  <a href="/backstage" className="text-primary underline hover:text-primary/80">Connect a repo</a> to enable
+                </span>
+              </div>
+            )
           )}
           {phase === "preflight" && preflightPassed && prState && !prState.merged && requiresMerge && (
             <div className="flex items-center gap-2">
@@ -909,10 +929,16 @@ export function GoldenPathDeployment({
               </Button>
             </div>
           )}
-          {phase === "preflight" && preflightPassed && (!hasGitHubGate || (prState?.merged) || (prState && !requiresMerge)) && (
+          {phase === "preflight" && preflightPassed && ((prState?.merged) || (prState && !requiresMerge)) && (
             <Button onClick={runDeploy} disabled={isRunning} className="gap-2">
               {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               Apply — Deploy via SDK
+            </Button>
+          )}
+          {phase === "preflight" && preflightPassed && !hasGitHubGate && !prState && (
+            <Button onClick={runDeploy} disabled={isRunning} variant="secondary" className="gap-2">
+              {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Deploy without PR
             </Button>
           )}
           {phase === "failed" && (
