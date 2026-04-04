@@ -387,7 +387,11 @@ export function useGitHubPRGate() {
       },
     });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      let msg = error.message;
+      try { const body = await (error as any).context?.json?.(); if (body?.error) msg = body.error; } catch {}
+      throw new Error(msg);
+    }
     return data as { pr_number: number; pr_url: string; branch: string };
   };
 
@@ -402,7 +406,11 @@ export function useGitHubPRGate() {
       },
     });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      let msg = error.message;
+      try { const body = await (error as any).context?.json?.(); if (body?.error) msg = body.error; } catch {}
+      throw new Error(msg);
+    }
     return data as { status: string; merged: boolean; mergeable: boolean; html_url: string };
   };
 
