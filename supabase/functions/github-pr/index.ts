@@ -73,12 +73,19 @@ Deno.serve(async (req) => {
 
       if (!cred) throw new Error("Credential not found");
 
-      // Decrypt using Web Crypto API (same key derivation as credential-vault)
-      const encKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const keyMaterial = await crypto.subtle.importKey(
+      // Decrypt using PBKDF2 key derivation (matches credential-vault)
+      const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const rawKey = await crypto.subtle.importKey(
         "raw",
-        new TextEncoder().encode(encKey.slice(0, 32)),
-        { name: "AES-GCM" },
+        new TextEncoder().encode(secret.slice(0, 32)),
+        "PBKDF2",
+        false,
+        ["deriveKey"],
+      );
+      const derivedKey = await crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt: new TextEncoder().encode("idi-vault"), iterations: 100000, hash: "SHA-256" },
+        rawKey,
+        { name: "AES-GCM", length: 256 },
         false,
         ["decrypt"],
       );
@@ -88,7 +95,7 @@ Deno.serve(async (req) => {
 
       const decrypted = await crypto.subtle.decrypt(
         { name: "AES-GCM", iv },
-        keyMaterial,
+        derivedKey,
         encrypted,
       );
 
