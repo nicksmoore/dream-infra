@@ -7,7 +7,7 @@ import CTAFooter from "@/components/community/CTAFooter";
 
 const Community = () => {
   return (
-    <div className="min-h-screen bg-nexus-surface text-foreground dark">
+    <div className="min-h-screen bg-[#f5f4f0] text-[#1a1a1a]" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
       <NexusHero />
       <TierSystem />
       <Leaderboard />
