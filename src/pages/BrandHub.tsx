@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandAssets } from "@/components/brand/BrandAssets";
 import { BrandAgent } from "@/components/brand/BrandAgent";
-import { ThemeToggle } from "@/components/ThemeToggle";
+// Clay aesthetic
 import { UserMenu } from "@/components/UserMenu";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
