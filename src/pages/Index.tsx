@@ -347,7 +347,7 @@ export default function Index() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6">
+      <main className="max-w-7xl mx-auto px-8">
         {/* Hero intent input section */}
         <section className="pt-16 pb-12">
           <IntentInput onParse={handleParse} isLoading={isParsing} />
