@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
+// Clay aesthetic
 import { UserMenu } from "@/components/UserMenu";
 import { NavLink } from "@/components/NavLink";
 import {
