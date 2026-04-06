@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
-import { Lock, ArrowRight, Terminal, CheckCircle2 } from "lucide-react";
+import { Lock, ArrowRight, Box, CheckCircle2 } from "lucide-react";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -16,19 +16,11 @@ export default function ResetPassword() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // Check for recovery event from the URL hash
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setIsRecovery(true);
-      }
+      if (event === "PASSWORD_RECOVERY") setIsRecovery(true);
     });
-
-    // Also check hash params directly
     const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setIsRecovery(true);
-    }
-
+    if (hash.includes("type=recovery")) setIsRecovery(true);
     return () => subscription.unsubscribe();
   }, []);
 
@@ -42,11 +34,9 @@ export default function ResetPassword() {
       toast({ title: "Password too short", description: "Password must be at least 6 characters.", variant: "destructive" });
       return;
     }
-
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
-
     if (error) {
       toast({ title: "Reset failed", description: error.message, variant: "destructive" });
     } else {
@@ -57,79 +47,52 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-6">
-      {/* Ambient glows */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/3 w-[600px] h-[400px] bg-primary/[0.04] rounded-full blur-[150px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[350px] bg-[hsl(270,80%,55%)]/[0.03] rounded-full blur-[130px]" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-sm">
+    <div className="min-h-screen bg-[#f5f4f0] flex items-center justify-center px-6" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
+      <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center gap-2.5 mb-10 justify-center">
-          <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Terminal className="h-4 w-4 text-primary" />
+          <div className="h-8 w-8 rounded-full bg-[#1a1a1a] flex items-center justify-center">
+            <Box className="h-4 w-4 text-white" />
           </div>
-          <span className="text-base font-bold tracking-tight font-display text-foreground">Naawi</span>
+          <span className="text-base font-semibold tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>naawi</span>
         </div>
 
         {done ? (
           <div className="text-center space-y-4">
-            <CheckCircle2 className="h-12 w-12 text-[hsl(var(--success))] mx-auto" />
-            <h2 className="text-2xl font-bold tracking-tight font-display text-foreground">Password Updated</h2>
-            <p className="text-sm text-muted-foreground">Redirecting you to the console…</p>
+            <CheckCircle2 className="h-12 w-12 text-[hsl(160,84%,39%)] mx-auto" />
+            <h2 className="text-2xl tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>Password Updated</h2>
+            <p className="text-sm text-[#888]">Redirecting you to the console…</p>
           </div>
         ) : !isRecovery ? (
           <div className="text-center space-y-4">
-            <h2 className="text-2xl font-bold tracking-tight font-display text-foreground">Invalid Reset Link</h2>
-            <p className="text-sm text-muted-foreground">
-              This link is invalid or has expired. Please request a new password reset.
-            </p>
-            <Button onClick={() => navigate("/auth")} variant="outline" className="gap-2">
+            <h2 className="text-2xl tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>Invalid Reset Link</h2>
+            <p className="text-sm text-[#888]">This link is invalid or has expired. Please request a new password reset.</p>
+            <Button onClick={() => navigate("/auth")} className="h-10 px-6 rounded-full bg-[#1a1a1a] text-white hover:bg-[#333] gap-2">
               Back to Sign In <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         ) : (
           <>
             <div className="mb-8">
-              <h2 className="text-2xl font-bold tracking-tight font-display text-foreground">Set new password</h2>
-              <p className="text-sm text-muted-foreground mt-1.5">
-                Enter your new password below.
-              </p>
+              <h2 className="text-2xl tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>Set new password</h2>
+              <p className="text-sm text-[#888] mt-2">Enter your new password below.</p>
             </div>
-
             <form onSubmit={handleReset} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="new-password" className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Label htmlFor="new-password" className="text-xs font-medium text-[#888] flex items-center gap-1.5">
                   <Lock className="h-3 w-3" /> New Password
                 </Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 6 characters"
-                  className="h-12 rounded-xl bg-card border-border/60 focus:border-primary/50 text-sm"
-                  minLength={6}
-                  required
-                />
+                <Input id="new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 6 characters" className="h-12 rounded-xl bg-white border-[#e8e7e4] focus:border-[hsl(199,89%,48%)] text-sm" minLength={6} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password" className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Label htmlFor="confirm-password" className="text-xs font-medium text-[#888] flex items-center gap-1.5">
                   <Lock className="h-3 w-3" /> Confirm Password
                 </Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter password"
-                  className="h-12 rounded-xl bg-card border-border/60 focus:border-primary/50 text-sm"
-                  minLength={6}
-                  required
-                />
+                <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password" className="h-12 rounded-xl bg-white border-[#e8e7e4] focus:border-[hsl(199,89%,48%)] text-sm" minLength={6} required />
               </div>
-              <Button type="submit" className="w-full h-12 rounded-xl text-sm font-semibold gap-2" disabled={loading}>
+              <Button type="submit" className="w-full h-12 rounded-full text-sm font-medium bg-[#1a1a1a] text-white hover:bg-[#333] gap-2" disabled={loading}>
                 {loading ? "Updating…" : <>Reset Password <ArrowRight className="h-4 w-4" /></>}
               </Button>
             </form>
