@@ -311,39 +311,38 @@ export default function Backstage() {
   });
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
-        <div className="container max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/console")} className="gap-1.5 text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back
-            </Button>
-            <Separator orientation="vertical" className="h-5" />
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-primary" />
-              <div>
-                <h1 className="text-base font-bold tracking-tight font-display text-foreground">Backstage</h1>
-                <p className="text-[10px] text-muted-foreground tracking-wide">PRD §5.4 — Scaffolder Actions · Entity Cards · Catalogue Plugin</p>
+      <header className="sticky top-0 z-50 bg-[#f5f4f0]/80 backdrop-blur-xl border-b border-[#e8e7e4]">
+        <div className="container max-w-6xl mx-auto px-8 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/console")} className="flex items-center gap-1.5 text-sm text-[#888] hover:text-[#1a1a1a] transition-colors">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <Link to="/" className="flex items-center gap-2.5">
+              <div className="h-7 w-7 rounded-full bg-[#1a1a1a] flex items-center justify-center">
+                <BookOpen className="h-3.5 w-3.5 text-white" />
               </div>
-            </div>
+              <span className="text-sm font-semibold tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>naawi</span>
+            </Link>
+            <span className="text-[#ddd] mx-1">/</span>
+            <span className="text-sm font-medium text-[#1a1a1a]">Backstage</span>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
+          <div className="flex items-center gap-3">
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="container max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <main className="container max-w-6xl mx-auto px-8 py-8 space-y-6">
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#999]" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search services, docs, ADRs, scaffolder actions…"
-            className="pl-11 h-11 text-sm glass-panel-elevated border-border/50"
+            className="pl-11 h-12 text-sm rounded-xl bg-white border-[#e8e7e4] focus:border-[hsl(199,89%,48%)]"
           />
         </div>
 

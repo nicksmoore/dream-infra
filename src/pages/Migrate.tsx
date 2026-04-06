@@ -27,28 +27,26 @@ export default function Migrate() {
   const [step, setStep] = useState(1);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 glass-panel border-b border-border/50">
-        <div className="container max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/console")} className="gap-1.5 text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back
-            </Button>
-            <Separator orientation="vertical" className="h-5" />
+      <header className="sticky top-0 z-50 bg-[#f5f4f0]/80 backdrop-blur-xl border-b border-[#e8e7e4]">
+        <div className="container max-w-5xl mx-auto px-8 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/console")} className="flex items-center gap-1.5 text-sm text-[#888] hover:text-[#1a1a1a] transition-colors">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
             <div>
-              <h1 className="text-base font-bold tracking-tight font-display text-foreground">Brownfield Migration</h1>
-              <p className="text-[10px] text-muted-foreground tracking-wide">PRD Part II — Discover · Infer · Analyze · Remediate · Import</p>
+              <h1 className="text-sm font-medium text-[#1a1a1a]">Brownfield Migration</h1>
+              <p className="text-[10px] text-[#999]">Discover · Infer · Analyze · Remediate · Import</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
+          <div className="flex items-center gap-3">
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="container max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <main className="container max-w-5xl mx-auto px-8 py-8 space-y-6">
         {/* Step indicator */}
         <div className="flex items-center gap-1 overflow-x-auto pb-2">
           {STEPS.map((s, i) => (
