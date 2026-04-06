@@ -502,29 +502,27 @@ export default function GoldenPath() {
   const totalCoherence = Math.round(LAYERS.reduce((s, l) => s + l.coherence, 0) / LAYERS.length);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
       {/* Header */}
-      <header className="glass-panel sticky top-0 z-50 border-b border-border/40">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+      <header className="sticky top-0 z-50 bg-[#f5f4f0]/80 backdrop-blur-xl border-b border-[#e8e7e4]">
+        <div className="max-w-5xl mx-auto px-8 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link to="/console" className="flex items-center gap-1.5 text-sm text-[#888] hover:text-[#1a1a1a] transition-colors">
               <ArrowLeft className="w-4 h-4" />
             </Link>
-            <div className="w-px h-5 bg-border" />
-            <Layers className="w-4 h-4 text-[hsl(var(--primary))]" />
-            <span className="font-semibold text-sm">Golden Path</span>
-            <Badge variant="outline" className="font-mono text-[10px]">VPC Foundation</Badge>
+            <Layers className="w-4 h-4 text-[hsl(199,89%,48%)]" />
+            <span className="text-sm font-medium text-[#1a1a1a]">Golden Path</span>
+            <Badge variant="outline" className="font-mono text-[10px] border-[#e8e7e4]">VPC Foundation</Badge>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <NavLink to="/backstage">Backstage</NavLink>
             <NavLink to="/brand">Brand</NavLink>
-            <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+      <main className="max-w-5xl mx-auto px-8 py-8 space-y-8">
         {/* Hero */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
