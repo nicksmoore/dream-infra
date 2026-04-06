@@ -41,8 +41,8 @@ import {
   Workflow,
   Radio,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { useNavigate, Link } from "react-router-dom";
+// Clay aesthetic - light mode only
 import { UserMenu } from "@/components/UserMenu";
 
 /* ═══════════ PRD Section 5.4: Three-Phase Backstage Integration ═══════════ */

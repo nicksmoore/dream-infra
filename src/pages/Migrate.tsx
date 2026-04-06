@@ -6,7 +6,6 @@ import {
   ArrowLeft, Search, Brain, ShieldAlert, Play, CheckCircle2, ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { UserMenu } from "@/components/UserMenu";
 import { DiscoveryPanel } from "@/components/migration/DiscoveryPanel";
 import { IntentInferencePanel } from "@/components/migration/IntentInferencePanel";
