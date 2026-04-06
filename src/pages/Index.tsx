@@ -38,7 +38,7 @@ import {
   type EscalationRecord,
 } from "@/lib/policy-registry";
 import { Box, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight, GitBranch, ArrowRightLeft } from "lucide-react";
-import { ThemeToggle } from "@/components/ThemeToggle";
+// Clay aesthetic - light mode only
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
 import { Link } from "react-router-dom";
