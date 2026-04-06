@@ -483,14 +483,14 @@ export default function Index() {
         )}
 
         {/* Mobile nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border/40 bg-background/90 backdrop-blur-xl">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-[#e8e7e4] bg-[#f5f4f0]/90 backdrop-blur-xl">
           <div className="flex items-center justify-around h-14">
             {NAV_ITEMS.map(item => (
               <button
                 key={item.id}
                 onClick={() => { setActiveSection(item.id); setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
                 className={`flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors ${
-                  activeSection === item.id ? "text-primary" : "text-muted-foreground"
+                  activeSection === item.id ? "text-[#1a1a1a]" : "text-[#999]"
                 }`}
               >
                 {item.icon}
