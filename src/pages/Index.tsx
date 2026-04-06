@@ -37,8 +37,8 @@ import {
   type CapacityTierId,
   type EscalationRecord,
 } from "@/lib/policy-registry";
-import { Zap, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight, GitBranch, ArrowRightLeft } from "lucide-react";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { Box, Eye, Vault, Layers, BookOpen, Map, Bot, ChevronRight, GitBranch, ArrowRightLeft } from "lucide-react";
+// Clay aesthetic - light mode only
 import { Badge } from "@/components/ui/badge";
 import { NavLink } from "@/components/NavLink";
 import { Link } from "react-router-dom";
@@ -295,26 +295,30 @@ export default function Index() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "'Instrument Sans', 'Inter', sans-serif" }}>
       {/* Minimal top bar */}
-      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link to="/console" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-            <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-semibold tracking-tight font-display text-foreground">Naawi</span>
-          </Link>
+      <header className="sticky top-0 z-50 border-b border-[#e8e7e4] bg-[#f5f4f0]/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-8 h-[64px] flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+              <div className="h-8 w-8 rounded-full bg-[#1a1a1a] flex items-center justify-center">
+                <Box className="h-4 w-4 text-white" />
+              </div>
+              <span className="text-lg font-semibold tracking-tight" style={{ fontFamily: "'DM Serif Display', serif" }}>naawi</span>
+            </Link>
+            <span className="text-[#ddd] mx-1">/</span>
+            <span className="text-sm font-medium text-[#1a1a1a]">Console</span>
+          </div>
 
           <nav className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map(item => (
               <button
                 key={item.id}
                 onClick={() => { setActiveSection(item.id); setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium transition-all ${
                   activeSection === item.id
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    ? "bg-[#1a1a1a] text-white"
+                    : "text-[#888] hover:text-[#1a1a1a] hover:bg-white"
                 }`}
               >
                 {item.icon}
@@ -323,29 +327,27 @@ export default function Index() {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Link
               to="/backstage"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 hover:border-violet-500/40"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all text-[#888] hover:text-[#1a1a1a] hover:bg-white border border-[#e8e7e4]"
             >
               <GitBranch className="h-3.5 w-3.5" />
               Git Lineage
             </Link>
             <Link
               to="/migrate"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/40"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all text-[#888] hover:text-[#1a1a1a] hover:bg-white border border-[#e8e7e4]"
             >
               <ArrowRightLeft className="h-3.5 w-3.5" />
-              Brownfield Migration
+              Migration
             </Link>
-            <div className="w-px h-5 bg-border/50" />
-            <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6">
+      <main className="max-w-7xl mx-auto px-8">
         {/* Hero intent input section */}
         <section className="pt-16 pb-12">
           <IntentInput onParse={handleParse} isLoading={isParsing} />
@@ -481,14 +483,14 @@ export default function Index() {
         )}
 
         {/* Mobile nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border/40 bg-background/90 backdrop-blur-xl">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-[#e8e7e4] bg-[#f5f4f0]/90 backdrop-blur-xl">
           <div className="flex items-center justify-around h-14">
             {NAV_ITEMS.map(item => (
               <button
                 key={item.id}
                 onClick={() => { setActiveSection(item.id); setSelectedCatalogEntry(null); setSelectedCatalogProvider(null); }}
                 className={`flex flex-col items-center gap-0.5 text-[10px] font-medium transition-colors ${
-                  activeSection === item.id ? "text-primary" : "text-muted-foreground"
+                  activeSection === item.id ? "text-[#1a1a1a]" : "text-[#999]"
                 }`}
               >
                 {item.icon}
